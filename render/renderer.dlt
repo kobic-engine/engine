@@ -158,15 +158,16 @@ imple Renderer:
         current_fence: i64 = Memory.read_ptr(rp.in_flight_fences + self.current_frame * 8)
         Memory.write_ptr(rp.frame_fence_arr, current_fence)
         vkWaitForFences(device, 1, rp.frame_fence_arr, 1, 0 - 1)
-        vkResetFences(device, 1, rp.frame_fence_arr)
 
-        # Acquire next image
+        # Acquire next image (reset fence AFTER successful acquire to avoid deadlock)
         Memory.write_i32(rp.frame_img_idx_ptr, 0)
         img_sem: i64 = Memory.read_ptr(rp.image_available_sems + self.current_frame * 8)
         acq_r: i32 = vkAcquireNextImageKHR(device, sc.vk_swapchain, 0 - 1, img_sem, 0, rp.frame_img_idx_ptr)
         img_idx: i32 = Memory.read_i32(rp.frame_img_idx_ptr)
         if acq_r != 0:
-            return
+            if acq_r != 1000001003:
+                return
+        vkResetFences(device, 1, rp.frame_fence_arr)
 
         # Reset + record command buffer
         cmd_buf: i64 = Memory.read_ptr(rp.vk_command_buffers + self.current_frame * 8)

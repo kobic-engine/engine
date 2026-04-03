@@ -1,10 +1,10 @@
 ##############################
-# Kobic Engine — Input
+# Kobic Engine — KbInput
 # Keyboard singleton (held/pressed/released)
 # Uses prev/curr frame buffers for edge detection
 ##############################
 
-struct Input:
+struct KbInput:
     static window_handle: i64 = 0
     static prev_keys:     i64 = 0
     static curr_keys:     i64 = 0
@@ -12,81 +12,77 @@ struct Input:
     _dummy: i32 = 0
 
     static fun bind(handle: i64):
-        Input.window_handle = handle
-        if Input.initialized == 0:
-            Input.prev_keys = Memory.malloc_zeroed(2048)
-            Input.curr_keys = Memory.malloc_zeroed(2048)
-            if Input.prev_keys != 0:
-                Memory.set(Input.prev_keys, 0, 2048)
-            if Input.curr_keys != 0:
-                Memory.set(Input.curr_keys, 0, 2048)
-            Input.initialized = 1
+        KbInput.window_handle = handle
+        if KbInput.initialized == 0:
+            KbInput.prev_keys = Memory.malloc_zeroed(2048)
+            KbInput.curr_keys = Memory.malloc_zeroed(2048)
+            if KbInput.prev_keys != 0:
+                Memory.set(KbInput.prev_keys, 0, 2048)
+            if KbInput.curr_keys != 0:
+                Memory.set(KbInput.curr_keys, 0, 2048)
+            KbInput.initialized = 1
 
     static fun update():
-        if Input.initialized == 0:
+        if KbInput.initialized == 0:
             return
-        pk: i64 = Input.prev_keys
-        ck: i64 = Input.curr_keys
+        pk: i64 = KbInput.prev_keys
+        ck: i64 = KbInput.curr_keys
         if pk == 0:
             return
         if ck == 0:
             return
         Memory.copy(pk, ck, 2048)
-        Input._poll_common_keys()
+        KbInput._poll_common_keys()
 
     static fun _poll_key(key: i32):
         if key < 0:
             return
         if key >= 512:
             return
-        ck: i64 = Input.curr_keys
+        ck: i64 = KbInput.curr_keys
         if ck == 0:
             return
-        wh: i64 = Input.window_handle
-        if wh == 0:
-            return
-        state: i32 = glfwGetKey(wh, key)
+        state: i16 = platform_get_key_state(key)
         pressed: i32 = 0
-        if state == 1:
-            pressed = 1
-        if state == 2:
+        if state < 0:
             pressed = 1
         key_i64: i64 = key
         Memory.write_i32(ck + key_i64 * 4, pressed)
 
     static fun _poll_common_keys():
-        Input._poll_key(87)
-        Input._poll_key(65)
-        Input._poll_key(83)
-        Input._poll_key(68)
-        Input._poll_key(81)
-        Input._poll_key(69)
-        Input._poll_key(82)
-        Input._poll_key(70)
-        Input._poll_key(32)
-        Input._poll_key(340)
-        Input._poll_key(341)
-        Input._poll_key(342)
-        Input._poll_key(256)
-        Input._poll_key(257)
-        Input._poll_key(258)
-        Input._poll_key(265)
-        Input._poll_key(264)
-        Input._poll_key(263)
-        Input._poll_key(262)
-        Input._poll_key(290)
-        Input._poll_key(291)
-        Input._poll_key(292)
-        Input._poll_key(293)
-        Input._poll_key(294)
+        # Letters (same Win32 VK as GLFW)
+        KbInput._poll_key(87)    # W
+        KbInput._poll_key(65)    # A
+        KbInput._poll_key(83)    # S
+        KbInput._poll_key(68)    # D
+        KbInput._poll_key(81)    # Q
+        KbInput._poll_key(69)    # E
+        KbInput._poll_key(82)    # R
+        KbInput._poll_key(70)    # F
+        KbInput._poll_key(77)    # M
+        # Special keys (Win32 VK)
+        KbInput._poll_key(32)    # Space
+        KbInput._poll_key(16)    # Shift
+        KbInput._poll_key(17)    # Ctrl
+        KbInput._poll_key(18)    # Alt
+        KbInput._poll_key(27)    # Escape
+        KbInput._poll_key(13)    # Enter
+        KbInput._poll_key(9)     # Tab
+        # Arrow keys
+        KbInput._poll_key(38)    # Up
+        KbInput._poll_key(40)    # Down
+        KbInput._poll_key(37)    # Left
+        KbInput._poll_key(39)    # Right
+        # Function keys
+        KbInput._poll_key(112)   # F1
+        KbInput._poll_key(113)   # F2
+        KbInput._poll_key(114)   # F3
+        KbInput._poll_key(115)   # F4
+        KbInput._poll_key(116)   # F5
 
     static fun held(key: i32) -> i32:
-        if Input.window_handle == 0:
-            return 0
-        state: i32 = glfwGetKey(Input.window_handle, key)
-        if state == 1:
-            return 1
-        if state == 2:
+        state: i16 = platform_get_key_state(key)
+        if state < 0:
             return 1
         return 0
 
@@ -95,12 +91,12 @@ struct Input:
             return 0
         if key >= 512:
             return 0
-        if Input.initialized == 0:
+        if KbInput.initialized == 0:
             return 0
-        pk: i64 = Input.prev_keys
+        pk: i64 = KbInput.prev_keys
         if pk == 0:
             return 0
-        curr_state: i32 = Input.held(key)
+        curr_state: i32 = KbInput.held(key)
         key_i64: i64 = key
         prev_state: i32 = Memory.read_i32(pk + key_i64 * 4)
         if prev_state == 0:
@@ -113,12 +109,12 @@ struct Input:
             return 0
         if key >= 512:
             return 0
-        if Input.initialized == 0:
+        if KbInput.initialized == 0:
             return 0
-        pk: i64 = Input.prev_keys
+        pk: i64 = KbInput.prev_keys
         if pk == 0:
             return 0
-        curr_state: i32 = Input.held(key)
+        curr_state: i32 = KbInput.held(key)
         key_i64: i64 = key
         prev_state: i32 = Memory.read_i32(pk + key_i64 * 4)
         if prev_state == 1:
@@ -127,10 +123,10 @@ struct Input:
         return 0
 
     static fun cleanup():
-        if Input.prev_keys != 0:
-            Memory.free(Input.prev_keys)
-            Input.prev_keys = 0
-        if Input.curr_keys != 0:
-            Memory.free(Input.curr_keys)
-            Input.curr_keys = 0
-        Input.initialized = 0
+        if KbInput.prev_keys != 0:
+            Memory.free(KbInput.prev_keys)
+            KbInput.prev_keys = 0
+        if KbInput.curr_keys != 0:
+            Memory.free(KbInput.curr_keys)
+            KbInput.curr_keys = 0
+        KbInput.initialized = 0

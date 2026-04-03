@@ -18,16 +18,15 @@ struct VulkanContext:
 imple VulkanContext:
 
     fun init(self, window_handle: i64) -> i32:
-        # Step 1: Get required GLFW extensions
-        ext_count_ptr: i64 = Memory.malloc_zeroed(4)
-        if ext_count_ptr == 0:
-            return 0
-        Memory.write_i32(ext_count_ptr, 0)
-        extensions: i64 = glfwGetRequiredInstanceExtensions(ext_count_ptr)
-        ext_count: i32 = Memory.read_i32(ext_count_ptr)
-        Memory.free(ext_count_ptr)
+        # Step 1: Required Vulkan extensions (replaces glfwGetRequiredInstanceExtensions)
+        ext1: str = "VK_KHR_surface"
+        ext2: str = "VK_KHR_win32_surface"
+        ext_count: i32 = 2
+        extensions: i64 = Memory.malloc_zeroed(16)
         if extensions == 0:
             return 0
+        Memory.write_ptr(extensions, ext1 as i64)
+        Memory.write_ptr(extensions + 8, ext2 as i64)
 
         # Step 2: VkApplicationInfo (48 bytes)
         app_info: i64 = Memory.malloc_zeroed(48)
@@ -98,10 +97,21 @@ imple VulkanContext:
         self.vk_physical_device = Memory.read_ptr(devices)
         Memory.free(devices)
 
-        # Step 6: Create surface via GLFW
-        surf_result: i32 = glfwCreateWindowSurface(self.vk_instance, window_handle, 0, surface_ptr)
+        # Step 6: Create surface via native Win32
+        surf_ci: i64 = Memory.malloc_zeroed(40)
+        if surf_ci == 0:
+            Memory.free(surface_ptr)
+            return 0
+        hinstance: i64 = GetModuleHandleA(0)
+        Memory.write_i32(surf_ci, 1000009000)
+        Memory.write_ptr(surf_ci + 8, 0)
+        Memory.write_i32(surf_ci + 16, 0)
+        Memory.write_ptr(surf_ci + 24, hinstance)
+        Memory.write_ptr(surf_ci + 32, window_handle)
+        surf_result: i32 = vkCreateWin32SurfaceKHR(self.vk_instance, surf_ci, 0, surface_ptr)
+        Memory.free(surf_ci)
         if surf_result != 0:
-            print("  glfwCreateWindowSurface failed")
+            print("  vkCreateWin32SurfaceKHR failed")
             Memory.free(surface_ptr)
             return 0
         print("  Surface created")

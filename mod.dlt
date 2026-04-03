@@ -3,7 +3,6 @@
 ##############################
 module kobic
 
-requires glfw
 requires vulkan
 
 # ECS Core
@@ -55,9 +54,11 @@ load kobic/input/key_code
 load kobic/input/input
 load kobic/input/mouse
 
+# Timing
+load kobic/core/time
+
 # App
 load kobic/core/app
-load kobic/core/display
 load kobic/core/kobic
 load kobic/core/node
 load kobic/core/camera
@@ -66,9 +67,6 @@ load kobic/core/camera
 load kobic/ui/hud
 load kobic/ui/label
 load kobic/ui/crosshair
-
-# Core
-load kobic/core/time
 
 # Exports
 export Vec2, Vec3, Mat4, Quat, Color

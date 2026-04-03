@@ -1,21 +1,4 @@
 ##############################
 # Kobic Engine — Display
-# Window creation and management
+# (Deprecated: use Window.create() directly from window package)
 ##############################
-
-struct Display:
-    _dummy: i32 = 0
-
-imple Display:
-
-    static fun create_window(title: str, width: i32, height: i32) -> i64:
-        init_r: i32 = glfwInit()
-        if init_r == 0:
-            print("Kobic: GLFW init failed")
-            return 0
-        glfwWindowHint(139265, 0)
-        glfwWindowHint(131075, 0)
-        handle: i64 = glfwCreateWindow(width, height, title, 0, 0)
-        if handle == 0:
-            print("Kobic: window creation failed")
-        return handle

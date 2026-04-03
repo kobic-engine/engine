@@ -4,6 +4,9 @@
 # Builder pattern: App.new().config(...).init().run()
 ##############################
 
+# Global Window for App builder API (persistent lifetime)
+g_app_window: Window = Window()
+
 struct App:
     # Window
     window_handle:  i64 = 0
@@ -38,17 +41,11 @@ imple App:
         self.window_height = cfg.height
 
     fun init(self) -> i32:
-        # Init GLFW
-        init_r: i32 = glfwInit()
-        if init_r == 0:
-            print("Error: Failed to initialize GLFW")
-            return 0
-        glfwWindowHint(139265, 0)
-        glfwWindowHint(131075, 0)
-        self.window_handle = glfwCreateWindow(self.window_width, self.window_height, self.window_title, 0, 0)
+        # Create window via native window package
+        g_app_window = Window.create(self.window_title, self.window_width, self.window_height)
+        self.window_handle = g_app_window.handle
         if self.window_handle == 0:
             print("Error: Failed to create window")
-            glfwTerminate()
             return 0
         self.is_running = 1
 
@@ -64,7 +61,7 @@ imple App:
         self.scene_tree = st
 
         # Bind input
-        Input.bind(self.window_handle)
+        KbInput.bind(self.window_handle)
         Mouse.bind(self.window_handle)
 
         # Init Vulkan
@@ -134,7 +131,8 @@ imple App:
             if ren.initialized == 0:
                 print("  WARNING: renderer.initialized is 0 after init!")
 
-        self.last_time = glfwGetTime()
+        kobic_init_timer()
+        self.last_time = kobic_get_time()
         self.frame_count = 0
         # Re-verify renderer state after all writes
         ren2: Renderer = self.renderer
@@ -148,13 +146,17 @@ imple App:
     fun should_close(self) -> i32:
         if self.window_handle == 0:
             return 1
-        return glfwWindowShouldClose(self.window_handle)
+        win: Window = g_app_window
+        result: i32 = win.should_close()
+        return result
 
     fun begin_frame(self) -> void:
-        glfwPollEvents()
-        Input.update()
+        win: Window = g_app_window
+        win.poll_events()
+        g_app_window = win
+        KbInput.update()
         Mouse.update()
-        now: f64 = glfwGetTime()
+        now: f64 = kobic_get_time()
         self.dt = now - self.last_time
         self.last_time = now
         self.frame_count = self.frame_count + 1
@@ -267,13 +269,14 @@ imple App:
             sc: Swapchain = self.swapchain
             sc.cleanup(ctx.vk_instance, ctx.vk_device)
             ctx.cleanup()
-        Input.cleanup()
+        KbInput.cleanup()
         Mouse.cleanup()
         w: Scene = self.world
         w.cleanup()
         if self.window_handle != 0:
-            glfwDestroyWindow(self.window_handle)
+            win: Window = g_app_window
+            win.destroy()
+            g_app_window = win
             self.window_handle = 0
-        glfwTerminate()
         self.is_running = 0
         print("Kobic Engine cleaned up")

@@ -1,6 +1,7 @@
 ##############################
 # Kobic Engine — Mouse
 # Mouse singleton + button constants
+# Uses native Win32 via window/input packages
 ##############################
 
 struct MouseButton:
@@ -21,25 +22,43 @@ struct Mouse:
     static cursor_x_ptr: i64 = 0
     static cursor_y_ptr: i64 = 0
     static captured:   i32 = 0
+    static center_sx:  i32 = 0
+    static center_sy:  i32 = 0
+    static rect_buf:   i64 = 0
     _dummy: i32 = 0
 
     static fun bind(handle: i64):
         Mouse.window_handle = handle
         if Mouse.cursor_x_ptr == 0:
             Mouse.cursor_x_ptr = Memory.malloc_zeroed(8)
-            Mouse.cursor_y_ptr = Memory.malloc_zeroed(8)
+        if Mouse.rect_buf == 0:
+            Mouse.rect_buf = Memory.malloc_zeroed(16)
 
     static fun capture():
         if Mouse.window_handle == 0:
             return
-        glfwSetInputMode(Mouse.window_handle, 208897, 212995)
+        # Calculate window center in screen coords
+        rb: i64 = Mouse.rect_buf
+        if rb != 0:
+            GetWindowRect(Mouse.window_handle, rb)
+            wl: i32 = Memory.read_i32(rb)
+            wt: i32 = Memory.read_i32(rb + 4)
+            wr: i32 = Memory.read_i32(rb + 8)
+            wb: i32 = Memory.read_i32(rb + 12)
+            Mouse.center_sx = (wl + wr) / 2
+            Mouse.center_sy = (wt + wb) / 2
+        set_cursor_visible(0)
+        set_cursor_locked(1, Mouse.window_handle)
+        # Move cursor to center
+        SetCursorPos(Mouse.center_sx, Mouse.center_sy)
         Mouse.captured = 1
         Mouse.first_update = 1
 
     static fun release():
         if Mouse.window_handle == 0:
             return
-        glfwSetInputMode(Mouse.window_handle, 208897, 212993)
+        set_cursor_locked(0, Mouse.window_handle)
+        set_cursor_visible(1)
         Mouse.captured = 0
 
     static fun toggle_capture():
@@ -55,13 +74,15 @@ struct Mouse:
         wh: i64 = Mouse.window_handle
         if wh == 0:
             return
-        cx: i64 = Mouse.cursor_x_ptr
-        if cx == 0:
+        point_buf: i64 = Mouse.cursor_x_ptr
+        if point_buf == 0:
             return
-        cy: i64 = Mouse.cursor_y_ptr
-        glfwGetCursorPos(wh, cx, cy)
-        Mouse.x = Memory.read_f64(cx)
-        Mouse.y = Memory.read_f64(cy)
+        # Get cursor in screen coords
+        GetCursorPos(point_buf)
+        cx: i32 = Memory.read_i32(point_buf)
+        cy: i32 = Memory.read_i32(point_buf + 4)
+        Mouse.x = cx as f64
+        Mouse.y = cy as f64
         if Mouse.first_update == 1:
             Mouse.last_x = Mouse.x
             Mouse.last_y = Mouse.y
@@ -69,10 +90,18 @@ struct Mouse:
             Mouse.delta_x = 0.0
             Mouse.delta_y = 0.0
         else:
-            Mouse.delta_x = Mouse.x - Mouse.last_x
-            Mouse.delta_y = Mouse.y - Mouse.last_y
-            Mouse.last_x = Mouse.x
-            Mouse.last_y = Mouse.y
+            if Mouse.captured == 1:
+                # Delta from center, then recenter cursor
+                Mouse.delta_x = Mouse.x - (Mouse.center_sx as f64)
+                Mouse.delta_y = Mouse.y - (Mouse.center_sy as f64)
+                SetCursorPos(Mouse.center_sx, Mouse.center_sy)
+                Mouse.last_x = Mouse.center_sx as f64
+                Mouse.last_y = Mouse.center_sy as f64
+            else:
+                Mouse.delta_x = Mouse.x - Mouse.last_x
+                Mouse.delta_y = Mouse.y - Mouse.last_y
+                Mouse.last_x = Mouse.x
+                Mouse.last_y = Mouse.y
 
     static fun get_delta_x() -> f64:
         return Mouse.delta_x
@@ -87,17 +116,14 @@ struct Mouse:
         return Mouse.y
 
     static fun is_button_pressed(button: i32) -> i32:
-        if Mouse.window_handle == 0:
-            return 0
-        state: i32 = glfwGetMouseButton(Mouse.window_handle, button)
-        if state == 1:
-            return 1
-        return 0
+        return mouse_pressed(button)
 
     static fun set_position(nx: f64, ny: f64):
         if Mouse.window_handle == 0:
             return
-        glfwSetCursorPos(Mouse.window_handle, nx, ny)
+        sx: i32 = nx as i32
+        sy: i32 = ny as i32
+        set_cursor_position(sx, sy)
         Mouse.x = nx
         Mouse.y = ny
         Mouse.last_x = nx
@@ -107,6 +133,6 @@ struct Mouse:
         if Mouse.cursor_x_ptr != 0:
             Memory.free(Mouse.cursor_x_ptr)
             Mouse.cursor_x_ptr = 0
-        if Mouse.cursor_y_ptr != 0:
-            Memory.free(Mouse.cursor_y_ptr)
-            Mouse.cursor_y_ptr = 0
+        if Mouse.rect_buf != 0:
+            Memory.free(Mouse.rect_buf)
+            Mouse.rect_buf = 0

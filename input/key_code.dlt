@@ -1,6 +1,6 @@
 ##############################
 # Kobic Engine — KeyCode
-# GLFW key constants
+# Win32 Virtual Key constants
 ##############################
 
 struct KeyCode:
@@ -31,27 +31,27 @@ struct KeyCode:
     static Num8:    i32 = 56
     static Num9:    i32 = 57
     static Space:   i32 = 32
-    static Enter:   i32 = 257
-    static Escape:  i32 = 256
-    static Tab:     i32 = 258
-    static Backspace: i32 = 259
-    static Shift:   i32 = 340
-    static Ctrl:    i32 = 341
-    static Alt:     i32 = 342
-    static Up:      i32 = 265
-    static Down:    i32 = 264
-    static Left:    i32 = 263
-    static Right:   i32 = 262
-    static F1:      i32 = 290
-    static F2:      i32 = 291
-    static F3:      i32 = 292
-    static F4:      i32 = 293
-    static F5:      i32 = 294
-    static F6:      i32 = 295
-    static F7:      i32 = 296
-    static F8:      i32 = 297
-    static F9:      i32 = 298
-    static F10:     i32 = 299
-    static F11:     i32 = 300
-    static F12:     i32 = 301
+    static Enter:   i32 = 13
+    static Escape:  i32 = 27
+    static Tab:     i32 = 9
+    static Backspace: i32 = 8
+    static Shift:   i32 = 16
+    static Ctrl:    i32 = 17
+    static Alt:     i32 = 18
+    static Up:      i32 = 38
+    static Down:    i32 = 40
+    static Left:    i32 = 37
+    static Right:   i32 = 39
+    static F1:      i32 = 112
+    static F2:      i32 = 113
+    static F3:      i32 = 114
+    static F4:      i32 = 115
+    static F5:      i32 = 116
+    static F6:      i32 = 117
+    static F7:      i32 = 118
+    static F8:      i32 = 119
+    static F9:      i32 = 120
+    static F10:     i32 = 121
+    static F11:     i32 = 122
+    static F12:     i32 = 123
     _dummy: i32 = 0

@@ -1,6 +1,6 @@
 ##############################
 # Kobic Engine — Core
-# Engine lifecycle: Vulkan init, frame loop, cleanup
+# Engine lifecycle: Vulkan init, render, cleanup
 ##############################
 
 struct Engine:
@@ -20,22 +20,16 @@ imple Engine:
     static fun init_render(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, window: i64, width: i32, height: i32) -> i32:
         vk_ok: i32 = ctx.init(window)
         if vk_ok != 1:
-            print("Kobic: Vulkan init failed")
+            print("Engine: Vulkan init failed")
             return 0
         sc.init(ctx.vk_instance, ctx.vk_physical_device, ctx.vk_device, ctx.vk_surface, width, height, ctx.graphics_family, ctx.present_family)
         vert_shader: EmbeddedShader = get_generic_vert_shader()
         frag_shader: EmbeddedShader = get_generic_frag_shader()
         rp.init(ctx.vk_device, sc.format, sc.image_count, sc.image_views, sc.depth_view, width, height, ctx.graphics_family, vert_shader.data, vert_shader.size, frag_shader.data, frag_shader.size)
         ren.init(ctx.vk_device, ctx.vk_physical_device, ctx.vk_graphics_queue, ctx.vk_present_queue)
-        print("Kobic: Vulkan ready")
+        kobic_init_timer()
+        print("Engine: Vulkan ready")
         return 1
-
-    # ---- Frame ----
-
-    static fun begin_frame(window: i64) -> void:
-        glfwPollEvents()
-        Input.update()
-        Mouse.update()
 
     static fun render_frame(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, s: Scene, cam_id: i32, width: i32, height: i32, aspect: f32) -> void:
         if ren.initialized == 0:
@@ -53,16 +47,13 @@ imple Engine:
 
     # ---- Cleanup ----
 
-    static fun cleanup(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, s: Scene, window: i64) -> void:
+    static fun cleanup(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, s: Scene) -> void:
         if ctx.initialized == 1:
             vkDeviceWaitIdle(ctx.vk_device)
             ren.cleanup()
             rp.cleanup(ctx.vk_device)
             sc.cleanup(ctx.vk_instance, ctx.vk_device)
             ctx.cleanup()
-        Input.cleanup()
+        KbInput.cleanup()
         Mouse.cleanup()
         s.cleanup()
-        if window != 0:
-            glfwDestroyWindow(window)
-        glfwTerminate()
