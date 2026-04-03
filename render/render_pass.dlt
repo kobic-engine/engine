@@ -1,0 +1,638 @@
+##############################
+# Kobic Engine — RenderPass
+# Render pass, graphics pipeline, sync objects
+# Framebuffers, command pool/buffers
+##############################
+
+struct RenderPass:
+    vk_render_pass:       i64 = 0
+    vk_pipeline_layout:   i64 = 0
+    vk_pipeline:          i64 = 0
+    vk_command_pool:      i64 = 0
+    vk_command_buffers:   i64 = 0
+    framebuffers:         i64 = 0
+    framebuffer_count:    i32 = 0
+    vert_shader_module:   i64 = 0
+    frag_shader_module:   i64 = 0
+    # Sync
+    image_available_sems: i64 = 0
+    render_finished_sems: i64 = 0
+    in_flight_fences:     i64 = 0
+    max_frames:           i32 = 2
+    current_frame:        i32 = 0
+    # Pre-allocated frame structs
+    frame_fence_arr:      i64 = 0
+    frame_img_idx_ptr:    i64 = 0
+    frame_submit_info:    i64 = 0
+    frame_wait_sems:      i64 = 0
+    frame_wait_stages:    i64 = 0
+    frame_signal_sems:    i64 = 0
+    frame_cmd_bufs_arr:   i64 = 0
+    frame_present_info:   i64 = 0
+    frame_wait_sems_p:    i64 = 0
+    frame_swapchains_arr: i64 = 0
+    frame_img_idxs_arr:   i64 = 0
+    frame_initialized:    i32 = 0
+
+imple RenderPass:
+
+    fun init(self, device: i64, swapchain_format: i32, sc_image_count: i32, sc_image_views: i64, depth_view: i64, width: i32, height: i32, gfx_family: i32, vert_data: i64, vert_size: i64, frag_data: i64, frag_size: i64) -> i32:
+        # 1. Create render pass — color + depth attachments
+        # Two attachment descriptions: [0]=color, [1]=depth
+        att_descs: i64 = Memory.malloc_zeroed(72)
+        if att_descs == 0:
+            return 0
+        # Color attachment (index 0)
+        Memory.write_i32(att_descs, 0)
+        Memory.write_i32(att_descs + 4, swapchain_format)
+        Memory.write_i32(att_descs + 8, 1)
+        Memory.write_i32(att_descs + 12, 1)
+        Memory.write_i32(att_descs + 16, 0)
+        Memory.write_i32(att_descs + 20, 2)
+        Memory.write_i32(att_descs + 24, 2)
+        Memory.write_i32(att_descs + 28, 0)
+        Memory.write_i32(att_descs + 32, 2)
+        # Depth attachment (index 1) — VK_FORMAT_D32_SFLOAT = 126
+        Memory.write_i32(att_descs + 36, 0)
+        Memory.write_i32(att_descs + 40, 126)
+        Memory.write_i32(att_descs + 44, 1)
+        Memory.write_i32(att_descs + 48, 1)
+        Memory.write_i32(att_descs + 52, 2)
+        Memory.write_i32(att_descs + 56, 2)
+        Memory.write_i32(att_descs + 60, 2)
+        Memory.write_i32(att_descs + 64, 0)
+        Memory.write_i32(att_descs + 68, 3)
+
+        att_ref: i64 = Memory.malloc_zeroed(8)
+        if att_ref == 0:
+            Memory.free(att_descs)
+            return 0
+        Memory.write_i32(att_ref, 0)
+        Memory.write_i32(att_ref + 4, 2)
+
+        # Depth attachment reference (attachment index 1, DEPTH_STENCIL_ATTACHMENT_OPTIMAL = 3)
+        depth_ref: i64 = Memory.malloc_zeroed(8)
+        if depth_ref == 0:
+            Memory.free(att_descs)
+            Memory.free(att_ref)
+            return 0
+        Memory.write_i32(depth_ref, 1)
+        Memory.write_i32(depth_ref + 4, 3)
+
+        sub_desc: i64 = Memory.malloc_zeroed(72)
+        if sub_desc == 0:
+            Memory.free(att_descs)
+            Memory.free(att_ref)
+            Memory.free(depth_ref)
+            return 0
+        Memory.write_i32(sub_desc, 0)
+        Memory.write_i32(sub_desc + 4, 0)
+        Memory.write_i32(sub_desc + 8, 0)
+        Memory.write_ptr(sub_desc + 16, 0)
+        Memory.write_i32(sub_desc + 24, 1)
+        Memory.write_ptr(sub_desc + 32, att_ref)
+        Memory.write_ptr(sub_desc + 48, depth_ref)
+
+        rp_ci: i64 = Memory.malloc_zeroed(64)
+        if rp_ci == 0:
+            Memory.free(att_descs)
+            Memory.free(att_ref)
+            Memory.free(depth_ref)
+            Memory.free(sub_desc)
+            return 0
+        Memory.write_i32(rp_ci, 38)
+        Memory.write_ptr(rp_ci + 8, 0)
+        Memory.write_i32(rp_ci + 16, 0)
+        Memory.write_i32(rp_ci + 20, 2)
+        Memory.write_ptr(rp_ci + 24, att_descs)
+        Memory.write_i32(rp_ci + 32, 1)
+        Memory.write_ptr(rp_ci + 40, sub_desc)
+        Memory.write_i32(rp_ci + 48, 0)
+        Memory.write_ptr(rp_ci + 56, 0)
+
+        rp_ptr: i64 = Memory.malloc_zeroed(8)
+        if rp_ptr == 0:
+            Memory.free(att_descs)
+            Memory.free(att_ref)
+            Memory.free(depth_ref)
+            Memory.free(sub_desc)
+            Memory.free(rp_ci)
+            return 0
+        rp_result: i32 = vkCreateRenderPass(device, rp_ci, 0, rp_ptr)
+        self.vk_render_pass = Memory.read_ptr(rp_ptr)
+        Memory.free(rp_ptr)
+        Memory.free(att_descs)
+        Memory.free(att_ref)
+        Memory.free(depth_ref)
+        Memory.free(sub_desc)
+        Memory.free(rp_ci)
+        if rp_result != 0:
+            return 0
+
+        # 2. Create shader modules
+        if vert_data != 0:
+            self.vert_shader_module = self._create_shader_module(device, vert_data, vert_size)
+        if frag_data != 0:
+            self.frag_shader_module = self._create_shader_module(device, frag_data, frag_size)
+        if self.vert_shader_module == 0:
+            return 0
+        if self.frag_shader_module == 0:
+            return 0
+
+        # 3. Create pipeline layout with push constants (64 bytes for MVP matrix)
+        pc_range: i64 = Memory.malloc_zeroed(12)
+        if pc_range == 0:
+            return 0
+        Memory.write_i32(pc_range, 1)
+        Memory.write_i32(pc_range + 4, 0)
+        Memory.write_i32(pc_range + 8, 64)
+
+        pl_ci: i64 = Memory.malloc_zeroed(48)
+        if pl_ci == 0:
+            Memory.free(pc_range)
+            return 0
+        Memory.write_i32(pl_ci, 30)
+        Memory.write_ptr(pl_ci + 8, 0)
+        Memory.write_i32(pl_ci + 16, 0)
+        Memory.write_i32(pl_ci + 20, 0)
+        Memory.write_ptr(pl_ci + 24, 0)
+        Memory.write_i32(pl_ci + 32, 1)
+        Memory.write_ptr(pl_ci + 40, pc_range)
+
+        pl_ptr: i64 = Memory.malloc_zeroed(8)
+        if pl_ptr == 0:
+            Memory.free(pc_range)
+            Memory.free(pl_ci)
+            return 0
+        pl_result: i32 = vkCreatePipelineLayout(device, pl_ci, 0, pl_ptr)
+        self.vk_pipeline_layout = Memory.read_ptr(pl_ptr)
+        Memory.free(pl_ptr)
+        Memory.free(pc_range)
+        Memory.free(pl_ci)
+        if pl_result != 0:
+            return 0
+
+        # 4. Create graphics pipeline
+        gp_result: i32 = self._create_graphics_pipeline(device, width, height)
+        if gp_result == 0:
+            return 0
+
+        # 5. Create framebuffers (color + depth)
+        self.framebuffer_count = sc_image_count
+        self.framebuffers = Memory.malloc_zeroed(sc_image_count * 8)
+        if self.framebuffers == 0:
+            return 0
+        fi: i32 = 0
+        while fi < sc_image_count:
+            att_arr: i64 = Memory.malloc_zeroed(16)
+            if att_arr == 0:
+                return 0
+            iv: i64 = Memory.read_ptr(sc_image_views + fi * 8)
+            Memory.write_ptr(att_arr, iv)
+            Memory.write_ptr(att_arr + 8, depth_view)
+            fb_ci: i64 = Memory.malloc_zeroed(64)
+            if fb_ci == 0:
+                Memory.free(att_arr)
+                return 0
+            Memory.set(fb_ci, 0, 64)
+            Memory.write_i32(fb_ci, 37)
+            Memory.write_ptr(fb_ci + 8, 0)
+            Memory.write_i32(fb_ci + 16, 0)
+            Memory.write_ptr(fb_ci + 24, self.vk_render_pass)
+            Memory.write_i32(fb_ci + 32, 2)
+            Memory.write_ptr(fb_ci + 40, att_arr)
+            Memory.write_i32(fb_ci + 48, width)
+            Memory.write_i32(fb_ci + 52, height)
+            Memory.write_i32(fb_ci + 56, 1)
+            fb_ptr: i64 = Memory.malloc_zeroed(8)
+            if fb_ptr == 0:
+                Memory.free(att_arr)
+                Memory.free(fb_ci)
+                return 0
+            fb_r: i32 = vkCreateFramebuffer(device, fb_ci, 0, fb_ptr)
+            fb: i64 = Memory.read_ptr(fb_ptr)
+            Memory.write_ptr(self.framebuffers + fi * 8, fb)
+            Memory.free(fb_ptr)
+            Memory.free(att_arr)
+            Memory.free(fb_ci)
+            if fb_r != 0:
+                return 0
+            fi = fi + 1
+
+        # 6. Create command pool + buffers
+        cp_ci: i64 = Memory.malloc_zeroed(32)
+        if cp_ci == 0:
+            return 0
+        Memory.set(cp_ci, 0, 32)
+        Memory.write_i32(cp_ci, 39)
+        Memory.write_ptr(cp_ci + 8, 0)
+        Memory.write_i32(cp_ci + 16, 2)
+        Memory.write_i32(cp_ci + 20, gfx_family)
+        cp_ptr: i64 = Memory.malloc_zeroed(8)
+        if cp_ptr == 0:
+            Memory.free(cp_ci)
+            return 0
+        cp_result: i32 = vkCreateCommandPool(device, cp_ci, 0, cp_ptr)
+        self.vk_command_pool = Memory.read_ptr(cp_ptr)
+        Memory.free(cp_ptr)
+        Memory.free(cp_ci)
+        if cp_result != 0:
+            return 0
+
+        cb_ai: i64 = Memory.malloc_zeroed(40)
+        if cb_ai == 0:
+            return 0
+        Memory.set(cb_ai, 0, 40)
+        Memory.write_i32(cb_ai, 40)
+        Memory.write_ptr(cb_ai + 8, 0)
+        Memory.write_ptr(cb_ai + 16, self.vk_command_pool)
+        Memory.write_i32(cb_ai + 24, 0)
+        Memory.write_i32(cb_ai + 28, self.max_frames)
+        self.vk_command_buffers = Memory.malloc_zeroed(self.max_frames * 8)
+        if self.vk_command_buffers == 0:
+            Memory.free(cb_ai)
+            return 0
+        cb_result: i32 = vkAllocateCommandBuffers(device, cb_ai, self.vk_command_buffers)
+        Memory.free(cb_ai)
+        if cb_result != 0:
+            return 0
+
+        # 7. Create sync objects
+        sem_ci: i64 = Memory.malloc_zeroed(24)
+        if sem_ci == 0:
+            return 0
+        Memory.set(sem_ci, 0, 24)
+        Memory.write_i32(sem_ci, 9)
+        fence_ci: i64 = Memory.malloc_zeroed(24)
+        if fence_ci == 0:
+            Memory.free(sem_ci)
+            return 0
+        Memory.set(fence_ci, 0, 24)
+        Memory.write_i32(fence_ci, 8)
+        Memory.write_i32(fence_ci + 16, 1)
+
+        self.image_available_sems = Memory.malloc_zeroed(self.max_frames * 8)
+        self.render_finished_sems = Memory.malloc_zeroed(self.max_frames * 8)
+        self.in_flight_fences = Memory.malloc_zeroed(self.max_frames * 8)
+        si: i32 = 0
+        while si < self.max_frames:
+            sp1: i64 = Memory.malloc_zeroed(8)
+            sp2: i64 = Memory.malloc_zeroed(8)
+            fp: i64 = Memory.malloc_zeroed(8)
+            if sp1 != 0:
+                vkCreateSemaphore(device, sem_ci, 0, sp1)
+                Memory.write_ptr(self.image_available_sems + si * 8, Memory.read_ptr(sp1))
+                Memory.free(sp1)
+            if sp2 != 0:
+                vkCreateSemaphore(device, sem_ci, 0, sp2)
+                Memory.write_ptr(self.render_finished_sems + si * 8, Memory.read_ptr(sp2))
+                Memory.free(sp2)
+            if fp != 0:
+                vkCreateFence(device, fence_ci, 0, fp)
+                Memory.write_ptr(self.in_flight_fences + si * 8, Memory.read_ptr(fp))
+                Memory.free(fp)
+            si = si + 1
+        Memory.free(sem_ci)
+        Memory.free(fence_ci)
+
+        # 8. Pre-allocate frame structs
+        self._init_frame_structs()
+
+        return 1
+
+    fun _create_shader_module(self, device: i64, code: i64, size: i64) -> i64:
+        sm_ci: i64 = Memory.malloc_zeroed(40)
+        if sm_ci == 0:
+            return 0
+        Memory.set(sm_ci, 0, 40)
+        Memory.write_i32(sm_ci, 12)
+        Memory.write_ptr(sm_ci + 8, 0)
+        Memory.write_i32(sm_ci + 16, 0)
+        Memory.write_i64(sm_ci + 24, size)
+        Memory.write_ptr(sm_ci + 32, code)
+        sm_ptr: i64 = Memory.malloc_zeroed(8)
+        if sm_ptr == 0:
+            Memory.free(sm_ci)
+            return 0
+        sm_result: i32 = vkCreateShaderModule(device, sm_ci, 0, sm_ptr)
+        mod_handle: i64 = Memory.read_ptr(sm_ptr)
+        Memory.free(sm_ptr)
+        Memory.free(sm_ci)
+        if sm_result != 0:
+            return 0
+        return mod_handle
+
+    fun _create_graphics_pipeline(self, device: i64, width: i32, height: i32) -> i32:
+        entry: str = "main"
+        # Shader stages
+        stages: i64 = Memory.malloc_zeroed(96)
+        if stages == 0:
+            return 0
+        Memory.set(stages, 0, 96)
+        # Vert stage
+        Memory.write_i32(stages, 18)
+        Memory.write_ptr(stages + 8, 0)
+        Memory.write_i32(stages + 16, 0)
+        Memory.write_i32(stages + 20, 1)
+        Memory.write_ptr(stages + 24, self.vert_shader_module)
+        Memory.write_ptr(stages + 32, entry)
+        Memory.write_ptr(stages + 40, 0)
+        # Frag stage
+        Memory.write_i32(stages + 48, 18)
+        Memory.write_ptr(stages + 56, 0)
+        Memory.write_i32(stages + 64, 0)
+        Memory.write_i32(stages + 68, 16)
+        Memory.write_ptr(stages + 72, self.frag_shader_module)
+        Memory.write_ptr(stages + 80, entry)
+        Memory.write_ptr(stages + 88, 0)
+
+        # Vertex input: pos(3f) + color(3f) = binding 0, stride 24
+        bind: i64 = Memory.malloc_zeroed(12)
+        if bind == 0:
+            Memory.free(stages)
+            return 0
+        Memory.write_i32(bind, 0)
+        Memory.write_i32(bind + 4, 24)
+        Memory.write_i32(bind + 8, 0)
+
+        attrs: i64 = Memory.malloc_zeroed(32)
+        if attrs == 0:
+            Memory.free(stages)
+            Memory.free(bind)
+            return 0
+        # Position attr (loc=0, R32G32B32=106, offset=0)
+        Memory.write_i32(attrs, 0)
+        Memory.write_i32(attrs + 4, 0)
+        Memory.write_i32(attrs + 8, 106)
+        Memory.write_i32(attrs + 12, 0)
+        # Color attr (loc=1, R32G32B32=106, offset=12)
+        Memory.write_i32(attrs + 16, 1)
+        Memory.write_i32(attrs + 20, 0)
+        Memory.write_i32(attrs + 24, 106)
+        Memory.write_i32(attrs + 28, 12)
+
+        vi_ci: i64 = Memory.malloc_zeroed(48)
+        if vi_ci == 0:
+            Memory.free(stages)
+            Memory.free(bind)
+            Memory.free(attrs)
+            return 0
+        Memory.write_i32(vi_ci, 19)
+        Memory.write_ptr(vi_ci + 8, 0)
+        Memory.write_i32(vi_ci + 16, 0)
+        Memory.write_i32(vi_ci + 20, 1)
+        Memory.write_ptr(vi_ci + 24, bind)
+        Memory.write_i32(vi_ci + 32, 2)
+        Memory.write_ptr(vi_ci + 40, attrs)
+
+        # Input assembly (32 bytes)
+        ia_ci: i64 = Memory.malloc_zeroed(32)
+        if ia_ci == 0:
+            Memory.free(stages)
+            Memory.free(bind)
+            Memory.free(attrs)
+            Memory.free(vi_ci)
+            return 0
+        Memory.write_i32(ia_ci, 20)
+        Memory.write_ptr(ia_ci + 8, 0)
+        Memory.write_i32(ia_ci + 16, 0)
+        Memory.write_i32(ia_ci + 20, 3)
+        Memory.write_i32(ia_ci + 24, 0)
+
+        # Viewport + scissor
+        viewport: i64 = Memory.malloc_zeroed(24)
+        scissor: i64 = Memory.malloc_zeroed(16)
+        if viewport == 0:
+            return 0
+        if scissor == 0:
+            Memory.free(viewport)
+            return 0
+        w_f: f32 = width
+        h_f: f32 = height
+        Memory.write_f32(viewport, 0.0)
+        Memory.write_f32(viewport + 4, 0.0)
+        Memory.write_f32(viewport + 8, w_f)
+        Memory.write_f32(viewport + 12, h_f)
+        Memory.write_f32(viewport + 16, 0.0)
+        Memory.write_f32(viewport + 20, 1.0)
+        Memory.write_i32(scissor, 0)
+        Memory.write_i32(scissor + 4, 0)
+        Memory.write_i32(scissor + 8, width)
+        Memory.write_i32(scissor + 12, height)
+
+        vp_ci: i64 = Memory.malloc_zeroed(48)
+        if vp_ci == 0:
+            return 0
+        Memory.write_i32(vp_ci, 22)
+        Memory.write_ptr(vp_ci + 8, 0)
+        Memory.write_i32(vp_ci + 16, 0)
+        Memory.write_i32(vp_ci + 20, 1)
+        Memory.write_ptr(vp_ci + 24, viewport)
+        Memory.write_i32(vp_ci + 32, 1)
+        Memory.write_ptr(vp_ci + 40, scissor)
+
+        # Rasterization
+        rast: i64 = Memory.malloc_zeroed(64)
+        if rast == 0:
+            return 0
+        Memory.write_i32(rast, 23)
+        Memory.write_ptr(rast + 8, 0)
+        Memory.write_i32(rast + 16, 0)
+        Memory.write_i32(rast + 20, 0)
+        Memory.write_i32(rast + 24, 0)
+        Memory.write_i32(rast + 28, 0)
+        Memory.write_i32(rast + 32, 0)
+        Memory.write_i32(rast + 36, 0)
+        Memory.write_i32(rast + 40, 0)
+        Memory.write_f32(rast + 44, 0.0)
+        Memory.write_f32(rast + 48, 0.0)
+        Memory.write_f32(rast + 52, 0.0)
+        Memory.write_f32(rast + 56, 1.0)
+
+        # Multisampling
+        ms: i64 = Memory.malloc_zeroed(48)
+        if ms == 0:
+            return 0
+        Memory.write_i32(ms, 24)
+        Memory.write_ptr(ms + 8, 0)
+        Memory.write_i32(ms + 16, 0)
+        Memory.write_i32(ms + 20, 1)
+        Memory.write_i32(ms + 24, 0)
+        Memory.write_f32(ms + 28, 1.0)
+        Memory.write_ptr(ms + 32, 0)
+        Memory.write_i32(ms + 40, 0)
+        Memory.write_i32(ms + 44, 0)
+
+        # Color blend attachment
+        cba: i64 = Memory.malloc_zeroed(32)
+        if cba == 0:
+            return 0
+        Memory.write_i32(cba, 0)
+        Memory.write_i32(cba + 28, 15)
+
+        # Color blend state (56 bytes)
+        cb: i64 = Memory.malloc_zeroed(56)
+        if cb == 0:
+            return 0
+        Memory.write_i32(cb, 26)
+        Memory.write_ptr(cb + 8, 0)
+        Memory.write_i32(cb + 16, 0)
+        Memory.write_i32(cb + 20, 0)
+        Memory.write_i32(cb + 24, 0)
+        Memory.write_i32(cb + 28, 1)
+        Memory.write_ptr(cb + 32, cba)
+
+        # Depth stencil state (104 bytes — includes StencilOpState front/back)
+        ds: i64 = Memory.malloc_zeroed(104)
+        if ds == 0:
+            return 0
+        Memory.write_i32(ds, 25)
+        Memory.write_ptr(ds + 8, 0)
+        Memory.write_i32(ds + 16, 0)
+        Memory.write_i32(ds + 20, 1)
+        Memory.write_i32(ds + 24, 1)
+        Memory.write_i32(ds + 28, 1)
+        Memory.write_i32(ds + 32, 0)
+        Memory.write_i32(ds + 36, 0)
+
+        # Pipeline create info (144 bytes)
+        pipe_ci: i64 = Memory.malloc_zeroed(144)
+        if pipe_ci == 0:
+            return 0
+        Memory.write_i32(pipe_ci, 28)
+        Memory.write_ptr(pipe_ci + 8, 0)
+        Memory.write_i32(pipe_ci + 16, 0)
+        Memory.write_i32(pipe_ci + 20, 2)
+        Memory.write_ptr(pipe_ci + 24, stages)
+        Memory.write_ptr(pipe_ci + 32, vi_ci)
+        Memory.write_ptr(pipe_ci + 40, ia_ci)
+        Memory.write_ptr(pipe_ci + 48, 0)
+        Memory.write_ptr(pipe_ci + 56, vp_ci)
+        Memory.write_ptr(pipe_ci + 64, rast)
+        Memory.write_ptr(pipe_ci + 72, ms)
+        Memory.write_ptr(pipe_ci + 80, ds)
+        Memory.write_ptr(pipe_ci + 88, cb)
+        Memory.write_ptr(pipe_ci + 96, 0)
+        Memory.write_ptr(pipe_ci + 104, self.vk_pipeline_layout)
+        Memory.write_ptr(pipe_ci + 112, self.vk_render_pass)
+        Memory.write_i32(pipe_ci + 120, 0)
+        Memory.write_ptr(pipe_ci + 128, 0)
+        Memory.write_i32(pipe_ci + 136, 0 - 1)
+
+        pipe_ptr: i64 = Memory.malloc_zeroed(8)
+        if pipe_ptr == 0:
+            Memory.free(pipe_ci)
+            return 0
+        pipe_result: i32 = vkCreateGraphicsPipelines(device, 0, 1, pipe_ci, 0, pipe_ptr)
+        self.vk_pipeline = Memory.read_ptr(pipe_ptr)
+        Memory.free(pipe_ptr)
+
+        # Free create info structs
+        Memory.free(stages)
+        Memory.free(bind)
+        Memory.free(attrs)
+        Memory.free(vi_ci)
+        Memory.free(ia_ci)
+        Memory.free(viewport)
+        Memory.free(scissor)
+        Memory.free(vp_ci)
+        Memory.free(rast)
+        Memory.free(ms)
+        Memory.free(ds)
+        Memory.free(cba)
+        Memory.free(cb)
+        Memory.free(pipe_ci)
+
+        if pipe_result != 0:
+            return 0
+        return 1
+
+    fun _init_frame_structs(self) -> void:
+        self.frame_fence_arr = Memory.malloc_zeroed(8)
+        self.frame_img_idx_ptr = Memory.malloc_zeroed(4)
+        self.frame_submit_info = Memory.malloc_zeroed(72)
+        self.frame_wait_sems = Memory.malloc_zeroed(8)
+        self.frame_wait_stages = Memory.malloc_zeroed(4)
+        self.frame_signal_sems = Memory.malloc_zeroed(8)
+        self.frame_cmd_bufs_arr = Memory.malloc_zeroed(8)
+        self.frame_present_info = Memory.malloc_zeroed(64)
+        self.frame_wait_sems_p = Memory.malloc_zeroed(8)
+        self.frame_swapchains_arr = Memory.malloc_zeroed(8)
+        self.frame_img_idxs_arr = Memory.malloc_zeroed(4)
+        if self.frame_wait_stages != 0:
+            Memory.write_i32(self.frame_wait_stages, 1024)
+        if self.frame_submit_info != 0:
+            Memory.set(self.frame_submit_info, 0, 72)
+            Memory.write_i32(self.frame_submit_info, 4)
+        if self.frame_present_info != 0:
+            Memory.set(self.frame_present_info, 0, 64)
+            Memory.write_i32(self.frame_present_info, 1000001001)
+        self.frame_initialized = 1
+
+    fun cleanup(self, device: i64) -> void:
+        si: i32 = 0
+        while si < self.max_frames:
+            if self.image_available_sems != 0:
+                sem: i64 = Memory.read_ptr(self.image_available_sems + si * 8)
+                if sem != 0:
+                    vkDestroySemaphore(device, sem, 0)
+            if self.render_finished_sems != 0:
+                sem2: i64 = Memory.read_ptr(self.render_finished_sems + si * 8)
+                if sem2 != 0:
+                    vkDestroySemaphore(device, sem2, 0)
+            if self.in_flight_fences != 0:
+                fence: i64 = Memory.read_ptr(self.in_flight_fences + si * 8)
+                if fence != 0:
+                    vkDestroyFence(device, fence, 0)
+            si = si + 1
+        if self.image_available_sems != 0:
+            Memory.free(self.image_available_sems)
+        if self.render_finished_sems != 0:
+            Memory.free(self.render_finished_sems)
+        if self.in_flight_fences != 0:
+            Memory.free(self.in_flight_fences)
+        if self.vk_command_buffers != 0:
+            Memory.free(self.vk_command_buffers)
+        if self.vk_command_pool != 0:
+            vkDestroyCommandPool(device, self.vk_command_pool, 0)
+        if self.vk_pipeline != 0:
+            vkDestroyPipeline(device, self.vk_pipeline, 0)
+        if self.vk_pipeline_layout != 0:
+            vkDestroyPipelineLayout(device, self.vk_pipeline_layout, 0)
+        if self.vert_shader_module != 0:
+            vkDestroyShaderModule(device, self.vert_shader_module, 0)
+        if self.frag_shader_module != 0:
+            vkDestroyShaderModule(device, self.frag_shader_module, 0)
+        if self.framebuffers != 0:
+            fi: i32 = 0
+            while fi < self.framebuffer_count:
+                fb: i64 = Memory.read_ptr(self.framebuffers + fi * 8)
+                if fb != 0:
+                    vkDestroyFramebuffer(device, fb, 0)
+                fi = fi + 1
+            Memory.free(self.framebuffers)
+        if self.vk_render_pass != 0:
+            vkDestroyRenderPass(device, self.vk_render_pass, 0)
+        # Free frame structs
+        if self.frame_fence_arr != 0:
+            Memory.free(self.frame_fence_arr)
+        if self.frame_img_idx_ptr != 0:
+            Memory.free(self.frame_img_idx_ptr)
+        if self.frame_submit_info != 0:
+            Memory.free(self.frame_submit_info)
+        if self.frame_wait_sems != 0:
+            Memory.free(self.frame_wait_sems)
+        if self.frame_wait_stages != 0:
+            Memory.free(self.frame_wait_stages)
+        if self.frame_signal_sems != 0:
+            Memory.free(self.frame_signal_sems)
+        if self.frame_cmd_bufs_arr != 0:
+            Memory.free(self.frame_cmd_bufs_arr)
+        if self.frame_present_info != 0:
+            Memory.free(self.frame_present_info)
+        if self.frame_wait_sems_p != 0:
+            Memory.free(self.frame_wait_sems_p)
+        if self.frame_swapchains_arr != 0:
+            Memory.free(self.frame_swapchains_arr)
+        if self.frame_img_idxs_arr != 0:
+            Memory.free(self.frame_img_idxs_arr)

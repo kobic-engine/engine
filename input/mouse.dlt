@@ -1,0 +1,112 @@
+##############################
+# Kobic Engine — Mouse
+# Mouse singleton + button constants
+##############################
+
+struct MouseButton:
+    static Left:   i32 = 0
+    static Right:  i32 = 1
+    static Middle: i32 = 2
+    _dummy: i32 = 0
+
+struct Mouse:
+    static window_handle: i64 = 0
+    static x:          f64 = 0.0
+    static y:          f64 = 0.0
+    static last_x:     f64 = 0.0
+    static last_y:     f64 = 0.0
+    static delta_x:    f64 = 0.0
+    static delta_y:    f64 = 0.0
+    static first_update: i32 = 1
+    static cursor_x_ptr: i64 = 0
+    static cursor_y_ptr: i64 = 0
+    static captured:   i32 = 0
+    _dummy: i32 = 0
+
+    static fun bind(handle: i64):
+        Mouse.window_handle = handle
+        if Mouse.cursor_x_ptr == 0:
+            Mouse.cursor_x_ptr = Memory.malloc_zeroed(8)
+            Mouse.cursor_y_ptr = Memory.malloc_zeroed(8)
+
+    static fun capture():
+        if Mouse.window_handle == 0:
+            return
+        glfwSetInputMode(Mouse.window_handle, 208897, 212995)
+        Mouse.captured = 1
+        Mouse.first_update = 1
+
+    static fun release():
+        if Mouse.window_handle == 0:
+            return
+        glfwSetInputMode(Mouse.window_handle, 208897, 212993)
+        Mouse.captured = 0
+
+    static fun toggle_capture():
+        if Mouse.captured == 1:
+            Mouse.release()
+        else:
+            Mouse.capture()
+
+    static fun is_captured() -> i32:
+        return Mouse.captured
+
+    static fun update():
+        wh: i64 = Mouse.window_handle
+        if wh == 0:
+            return
+        cx: i64 = Mouse.cursor_x_ptr
+        if cx == 0:
+            return
+        cy: i64 = Mouse.cursor_y_ptr
+        glfwGetCursorPos(wh, cx, cy)
+        Mouse.x = Memory.read_f64(cx)
+        Mouse.y = Memory.read_f64(cy)
+        if Mouse.first_update == 1:
+            Mouse.last_x = Mouse.x
+            Mouse.last_y = Mouse.y
+            Mouse.first_update = 0
+            Mouse.delta_x = 0.0
+            Mouse.delta_y = 0.0
+        else:
+            Mouse.delta_x = Mouse.x - Mouse.last_x
+            Mouse.delta_y = Mouse.y - Mouse.last_y
+            Mouse.last_x = Mouse.x
+            Mouse.last_y = Mouse.y
+
+    static fun get_delta_x() -> f64:
+        return Mouse.delta_x
+
+    static fun get_delta_y() -> f64:
+        return Mouse.delta_y
+
+    static fun get_x() -> f64:
+        return Mouse.x
+
+    static fun get_y() -> f64:
+        return Mouse.y
+
+    static fun is_button_pressed(button: i32) -> i32:
+        if Mouse.window_handle == 0:
+            return 0
+        state: i32 = glfwGetMouseButton(Mouse.window_handle, button)
+        if state == 1:
+            return 1
+        return 0
+
+    static fun set_position(nx: f64, ny: f64):
+        if Mouse.window_handle == 0:
+            return
+        glfwSetCursorPos(Mouse.window_handle, nx, ny)
+        Mouse.x = nx
+        Mouse.y = ny
+        Mouse.last_x = nx
+        Mouse.last_y = ny
+
+    static fun cleanup():
+        if Mouse.cursor_x_ptr != 0:
+            Memory.free(Mouse.cursor_x_ptr)
+            Mouse.cursor_x_ptr = 0
+        if Mouse.cursor_y_ptr != 0:
+            Memory.free(Mouse.cursor_y_ptr)
+            Mouse.cursor_y_ptr = 0

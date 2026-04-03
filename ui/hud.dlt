@@ -1,0 +1,9 @@
+##############################
+# Kobic Engine — HUD
+# HUD component (overlay container)
+##############################
+
+@component
+struct HUDData:
+    visible: i32 = 1
+    _pad:    i32 = 0

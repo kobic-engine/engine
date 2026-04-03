@@ -1,0 +1,239 @@
+##############################
+# Kobic Engine — Mat4
+# 4x4 column-major matrix (f32)
+# Vulkan/OpenGL convention
+##############################
+
+struct Mat4:
+    m0:  f32 = 1.0
+    m1:  f32 = 0.0
+    m2:  f32 = 0.0
+    m3:  f32 = 0.0
+    m4:  f32 = 0.0
+    m5:  f32 = 1.0
+    m6:  f32 = 0.0
+    m7:  f32 = 0.0
+    m8:  f32 = 0.0
+    m9:  f32 = 0.0
+    m10: f32 = 1.0
+    m11: f32 = 0.0
+    m12: f32 = 0.0
+    m13: f32 = 0.0
+    m14: f32 = 0.0
+    m15: f32 = 1.0
+
+imple Mat4:
+
+    static fun IDENTITY() -> Mat4:
+        return Mat4(
+            m0=1.0, m1=0.0, m2=0.0, m3=0.0,
+            m4=0.0, m5=1.0, m6=0.0, m7=0.0,
+            m8=0.0, m9=0.0, m10=1.0, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )
+
+    static fun ZERO() -> Mat4:
+        return Mat4(
+            m0=0.0, m1=0.0, m2=0.0, m3=0.0,
+            m4=0.0, m5=0.0, m6=0.0, m7=0.0,
+            m8=0.0, m9=0.0, m10=0.0, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=0.0
+        )
+
+    static fun from_translation(tx: f32, ty: f32, tz: f32) -> Mat4:
+        return Mat4(
+            m0=1.0, m1=0.0, m2=0.0, m3=0.0,
+            m4=0.0, m5=1.0, m6=0.0, m7=0.0,
+            m8=0.0, m9=0.0, m10=1.0, m11=0.0,
+            m12=tx, m13=ty, m14=tz, m15=1.0
+        )
+
+    static fun from_scale(sx: f32, sy: f32, sz: f32) -> Mat4:
+        return Mat4(
+            m0=sx, m1=0.0, m2=0.0, m3=0.0,
+            m4=0.0, m5=sy, m6=0.0, m7=0.0,
+            m8=0.0, m9=0.0, m10=sz, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )
+
+    static fun from_rotation(rot_x: f32, rot_y: f32, rot_z: f32) -> Mat4:
+        pi: f32 = 3.14159265
+        rad_x: f32 = rot_x * pi / 180.0
+        rad_y: f32 = rot_y * pi / 180.0
+        rad_z: f32 = rot_z * pi / 180.0
+        cx: f32 = @cos(rad_x)
+        sx: f32 = @sin(rad_x)
+        cy: f32 = @cos(rad_y)
+        sy: f32 = @sin(rad_y)
+        cz: f32 = @cos(rad_z)
+        sz: f32 = @sin(rad_z)
+        return Mat4(
+            m0=cy * cz, m1=cy * sz, m2=0.0 - sy, m3=0.0,
+            m4=sx * sy * cz - cx * sz, m5=sx * sy * sz + cx * cz, m6=sx * cy, m7=0.0,
+            m8=cx * sy * cz + sx * sz, m9=cx * sy * sz - sx * cz, m10=cx * cy, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )
+
+    static fun from_rotation_x(deg: f32) -> Mat4:
+        pi: f32 = 3.14159265
+        r: f32 = deg * pi / 180.0
+        c: f32 = @cos(r)
+        s: f32 = @sin(r)
+        return Mat4(
+            m0=1.0, m1=0.0, m2=0.0, m3=0.0,
+            m4=0.0, m5=c, m6=s, m7=0.0,
+            m8=0.0, m9=0.0 - s, m10=c, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )
+
+    static fun from_rotation_y(deg: f32) -> Mat4:
+        pi: f32 = 3.14159265
+        r: f32 = deg * pi / 180.0
+        c: f32 = @cos(r)
+        s: f32 = @sin(r)
+        return Mat4(
+            m0=c, m1=0.0, m2=0.0 - s, m3=0.0,
+            m4=0.0, m5=1.0, m6=0.0, m7=0.0,
+            m8=s, m9=0.0, m10=c, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )
+
+    static fun from_rotation_z(deg: f32) -> Mat4:
+        pi: f32 = 3.14159265
+        r: f32 = deg * pi / 180.0
+        c: f32 = @cos(r)
+        s: f32 = @sin(r)
+        return Mat4(
+            m0=c, m1=s, m2=0.0, m3=0.0,
+            m4=0.0 - s, m5=c, m6=0.0, m7=0.0,
+            m8=0.0, m9=0.0, m10=1.0, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )
+
+    static fun compose(px: f32, py: f32, pz: f32, rx: f32, ry: f32, rz: f32, sx: f32, sy: f32, sz: f32) -> Mat4:
+        pi: f32 = 3.14159265
+        rad_x: f32 = rx * pi / 180.0
+        rad_y: f32 = ry * pi / 180.0
+        rad_z: f32 = rz * pi / 180.0
+        cx: f32 = @cos(rad_x)
+        snx: f32 = @sin(rad_x)
+        cy: f32 = @cos(rad_y)
+        sny: f32 = @sin(rad_y)
+        cz: f32 = @cos(rad_z)
+        snz: f32 = @sin(rad_z)
+        r00: f32 = cy * cz
+        r01: f32 = cy * snz
+        r02: f32 = 0.0 - sny
+        r10: f32 = snx * sny * cz - cx * snz
+        r11: f32 = snx * sny * snz + cx * cz
+        r12: f32 = snx * cy
+        r20: f32 = cx * sny * cz + snx * snz
+        r21: f32 = cx * sny * snz - snx * cz
+        r22: f32 = cx * cy
+        return Mat4(
+            m0=r00 * sx, m1=r01 * sx, m2=r02 * sx, m3=0.0,
+            m4=r10 * sy, m5=r11 * sy, m6=r12 * sy, m7=0.0,
+            m8=r20 * sz, m9=r21 * sz, m10=r22 * sz, m11=0.0,
+            m12=px, m13=py, m14=pz, m15=1.0
+        )
+
+    static fun perspective(fov_deg: f32, aspect: f32, near: f32, far: f32) -> Mat4:
+        pi: f32 = 3.14159265
+        fov_rad: f32 = fov_deg * pi / 180.0
+        half_fov: f32 = fov_rad / 2.0
+        tan_half: f32 = @sin(half_fov) / @cos(half_fov)
+        f: f32 = 1.0 / tan_half
+        range_inv: f32 = 1.0 / (near - far)
+        return Mat4(
+            m0=f / aspect, m1=0.0, m2=0.0, m3=0.0,
+            m4=0.0, m5=0.0 - f, m6=0.0, m7=0.0,
+            m8=0.0, m9=0.0, m10=far * range_inv, m11=0.0 - 1.0,
+            m12=0.0, m13=0.0, m14=near * far * range_inv, m15=0.0
+        )
+
+    static fun look_at(eye_x: f32, eye_y: f32, eye_z: f32, at_x: f32, at_y: f32, at_z: f32, up_x: f32, up_y: f32, up_z: f32) -> Mat4:
+        fx: f32 = at_x - eye_x
+        fy: f32 = at_y - eye_y
+        fz: f32 = at_z - eye_z
+        flen: f32 = @sqrt(fx * fx + fy * fy + fz * fz)
+        fx = fx / flen
+        fy = fy / flen
+        fz = fz / flen
+        sx: f32 = fy * up_z - fz * up_y
+        sy: f32 = fz * up_x - fx * up_z
+        sz: f32 = fx * up_y - fy * up_x
+        slen: f32 = @sqrt(sx * sx + sy * sy + sz * sz)
+        sx = sx / slen
+        sy = sy / slen
+        sz = sz / slen
+        ux: f32 = sy * fz - sz * fy
+        uy: f32 = sz * fx - sx * fz
+        uz: f32 = sx * fy - sy * fx
+        return Mat4(
+            m0=sx, m1=ux, m2=0.0 - fx, m3=0.0,
+            m4=sy, m5=uy, m6=0.0 - fy, m7=0.0,
+            m8=sz, m9=uz, m10=0.0 - fz, m11=0.0,
+            m12=0.0 - (sx * eye_x + sy * eye_y + sz * eye_z),
+            m13=0.0 - (ux * eye_x + uy * eye_y + uz * eye_z),
+            m14=fx * eye_x + fy * eye_y + fz * eye_z,
+            m15=1.0
+        )
+
+    fun multiply(self, o: Mat4) -> Mat4:
+        n0:  f32 = self.m0 * o.m0 + self.m4 * o.m1 + self.m8 * o.m2 + self.m12 * o.m3
+        n1:  f32 = self.m1 * o.m0 + self.m5 * o.m1 + self.m9 * o.m2 + self.m13 * o.m3
+        n2:  f32 = self.m2 * o.m0 + self.m6 * o.m1 + self.m10 * o.m2 + self.m14 * o.m3
+        n3:  f32 = self.m3 * o.m0 + self.m7 * o.m1 + self.m11 * o.m2 + self.m15 * o.m3
+        n4:  f32 = self.m0 * o.m4 + self.m4 * o.m5 + self.m8 * o.m6 + self.m12 * o.m7
+        n5:  f32 = self.m1 * o.m4 + self.m5 * o.m5 + self.m9 * o.m6 + self.m13 * o.m7
+        n6:  f32 = self.m2 * o.m4 + self.m6 * o.m5 + self.m10 * o.m6 + self.m14 * o.m7
+        n7:  f32 = self.m3 * o.m4 + self.m7 * o.m5 + self.m11 * o.m6 + self.m15 * o.m7
+        n8:  f32 = self.m0 * o.m8 + self.m4 * o.m9 + self.m8 * o.m10 + self.m12 * o.m11
+        n9:  f32 = self.m1 * o.m8 + self.m5 * o.m9 + self.m9 * o.m10 + self.m13 * o.m11
+        n10: f32 = self.m2 * o.m8 + self.m6 * o.m9 + self.m10 * o.m10 + self.m14 * o.m11
+        n11: f32 = self.m3 * o.m8 + self.m7 * o.m9 + self.m11 * o.m10 + self.m15 * o.m11
+        n12: f32 = self.m0 * o.m12 + self.m4 * o.m13 + self.m8 * o.m14 + self.m12 * o.m15
+        n13: f32 = self.m1 * o.m12 + self.m5 * o.m13 + self.m9 * o.m14 + self.m13 * o.m15
+        n14: f32 = self.m2 * o.m12 + self.m6 * o.m13 + self.m10 * o.m14 + self.m14 * o.m15
+        n15: f32 = self.m3 * o.m12 + self.m7 * o.m13 + self.m11 * o.m14 + self.m15 * o.m15
+        return Mat4(
+            m0=n0, m1=n1, m2=n2, m3=n3,
+            m4=n4, m5=n5, m6=n6, m7=n7,
+            m8=n8, m9=n9, m10=n10, m11=n11,
+            m12=n12, m13=n13, m14=n14, m15=n15
+        )
+
+    fun transpose(self) -> Mat4:
+        return Mat4(
+            m0=self.m0, m1=self.m4, m2=self.m8, m3=self.m12,
+            m4=self.m1, m5=self.m5, m6=self.m9, m7=self.m13,
+            m8=self.m2, m9=self.m6, m10=self.m10, m11=self.m14,
+            m12=self.m3, m13=self.m7, m14=self.m11, m15=self.m15
+        )
+
+    fun get_translation_x(self) -> f32:
+        return self.m12
+
+    fun get_translation_y(self) -> f32:
+        return self.m13
+
+    fun get_translation_z(self) -> f32:
+        return self.m14
+
+    fun write_to_ptr(self, ptr: i64) -> void:
+        Memory.write_f32(ptr + 0, self.m0)
+        Memory.write_f32(ptr + 4, self.m1)
+        Memory.write_f32(ptr + 8, self.m2)
+        Memory.write_f32(ptr + 12, self.m3)
+        Memory.write_f32(ptr + 16, self.m4)
+        Memory.write_f32(ptr + 20, self.m5)
+        Memory.write_f32(ptr + 24, self.m6)
+        Memory.write_f32(ptr + 28, self.m7)
+        Memory.write_f32(ptr + 32, self.m8)
+        Memory.write_f32(ptr + 36, self.m9)
+        Memory.write_f32(ptr + 40, self.m10)
+        Memory.write_f32(ptr + 44, self.m11)
+        Memory.write_f32(ptr + 48, self.m12)
+        Memory.write_f32(ptr + 52, self.m13)
+        Memory.write_f32(ptr + 56, self.m14)
+        Memory.write_f32(ptr + 60, self.m15)

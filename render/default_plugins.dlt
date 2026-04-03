@@ -1,0 +1,24 @@
+##############################
+# Kobic Engine — DefaultPlugins
+# Registers all built-in ECS component types
+##############################
+
+# Registers all engine component types into a World instance
+# Must be called before any entities are spawned
+fun register_default_components(w: World) -> void:
+    # Transform: pos(3f), rot(3f), scale(3f) = 36 bytes
+    w.register_component("Transform", 36)
+    # NodeInfo: name_ptr(8), parent_eid(4), child_count(4) = 16 bytes
+    w.register_component("NodeInfo", 16)
+    # CameraData: fov(4), near(4), far(4), pitch(4), yaw(4) = 20 bytes
+    w.register_component("CameraData", 20)
+    # LightData: type(4), r(4), g(4), b(4), intensity(4) = 20 bytes
+    w.register_component("LightData", 20)
+    # MeshData: vertices_ptr(8), vertex_count(4), vb_index(4) = 16 bytes
+    w.register_component("MeshData", 16)
+    # EmissionData: r(4), g(4), b(4), intensity(4) = 16 bytes
+    w.register_component("EmissionData", 16)
+    # RigidBodyData: mass(4), vel_x(4), vel_y(4), vel_z(4), is_grounded(4) = 20 bytes
+    w.register_component("RigidBodyData", 20)
+    # CollisionData: shape_type(4), hx(4), hy(4), hz(4), radius(4) = 20 bytes
+    w.register_component("CollisionData", 20)

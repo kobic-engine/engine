@@ -1,0 +1,10 @@
+##############################
+# Kobic Engine — ECS Annotations
+# Compile-time markers for ECS patterns
+# @component on structs, @system on functions, etc.
+##############################
+
+annot component = Annot(target = struct)
+annot resource = Annot(target = struct)
+annot system = Annot(target = fun, composes = [hot])
+annot node = Annot(target = struct)

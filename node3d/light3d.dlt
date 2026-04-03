@@ -1,0 +1,48 @@
+##############################
+# Kobic Engine — Light3D
+# LightData component
+##############################
+
+@component
+struct LightData:
+    light_type: i32 = 0
+    color_r:    f32 = 1.0
+    color_g:    f32 = 1.0
+    color_b:    f32 = 1.0
+    intensity:  f32 = 1.0
+
+imm LIGHT_DIRECTIONAL: i32 = 0
+imm LIGHT_POINT: i32 = 1
+imm LIGHT_SPOT: i32 = 2
+
+imple LightData:
+
+    static fun spawn_directional(w: World, name: str) -> i32:
+        eid: i32 = Node3D.spawn(w, name)
+        if eid < 0:
+            return eid
+        l_data: i64 = Memory.malloc_zeroed(20)
+        if l_data != 0:
+            Memory.write_i32(l_data + 0, 0)
+            Memory.write_f32(l_data + 4, 1.0)
+            Memory.write_f32(l_data + 8, 1.0)
+            Memory.write_f32(l_data + 12, 1.0)
+            Memory.write_f32(l_data + 16, 1.0)
+            w.add_component(eid, "LightData", l_data)
+            Memory.free(l_data)
+        return eid
+
+    static fun spawn_point(w: World, name: str) -> i32:
+        eid: i32 = Node3D.spawn(w, name)
+        if eid < 0:
+            return eid
+        l_data: i64 = Memory.malloc_zeroed(20)
+        if l_data != 0:
+            Memory.write_i32(l_data + 0, 1)
+            Memory.write_f32(l_data + 4, 1.0)
+            Memory.write_f32(l_data + 8, 1.0)
+            Memory.write_f32(l_data + 12, 1.0)
+            Memory.write_f32(l_data + 16, 1.0)
+            w.add_component(eid, "LightData", l_data)
+            Memory.free(l_data)
+        return eid

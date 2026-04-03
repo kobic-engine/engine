@@ -1,0 +1,20 @@
+##############################
+# Kobic Engine — RenderConfig
+# Resource struct for render settings
+##############################
+
+@resource
+struct RenderConfig:
+    title:       str = "Kobic Engine"
+    width:       i32 = 1280
+    height:      i32 = 720
+    vsync:       i32 = 1
+    fullscreen:  i32 = 0
+    fov:         f32 = 60.0
+    near_plane:  f32 = 0.1
+    far_plane:   f32 = 1000.0
+    clear_r:     f32 = 0.1
+    clear_g:     f32 = 0.1
+    clear_b:     f32 = 0.15
+    clear_a:     f32 = 1.0
+    max_fps:     i32 = 0

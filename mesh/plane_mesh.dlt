@@ -1,0 +1,63 @@
+##############################
+# Kobic Engine — PlaneMesh
+# 6 vertices (2 tri) = 144 bytes
+# XZ plane at y=0, facing +Y
+##############################
+
+struct PlaneMesh:
+    vertices:     i64 = 0
+    vertex_count: i32 = 0
+    is_generated: i32 = 0
+    size_x:       f32 = 1.0
+    size_z:       f32 = 1.0
+
+imple PlaneMesh:
+
+    static fun create(sx: f32, sz: f32) -> PlaneMesh:
+        m: PlaneMesh = PlaneMesh(vertices=0, vertex_count=0, is_generated=0, size_x=sx, size_z=sz)
+        m.generate()
+        return m
+
+    fun generate(self) -> void:
+        if self.vertices != 0:
+            Memory.free(self.vertices)
+        self.vertices = Memory.malloc_zeroed(144)
+        if self.vertices == 0:
+            self.is_generated = 0
+            return
+        self.vertex_count = 6
+        hx: f32 = self.size_x / 2.0
+        hz: f32 = self.size_z / 2.0
+        off: i64 = 0
+        off = self._wv(off, 0.0 - hx, 0.0, 0.0 - hz, 0.5, 0.5, 0.5)
+        off = self._wv(off, hx, 0.0, 0.0 - hz, 0.5, 0.5, 0.5)
+        off = self._wv(off, hx, 0.0, hz, 0.5, 0.5, 0.5)
+        off = self._wv(off, hx, 0.0, hz, 0.5, 0.5, 0.5)
+        off = self._wv(off, 0.0 - hx, 0.0, hz, 0.5, 0.5, 0.5)
+        off = self._wv(off, 0.0 - hx, 0.0, 0.0 - hz, 0.5, 0.5, 0.5)
+        self.is_generated = 1
+
+    fun _wv(self, off: i64, px: f32, py: f32, pz: f32, cr: f32, cg: f32, cb: f32) -> i64:
+        Memory.write_f32(self.vertices + off, px)
+        Memory.write_f32(self.vertices + off + 4, py)
+        Memory.write_f32(self.vertices + off + 8, pz)
+        Memory.write_f32(self.vertices + off + 12, cr)
+        Memory.write_f32(self.vertices + off + 16, cg)
+        Memory.write_f32(self.vertices + off + 20, cb)
+        return off + 24
+
+    fun get_vertices(self) -> i64:
+        return self.vertices
+
+    fun get_vertex_count(self) -> i32:
+        return self.vertex_count
+
+    fun get_data_size(self) -> i32:
+        return self.vertex_count * 24
+
+    fun free(self) -> void:
+        if self.vertices != 0:
+            Memory.free(self.vertices)
+            self.vertices = 0
+        self.vertex_count = 0
+        self.is_generated = 0

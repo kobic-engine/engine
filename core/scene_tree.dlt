@@ -1,0 +1,51 @@
+##############################
+# Kobic Engine — SceneTree
+# High-level spawn helpers for common node arrangements
+##############################
+
+struct SceneTree:
+    world:     World = World()
+    root_eid:  i32 = -1
+
+imple SceneTree:
+
+    fun init(self, w: World) -> void:
+        self.world = w
+        self.root_eid = Node3D.spawn(w, "Root")
+
+    fun spawn_node3d(self, name: str) -> i32:
+        w: World = self.world
+        return Node3D.spawn(w, name)
+
+    fun spawn_camera(self, name: str, fov: f32) -> i32:
+        w: World = self.world
+        return CameraData.spawn(w, name, fov)
+
+    fun spawn_directional_light(self, name: str) -> i32:
+        w: World = self.world
+        return LightData.spawn_directional(w, name)
+
+    fun spawn_point_light(self, name: str) -> i32:
+        w: World = self.world
+        return LightData.spawn_point(w, name)
+
+    fun spawn_cube(self, name: str, size: f32) -> i32:
+        w: World = self.world
+        return MeshData.spawn_cube(w, name, size)
+
+    fun spawn_plane(self, name: str, sx: f32, sz: f32) -> i32:
+        w: World = self.world
+        return MeshData.spawn_plane(w, name, sx, sz)
+
+    fun set_parent(self, child_eid: i32, parent_eid: i32) -> void:
+        w: World = self.world
+        ni: i64 = w.get_component(child_eid, "NodeInfo")
+        if ni != 0:
+            Memory.write_i32(ni + 8, parent_eid)
+        pni: i64 = w.get_component(parent_eid, "NodeInfo")
+        if pni != 0:
+            cc: i32 = Memory.read_i32(pni + 12)
+            Memory.write_i32(pni + 12, cc + 1)
+
+    fun get_root(self) -> i32:
+        return self.root_eid

@@ -1,0 +1,42 @@
+##############################
+# Kobic Engine — PhysicsWorld
+# Gravity, velocity integration, basic ground collision
+##############################
+
+imm GRAVITY: f32 = -9.81
+
+@system
+fun physics_step(w: World, dt: f32) -> void:
+    q: Query = w.query2("RigidBodyData", "Transform")
+    i: i32 = 0
+    while i < q.result_count:
+        eid: i32 = q.entity_at(i)
+        rb: i64 = w.get_component(eid, "RigidBodyData")
+        tr: i64 = w.get_component(eid, "Transform")
+        if rb != 0:
+            if tr != 0:
+                # Apply gravity
+                vy: f32 = Memory.read_f32(rb + 8)
+                vy = vy + GRAVITY * dt
+                Memory.write_f32(rb + 8, vy)
+                # Integrate velocity
+                px: f32 = Memory.read_f32(tr + 0)
+                py: f32 = Memory.read_f32(tr + 4)
+                pz: f32 = Memory.read_f32(tr + 8)
+                vx: f32 = Memory.read_f32(rb + 4)
+                vz: f32 = Memory.read_f32(rb + 12)
+                px = px + vx * dt
+                py = py + vy * dt
+                pz = pz + vz * dt
+                # Ground collision (y=0 plane)
+                grounded: i32 = 0
+                if py < 0.0:
+                    py = 0.0
+                    Memory.write_f32(rb + 8, 0.0)
+                    grounded = 1
+                Memory.write_f32(tr + 0, px)
+                Memory.write_f32(tr + 4, py)
+                Memory.write_f32(tr + 8, pz)
+                Memory.write_i32(rb + 16, grounded)
+        i = i + 1
+    q.cleanup()

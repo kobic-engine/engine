@@ -1,0 +1,262 @@
+##############################
+# Kobic Engine — VulkanContext
+# VkInstance, physical device, logical device, queues
+# Adapted from qubic/core/window.dlt
+##############################
+
+struct VulkanContext:
+    vk_instance:        i64 = 0
+    vk_physical_device: i64 = 0
+    vk_device:          i64 = 0
+    vk_graphics_queue:  i64 = 0
+    vk_present_queue:   i64 = 0
+    vk_surface:         i64 = 0
+    graphics_family:    i32 = -1
+    present_family:     i32 = -1
+    initialized:        i32 = 0
+
+imple VulkanContext:
+
+    fun init(self, window_handle: i64) -> i32:
+        # Step 1: Get required GLFW extensions
+        ext_count_ptr: i64 = Memory.malloc_zeroed(4)
+        if ext_count_ptr == 0:
+            return 0
+        Memory.write_i32(ext_count_ptr, 0)
+        extensions: i64 = glfwGetRequiredInstanceExtensions(ext_count_ptr)
+        ext_count: i32 = Memory.read_i32(ext_count_ptr)
+        Memory.free(ext_count_ptr)
+        if extensions == 0:
+            return 0
+
+        # Step 2: VkApplicationInfo (48 bytes)
+        app_info: i64 = Memory.malloc_zeroed(48)
+        if app_info == 0:
+            return 0
+        Memory.write_i32(app_info, 0)
+        Memory.write_ptr(app_info + 8, 0)
+        Memory.write_ptr(app_info + 16, 0)
+        Memory.write_i32(app_info + 24, 1)
+        Memory.write_ptr(app_info + 32, 0)
+        Memory.write_i32(app_info + 40, 4194304)
+        Memory.write_i32(app_info + 44, 4194304)
+
+        # Step 3: VkInstanceCreateInfo (64 bytes)
+        create_info: i64 = Memory.malloc_zeroed(64)
+        if create_info == 0:
+            Memory.free(app_info)
+            return 0
+        Memory.write_i32(create_info, 1)
+        Memory.write_ptr(create_info + 8, 0)
+        Memory.write_i32(create_info + 16, 0)
+        Memory.write_ptr(create_info + 24, app_info)
+        Memory.write_i32(create_info + 32, 0)
+        Memory.write_ptr(create_info + 40, 0)
+        Memory.write_i32(create_info + 48, ext_count)
+        Memory.write_ptr(create_info + 56, extensions)
+
+        instance_ptr: i64 = Memory.malloc_zeroed(8)
+        if instance_ptr == 0:
+            Memory.free(app_info)
+            Memory.free(create_info)
+            return 0
+        result: i32 = vkCreateInstance(create_info, 0, instance_ptr)
+        self.vk_instance = Memory.read_ptr(instance_ptr)
+        Memory.free(instance_ptr)
+        Memory.free(app_info)
+        Memory.free(create_info)
+        if result != 0:
+            print("  vkCreateInstance failed")
+            return 0
+        print("  VkInstance created")
+
+        # Step 4: Create surface
+        surface_ptr: i64 = Memory.malloc_zeroed(8)
+        if surface_ptr == 0:
+            return 0
+
+        # Step 5: Pick physical device
+        dev_count_ptr: i64 = Memory.malloc_zeroed(4)
+        if dev_count_ptr == 0:
+            Memory.free(surface_ptr)
+            return 0
+        Memory.write_i32(dev_count_ptr, 0)
+        vkEnumeratePhysicalDevices(self.vk_instance, dev_count_ptr, 0)
+        dev_count: i32 = Memory.read_i32(dev_count_ptr)
+        if dev_count == 0:
+            print("  No physical devices found")
+            Memory.free(dev_count_ptr)
+            Memory.free(surface_ptr)
+            return 0
+        devices: i64 = Memory.malloc_zeroed(dev_count * 8)
+        if devices == 0:
+            Memory.free(dev_count_ptr)
+            Memory.free(surface_ptr)
+            return 0
+        vkEnumeratePhysicalDevices(self.vk_instance, dev_count_ptr, devices)
+        Memory.free(dev_count_ptr)
+        self.vk_physical_device = Memory.read_ptr(devices)
+        Memory.free(devices)
+
+        # Step 6: Create surface via GLFW
+        surf_result: i32 = glfwCreateWindowSurface(self.vk_instance, window_handle, 0, surface_ptr)
+        if surf_result != 0:
+            print("  glfwCreateWindowSurface failed")
+            Memory.free(surface_ptr)
+            return 0
+        print("  Surface created")
+
+        # Step 7: Find queue families
+        qf_count_ptr: i64 = Memory.malloc_zeroed(4)
+        if qf_count_ptr == 0:
+            Memory.free(surface_ptr)
+            return 0
+        vkGetPhysicalDeviceQueueFamilyProperties(self.vk_physical_device, qf_count_ptr, 0)
+        qf_count: i32 = Memory.read_i32(qf_count_ptr)
+        if qf_count == 0:
+            Memory.free(qf_count_ptr)
+            Memory.free(surface_ptr)
+            return 0
+        qf_size: i32 = qf_count * 24
+        qf_props: i64 = Memory.malloc_zeroed(qf_size)
+        if qf_props == 0:
+            Memory.free(qf_count_ptr)
+            Memory.free(surface_ptr)
+            return 0
+        vkGetPhysicalDeviceQueueFamilyProperties(self.vk_physical_device, qf_count_ptr, qf_props)
+        Memory.free(qf_count_ptr)
+
+        vk_surface: i64 = Memory.read_ptr(surface_ptr)
+        Memory.free(surface_ptr)
+        self.vk_surface = vk_surface
+
+        present_ptr: i64 = Memory.malloc_zeroed(4)
+        if present_ptr == 0:
+            Memory.free(qf_props)
+            return 0
+
+        qi: i32 = 0
+        while qi < qf_count:
+            flags: i32 = Memory.read_i32(qf_props + qi * 24)
+            if (flags / 1) - (flags / 2) * 2 == 1:
+                self.graphics_family = qi
+            vkGetPhysicalDeviceSurfaceSupportKHR(self.vk_physical_device, qi, vk_surface, present_ptr)
+            support: i32 = Memory.read_i32(present_ptr)
+            if support == 1:
+                self.present_family = qi
+            qi = qi + 1
+        Memory.free(present_ptr)
+        Memory.free(qf_props)
+
+        if self.graphics_family < 0:
+            print("  No graphics queue family found")
+            return 0
+        if self.present_family < 0:
+            print("  No present queue family found")
+            return 0
+
+        # Step 8: Create logical device
+        priority_ptr: i64 = Memory.malloc_zeroed(4)
+        if priority_ptr == 0:
+            return 0
+        Memory.write_f32(priority_ptr, 1.0)
+
+        # VkDeviceQueueCreateInfo — one or two depending on queue families
+        # Each VkDeviceQueueCreateInfo is 40 bytes
+        queue_count: i32 = 1
+        if self.graphics_family != self.present_family:
+            queue_count = 2
+
+        queue_ci: i64 = Memory.malloc_zeroed(40 * queue_count)
+        if queue_ci == 0:
+            Memory.free(priority_ptr)
+            return 0
+        # Graphics queue create info
+        Memory.write_i32(queue_ci, 2)
+        Memory.write_ptr(queue_ci + 8, 0)
+        Memory.write_i32(queue_ci + 16, 0)
+        Memory.write_i32(queue_ci + 20, self.graphics_family)
+        Memory.write_i32(queue_ci + 24, 1)
+        Memory.write_ptr(queue_ci + 32, priority_ptr)
+
+        # Present queue create info (only if different family)
+        if self.graphics_family != self.present_family:
+            Memory.write_i32(queue_ci + 40, 2)
+            Memory.write_ptr(queue_ci + 48, 0)
+            Memory.write_i32(queue_ci + 56, 0)
+            Memory.write_i32(queue_ci + 60, self.present_family)
+            Memory.write_i32(queue_ci + 64, 1)
+            Memory.write_ptr(queue_ci + 72, priority_ptr)
+
+        swap_ext: i64 = Memory.malloc_zeroed(32)
+        if swap_ext == 0:
+            Memory.free(priority_ptr)
+            Memory.free(queue_ci)
+            return 0
+        swap_ext_name: str = "VK_KHR_swapchain"
+        Memory.write_ptr(swap_ext, swap_ext_name)
+
+        # VkDeviceCreateInfo (72 bytes)
+        dev_ci: i64 = Memory.malloc_zeroed(72)
+        if dev_ci == 0:
+            Memory.free(priority_ptr)
+            Memory.free(queue_ci)
+            Memory.free(swap_ext)
+            return 0
+        Memory.write_i32(dev_ci, 3)
+        Memory.write_ptr(dev_ci + 8, 0)
+        Memory.write_i32(dev_ci + 16, 0)
+        Memory.write_i32(dev_ci + 20, queue_count)
+        Memory.write_ptr(dev_ci + 24, queue_ci)
+        Memory.write_i32(dev_ci + 32, 0)
+        Memory.write_ptr(dev_ci + 40, 0)
+        Memory.write_i32(dev_ci + 48, 1)
+        Memory.write_ptr(dev_ci + 56, swap_ext)
+        Memory.write_ptr(dev_ci + 64, 0)
+
+        dev_ptr: i64 = Memory.malloc_zeroed(8)
+        if dev_ptr == 0:
+            Memory.free(priority_ptr)
+            Memory.free(queue_ci)
+            Memory.free(swap_ext)
+            Memory.free(dev_ci)
+            return 0
+        dev_result: i32 = vkCreateDevice(self.vk_physical_device, dev_ci, 0, dev_ptr)
+        self.vk_device = Memory.read_ptr(dev_ptr)
+        Memory.free(dev_ptr)
+        Memory.free(priority_ptr)
+        Memory.free(queue_ci)
+        Memory.free(swap_ext)
+        Memory.free(dev_ci)
+        if dev_result != 0:
+            print("  vkCreateDevice failed")
+            return 0
+        print("  Logical device created")
+
+        # Step 9: Get queues
+        gq_ptr: i64 = Memory.malloc_zeroed(8)
+        pq_ptr: i64 = Memory.malloc_zeroed(8)
+        if gq_ptr != 0:
+            vkGetDeviceQueue(self.vk_device, self.graphics_family, 0, gq_ptr)
+            self.vk_graphics_queue = Memory.read_ptr(gq_ptr)
+            Memory.free(gq_ptr)
+        if pq_ptr != 0:
+            vkGetDeviceQueue(self.vk_device, self.present_family, 0, pq_ptr)
+            self.vk_present_queue = Memory.read_ptr(pq_ptr)
+            Memory.free(pq_ptr)
+
+        self.initialized = 1
+        return 1
+
+    fun cleanup(self) -> void:
+        if self.vk_device != 0:
+            vkDeviceWaitIdle(self.vk_device)
+            vkDestroyDevice(self.vk_device, 0)
+            self.vk_device = 0
+        if self.vk_surface != 0:
+            vkDestroySurfaceKHR(self.vk_instance, self.vk_surface, 0)
+            self.vk_surface = 0
+        if self.vk_instance != 0:
+            vkDestroyInstance(self.vk_instance, 0)
+            self.vk_instance = 0
+        self.initialized = 0

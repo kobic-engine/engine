@@ -1,0 +1,100 @@
+##############################
+# Kobic Engine — Node3D
+# Transform + NodeInfo components
+# Builder helpers for spawning 3D entities
+##############################
+
+@component
+struct Transform:
+    pos_x:   f32 = 0.0
+    pos_y:   f32 = 0.0
+    pos_z:   f32 = 0.0
+    rot_x:   f32 = 0.0
+    rot_y:   f32 = 0.0
+    rot_z:   f32 = 0.0
+    scale_x: f32 = 1.0
+    scale_y: f32 = 1.0
+    scale_z: f32 = 1.0
+
+@component
+struct NodeInfo:
+    name_ptr:    i64 = 0
+    parent_eid:  i32 = -1
+    child_count: i32 = 0
+
+# Node3D builder — spawns entity with Transform + NodeInfo
+struct Node3D:
+    entity_id: i32 = -1
+    _dummy:    i32 = 0
+
+imple Node3D:
+
+    static fun spawn(w: World, name: str) -> i32:
+        eid: i32 = w.spawn()
+        if eid < 0:
+            return eid
+        # Add Transform (36 bytes)
+        t_data: i64 = Memory.malloc_zeroed(36)
+        if t_data != 0:
+            # pos = 0,0,0
+            Memory.write_f32(t_data + 0, 0.0)
+            Memory.write_f32(t_data + 4, 0.0)
+            Memory.write_f32(t_data + 8, 0.0)
+            # rot = 0,0,0
+            Memory.write_f32(t_data + 12, 0.0)
+            Memory.write_f32(t_data + 16, 0.0)
+            Memory.write_f32(t_data + 20, 0.0)
+            # scale = 1,1,1
+            Memory.write_f32(t_data + 24, 1.0)
+            Memory.write_f32(t_data + 28, 1.0)
+            Memory.write_f32(t_data + 32, 1.0)
+            w.add_component(eid, "Transform", t_data)
+            Memory.free(t_data)
+        # Add NodeInfo (16 bytes)
+        n_data: i64 = Memory.malloc_zeroed(16)
+        if n_data != 0:
+            Memory.write_ptr(n_data + 0, name)
+            Memory.write_i32(n_data + 8, 0 - 1)
+            Memory.write_i32(n_data + 12, 0)
+            w.add_component(eid, "NodeInfo", n_data)
+            Memory.free(n_data)
+        return eid
+
+    static fun set_pos(w: World, eid: i32, x: f32, y: f32, z: f32) -> void:
+        t: i64 = w.get_component(eid, "Transform")
+        if t != 0:
+            Memory.write_f32(t + 0, x)
+            Memory.write_f32(t + 4, y)
+            Memory.write_f32(t + 8, z)
+
+    static fun set_rot(w: World, eid: i32, x: f32, y: f32, z: f32) -> void:
+        t: i64 = w.get_component(eid, "Transform")
+        if t != 0:
+            Memory.write_f32(t + 12, x)
+            Memory.write_f32(t + 16, y)
+            Memory.write_f32(t + 20, z)
+
+    static fun set_scale(w: World, eid: i32, x: f32, y: f32, z: f32) -> void:
+        t: i64 = w.get_component(eid, "Transform")
+        if t != 0:
+            Memory.write_f32(t + 24, x)
+            Memory.write_f32(t + 28, y)
+            Memory.write_f32(t + 32, z)
+
+    static fun get_pos_x(w: World, eid: i32) -> f32:
+        t: i64 = w.get_component(eid, "Transform")
+        if t == 0:
+            return 0.0
+        return Memory.read_f32(t)
+
+    static fun get_pos_y(w: World, eid: i32) -> f32:
+        t: i64 = w.get_component(eid, "Transform")
+        if t == 0:
+            return 0.0
+        return Memory.read_f32(t + 4)
+
+    static fun get_pos_z(w: World, eid: i32) -> f32:
+        t: i64 = w.get_component(eid, "Transform")
+        if t == 0:
+            return 0.0
+        return Memory.read_f32(t + 8)

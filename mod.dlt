@@ -1,0 +1,74 @@
+##############################
+# Kobic Engine — Module Manifest
+##############################
+module kobic
+
+requires glfw
+requires vulkan
+
+# ECS Core
+load kobic/ecs/annotations
+load kobic/ecs/component_storage
+load kobic/ecs/query
+load kobic/ecs/world
+
+# Math
+load kobic/math/math_utils
+load kobic/math/vec2
+load kobic/math/vec3
+load kobic/math/mat4
+load kobic/math/quat
+load kobic/math/color
+
+# Mesh
+load kobic/mesh/mesh
+load kobic/mesh/cube_mesh
+load kobic/mesh/plane_mesh
+load kobic/mesh/sphere_mesh
+
+# Node3D
+load kobic/node3d/node3d
+load kobic/node3d/camera3d
+load kobic/node3d/light3d
+load kobic/node3d/mesh_node3d
+
+# Physics
+load kobic/physics/shapes
+load kobic/physics/rigid_body3d
+load kobic/physics/collision_shape3d
+load kobic/physics/physics_world
+
+# Scene
+load kobic/core/scene_tree
+
+# Render
+load kobic/render/render_config
+load kobic/shaders/embedded_shaders
+load kobic/render/vulkan_context
+load kobic/render/swapchain
+load kobic/render/render_pass
+load kobic/render/renderer
+load kobic/render/default_plugins
+
+# Input
+load kobic/input/key_code
+load kobic/input/input
+load kobic/input/mouse
+
+# App
+load kobic/core/app
+load kobic/core/kobic
+
+# UI
+load kobic/ui/hud
+load kobic/ui/label
+load kobic/ui/crosshair
+
+# Core
+load kobic/core/time
+
+# Exports
+export Vec2, Vec3, Mat4, Quat, Color
+export World, Query, ComponentStorage
+export DeltaTime, FixedTime
+export clamp, lerp, deg2rad, rad2deg

@@ -1,0 +1,87 @@
+##############################
+# Kobic Engine — Vec3
+# 3-component f32 vector
+##############################
+
+struct Vec3:
+    x: f32 = 0.0
+    y: f32 = 0.0
+    z: f32 = 0.0
+
+imple Vec3:
+
+    static fun ZERO() -> Vec3:
+        return Vec3(0.0, 0.0, 0.0)
+
+    static fun ONE() -> Vec3:
+        return Vec3(1.0, 1.0, 1.0)
+
+    static fun UP() -> Vec3:
+        return Vec3(0.0, 1.0, 0.0)
+
+    static fun DOWN() -> Vec3:
+        return Vec3(0.0, 0.0 - 1.0, 0.0)
+
+    static fun FORWARD() -> Vec3:
+        return Vec3(0.0, 0.0, 0.0 - 1.0)
+
+    static fun BACK() -> Vec3:
+        return Vec3(0.0, 0.0, 1.0)
+
+    static fun RIGHT() -> Vec3:
+        return Vec3(1.0, 0.0, 0.0)
+
+    static fun LEFT() -> Vec3:
+        return Vec3(0.0 - 1.0, 0.0, 0.0)
+
+    fun add(self, other: Vec3) -> Vec3:
+        return Vec3(self.x + other.x, self.y + other.y, self.z + other.z)
+
+    fun sub(self, other: Vec3) -> Vec3:
+        return Vec3(self.x - other.x, self.y - other.y, self.z - other.z)
+
+    fun mul(self, s: f32) -> Vec3:
+        return Vec3(self.x * s, self.y * s, self.z * s)
+
+    fun div(self, s: f32) -> Vec3:
+        return Vec3(self.x / s, self.y / s, self.z / s)
+
+    fun dot(self, other: Vec3) -> f32:
+        return self.x * other.x + self.y * other.y + self.z * other.z
+
+    fun cross(self, other: Vec3) -> Vec3:
+        cx: f32 = self.y * other.z - self.z * other.y
+        cy: f32 = self.z * other.x - self.x * other.z
+        cz: f32 = self.x * other.y - self.y * other.x
+        return Vec3(cx, cy, cz)
+
+    fun length_squared(self) -> f32:
+        return self.x * self.x + self.y * self.y + self.z * self.z
+
+    fun length(self) -> f32:
+        return @sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
+
+    fun normalized(self) -> Vec3:
+        len: f32 = self.length()
+        if len < 0.00001:
+            return Vec3(0.0, 0.0, 0.0)
+        return Vec3(self.x / len, self.y / len, self.z / len)
+
+    fun negate(self) -> Vec3:
+        return Vec3(0.0 - self.x, 0.0 - self.y, 0.0 - self.z)
+
+    fun lerp(self, other: Vec3, t: f32) -> Vec3:
+        return Vec3(
+            self.x + (other.x - self.x) * t,
+            self.y + (other.y - self.y) * t,
+            self.z + (other.z - self.z) * t
+        )
+
+    fun distance_to(self, other: Vec3) -> f32:
+        dx: f32 = other.x - self.x
+        dy: f32 = other.y - self.y
+        dz: f32 = other.z - self.z
+        return @sqrt(dx * dx + dy * dy + dz * dz)
+
+    fun mul_vec(self, other: Vec3) -> Vec3:
+        return Vec3(self.x * other.x, self.y * other.y, self.z * other.z)

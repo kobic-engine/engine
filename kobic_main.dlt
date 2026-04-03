@@ -1,0 +1,11 @@
+##############################
+# Kobic Engine — Main Hub
+# Re-exports all public types and functions
+#
+# Usage: import kobic
+#   Then access: Vec3, Mat4, World, App, Input, etc.
+##############################
+
+# This file is the entry point when `import kobic` is used.
+# All exports are defined in mod.dlt.
+# No code needed here — mod.dlt handles load order and exports.

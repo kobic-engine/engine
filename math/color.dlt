@@ -1,0 +1,74 @@
+##############################
+# Kobic Engine — Color
+# RGBA color (f32, 0.0–1.0)
+##############################
+
+struct Color:
+    r: f32 = 1.0
+    g: f32 = 1.0
+    b: f32 = 1.0
+    a: f32 = 1.0
+
+imple Color:
+
+    static fun WHITE() -> Color:
+        return Color(1.0, 1.0, 1.0, 1.0)
+
+    static fun BLACK() -> Color:
+        return Color(0.0, 0.0, 0.0, 1.0)
+
+    static fun RED() -> Color:
+        return Color(1.0, 0.0, 0.0, 1.0)
+
+    static fun GREEN() -> Color:
+        return Color(0.0, 1.0, 0.0, 1.0)
+
+    static fun BLUE() -> Color:
+        return Color(0.0, 0.0, 1.0, 1.0)
+
+    static fun YELLOW() -> Color:
+        return Color(1.0, 1.0, 0.0, 1.0)
+
+    static fun CYAN() -> Color:
+        return Color(0.0, 1.0, 1.0, 1.0)
+
+    static fun MAGENTA() -> Color:
+        return Color(1.0, 0.0, 1.0, 1.0)
+
+    static fun ORANGE() -> Color:
+        return Color(1.0, 0.647, 0.0, 1.0)
+
+    static fun GRAY() -> Color:
+        return Color(0.5, 0.5, 0.5, 1.0)
+
+    static fun TRANSPARENT() -> Color:
+        return Color(0.0, 0.0, 0.0, 0.0)
+
+    static fun from_rgb(r: i32, g: i32, b: i32) -> Color:
+        rf: f32 = r / 255
+        gf: f32 = g / 255
+        bf: f32 = b / 255
+        return Color(rf, gf, bf, 1.0)
+
+    static fun from_rgba(r: i32, g: i32, b: i32, a: i32) -> Color:
+        rf: f32 = r / 255
+        gf: f32 = g / 255
+        bf: f32 = b / 255
+        af: f32 = a / 255
+        return Color(rf, gf, bf, af)
+
+    fun with_alpha(self, alpha: f32) -> Color:
+        return Color(self.r, self.g, self.b, alpha)
+
+    fun lerp(self, other: Color, t: f32) -> Color:
+        nr: f32 = self.r + (other.r - self.r) * t
+        ng: f32 = self.g + (other.g - self.g) * t
+        nb: f32 = self.b + (other.b - self.b) * t
+        na: f32 = self.a + (other.a - self.a) * t
+        return Color(nr, ng, nb, na)
+
+    fun mul(self, s: f32) -> Color:
+        return Color(self.r * s, self.g * s, self.b * s, self.a)
+
+    fun add(self, other: Color) -> Color:
+        return Color(self.r + other.r, self.g + other.g, self.b + other.b, self.a + other.a)

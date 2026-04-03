@@ -1,0 +1,31 @@
+##############################
+# Kobic Engine — Mesh
+# Base mesh struct
+# Vertex format: pos(3) + color(3) = 6 f32 = 24 bytes/vert
+##############################
+
+struct Mesh:
+    vertices:     i64 = 0
+    vertex_count: i32 = 0
+    is_generated: i32 = 0
+
+imple Mesh:
+
+    fun get_vertices(self) -> i64:
+        return self.vertices
+
+    fun get_vertex_count(self) -> i32:
+        return self.vertex_count
+
+    fun is_valid(self) -> i32:
+        return self.is_generated
+
+    fun get_data_size(self) -> i32:
+        return self.vertex_count * 24
+
+    fun free(self) -> void:
+        if self.vertices != 0:
+            Memory.free(self.vertices)
+            self.vertices = 0
+        self.vertex_count = 0
+        self.is_generated = 0

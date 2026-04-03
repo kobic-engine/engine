@@ -1,0 +1,40 @@
+##############################
+# Kobic Engine — RigidBody3D
+# RigidBody component
+##############################
+
+@component
+struct RigidBodyData:
+    mass:        f32 = 1.0
+    vel_x:       f32 = 0.0
+    vel_y:       f32 = 0.0
+    vel_z:       f32 = 0.0
+    is_grounded: i32 = 0
+
+imple RigidBodyData:
+
+    static fun add_to(w: World, eid: i32, mass: f32) -> void:
+        rb: i64 = Memory.malloc_zeroed(20)
+        if rb != 0:
+            Memory.write_f32(rb + 0, mass)
+            Memory.write_f32(rb + 4, 0.0)
+            Memory.write_f32(rb + 8, 0.0)
+            Memory.write_f32(rb + 12, 0.0)
+            Memory.write_i32(rb + 16, 0)
+            w.add_component(eid, "RigidBodyData", rb)
+            Memory.free(rb)
+
+    static fun apply_impulse(w: World, eid: i32, ix: f32, iy: f32, iz: f32) -> void:
+        rb: i64 = w.get_component(eid, "RigidBodyData")
+        if rb == 0:
+            return
+        mass: f32 = Memory.read_f32(rb)
+        if mass < 0.0001:
+            return
+        inv_mass: f32 = 1.0 / mass
+        vx: f32 = Memory.read_f32(rb + 4) + ix * inv_mass
+        vy: f32 = Memory.read_f32(rb + 8) + iy * inv_mass
+        vz: f32 = Memory.read_f32(rb + 12) + iz * inv_mass
+        Memory.write_f32(rb + 4, vx)
+        Memory.write_f32(rb + 8, vy)
+        Memory.write_f32(rb + 12, vz)

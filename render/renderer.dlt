@@ -1,0 +1,387 @@
+##############################
+# Kobic Engine — Renderer
+# ECS-aware Vulkan renderer
+# Queries World for renderable entities
+##############################
+
+struct Renderer:
+    device:            i64 = 0
+    phys_device:       i64 = 0
+    gfx_queue:         i64 = 0
+    present_queue:     i64 = 0
+    # Vertex buffer registry
+    vb_handles:        i64 = 0
+    vb_memories:       i64 = 0
+    vb_vert_counts:    i64 = 0
+    model_matrices:    i64 = 0
+    vb_count:          i32 = 0
+    vb_capacity:       i32 = 0
+    initialized:       i32 = 0
+    current_frame:     i32 = 0
+
+imple Renderer:
+
+    fun init(self, device: i64, phys_device: i64, gfx_queue: i64, present_queue: i64) -> void:
+        self.device = device
+        self.phys_device = phys_device
+        self.gfx_queue = gfx_queue
+        self.present_queue = present_queue
+        self.vb_capacity = 32
+        self.vb_handles = Memory.malloc_zeroed(self.vb_capacity * 8)
+        self.vb_memories = Memory.malloc_zeroed(self.vb_capacity * 8)
+        self.vb_vert_counts = Memory.malloc_zeroed(self.vb_capacity * 4)
+        self.model_matrices = Memory.malloc_zeroed(self.vb_capacity * 8)
+        self.vb_count = 0
+        self.initialized = 1
+
+    fun upload_mesh(self, vertices: i64, vertex_count: i32) -> i32:
+        if self.initialized == 0:
+            return 0 - 1
+        if self.vb_count >= self.vb_capacity:
+            return 0 - 1
+        data_size: i64 = vertex_count * 24
+        # Create buffer (VkBufferCreateInfo = 56 bytes)
+        buf_ci: i64 = Memory.malloc_zeroed(56)
+        if buf_ci == 0:
+            return 0 - 1
+        Memory.write_i32(buf_ci, 12)
+        Memory.write_ptr(buf_ci + 8, 0)
+        Memory.write_i32(buf_ci + 16, 0)
+        Memory.write_i64(buf_ci + 24, data_size)
+        Memory.write_i32(buf_ci + 32, 128)
+        Memory.write_i32(buf_ci + 36, 0)
+        Memory.write_i32(buf_ci + 40, 0)
+        Memory.write_ptr(buf_ci + 48, 0)
+        buf_ptr: i64 = Memory.malloc_zeroed(8)
+        if buf_ptr == 0:
+            Memory.free(buf_ci)
+            return 0 - 1
+        buf_r: i32 = vkCreateBuffer(self.device, buf_ci, 0, buf_ptr)
+        buf: i64 = Memory.read_ptr(buf_ptr)
+        Memory.free(buf_ptr)
+        Memory.free(buf_ci)
+        if buf_r != 0:
+            return 0 - 1
+
+        # Get memory requirements
+        mem_req: i64 = Memory.malloc_zeroed(24)
+        if mem_req == 0:
+            return 0 - 1
+        vkGetBufferMemoryRequirements(self.device, buf, mem_req)
+        req_size: i64 = Memory.read_i64(mem_req)
+        req_bits: i32 = Memory.read_i32(mem_req + 16)
+        Memory.free(mem_req)
+
+        # Find memory type (host visible + host coherent)
+        mem_props: i64 = Memory.malloc_zeroed(520)
+        if mem_props == 0:
+            return 0 - 1
+        vkGetPhysicalDeviceMemoryProperties(self.phys_device, mem_props)
+        type_count: i32 = Memory.read_i32(mem_props)
+        mem_type_idx: i32 = 0 - 1
+        ti: i32 = 0
+        while ti < type_count:
+            bit_check: i32 = 1
+            shift: i32 = 0
+            while shift < ti:
+                bit_check = bit_check * 2
+                shift = shift + 1
+            if (req_bits / bit_check) - (req_bits / (bit_check * 2)) * 2 == 1:
+                flags: i32 = Memory.read_i32(mem_props + 4 + ti * 8)
+                if (flags / 2) - (flags / 4) * 2 == 1:
+                    if (flags / 4) - (flags / 8) * 2 == 1:
+                        mem_type_idx = ti
+                        ti = type_count
+            ti = ti + 1
+        Memory.free(mem_props)
+        if mem_type_idx < 0:
+            return 0 - 1
+
+        # Allocate device memory
+        alloc_info: i64 = Memory.malloc_zeroed(32)
+        if alloc_info == 0:
+            return 0 - 1
+        Memory.set(alloc_info, 0, 32)
+        Memory.write_i32(alloc_info, 5)
+        Memory.write_ptr(alloc_info + 8, 0)
+        Memory.write_i64(alloc_info + 16, req_size)
+        Memory.write_i32(alloc_info + 24, mem_type_idx)
+        mem_ptr: i64 = Memory.malloc_zeroed(8)
+        if mem_ptr == 0:
+            Memory.free(alloc_info)
+            return 0 - 1
+        alloc_r: i32 = vkAllocateMemory(self.device, alloc_info, 0, mem_ptr)
+        mem: i64 = Memory.read_ptr(mem_ptr)
+        Memory.free(mem_ptr)
+        Memory.free(alloc_info)
+        if alloc_r != 0:
+            return 0 - 1
+
+        # Bind and map
+        vkBindBufferMemory(self.device, buf, mem, 0)
+        data_pp: i64 = Memory.malloc_zeroed(8)
+        if data_pp == 0:
+            return 0 - 1
+        vkMapMemory(self.device, mem, 0, data_size, 0, data_pp)
+        mapped: i64 = Memory.read_ptr(data_pp)
+        Memory.free(data_pp)
+        if mapped != 0:
+            Memory.copy(mapped, vertices, data_size)
+        vkUnmapMemory(self.device, mem)
+
+        # Store
+        idx: i32 = self.vb_count
+        Memory.write_ptr(self.vb_handles + idx * 8, buf)
+        Memory.write_ptr(self.vb_memories + idx * 8, mem)
+        Memory.write_i32(self.vb_vert_counts + idx * 4, vertex_count)
+        Memory.write_ptr(self.model_matrices + idx * 8, 0)
+        self.vb_count = idx + 1
+        return idx
+
+    fun set_model_matrix(self, vb_idx: i32, mat_ptr: i64) -> void:
+        if vb_idx < 0:
+            return
+        if vb_idx >= self.vb_count:
+            return
+        if self.model_matrices == 0:
+            return
+        Memory.write_ptr(self.model_matrices + vb_idx * 8, mat_ptr)
+
+    fun render_frame(self, rp: RenderPass, sc: Swapchain, device: i64, gfx_queue: i64, present_queue: i64, cam_view: i64, cam_proj: i64, width: i32, height: i32) -> void:
+        if rp.frame_initialized == 0:
+            return
+        if rp.vk_command_buffers == 0:
+            return
+        if rp.in_flight_fences == 0:
+            return
+
+        current_fence: i64 = Memory.read_ptr(rp.in_flight_fences + self.current_frame * 8)
+        Memory.write_ptr(rp.frame_fence_arr, current_fence)
+        vkWaitForFences(device, 1, rp.frame_fence_arr, 1, 0 - 1)
+        vkResetFences(device, 1, rp.frame_fence_arr)
+
+        # Acquire next image
+        Memory.write_i32(rp.frame_img_idx_ptr, 0)
+        img_sem: i64 = Memory.read_ptr(rp.image_available_sems + self.current_frame * 8)
+        acq_r: i32 = vkAcquireNextImageKHR(device, sc.vk_swapchain, 0 - 1, img_sem, 0, rp.frame_img_idx_ptr)
+        img_idx: i32 = Memory.read_i32(rp.frame_img_idx_ptr)
+        if acq_r != 0:
+            return
+
+        # Reset + record command buffer
+        cmd_buf: i64 = Memory.read_ptr(rp.vk_command_buffers + self.current_frame * 8)
+        vkResetCommandBuffer(cmd_buf, 0)
+        fb: i64 = Memory.read_ptr(rp.framebuffers + img_idx * 8)
+        self._record_commands(cmd_buf, fb, rp, cam_view, cam_proj, width, height)
+
+        # Submit
+        render_sem: i64 = Memory.read_ptr(rp.render_finished_sems + self.current_frame * 8)
+        Memory.write_ptr(rp.frame_wait_sems, img_sem)
+        Memory.write_i32(rp.frame_wait_stages, 1024)
+        Memory.write_ptr(rp.frame_signal_sems, render_sem)
+        Memory.write_ptr(rp.frame_cmd_bufs_arr, cmd_buf)
+
+        si: i64 = rp.frame_submit_info
+        Memory.set(si, 0, 72)
+        Memory.write_i32(si, 4)
+        Memory.write_ptr(si + 8, 0)
+        Memory.write_i32(si + 16, 1)
+        Memory.write_ptr(si + 24, rp.frame_wait_sems)
+        Memory.write_ptr(si + 32, rp.frame_wait_stages)
+        Memory.write_i32(si + 40, 1)
+        Memory.write_ptr(si + 48, rp.frame_cmd_bufs_arr)
+        Memory.write_i32(si + 56, 1)
+        Memory.write_ptr(si + 64, rp.frame_signal_sems)
+
+        vkQueueSubmit(gfx_queue, 1, si, current_fence)
+
+        # Present
+        pi: i64 = rp.frame_present_info
+        Memory.set(pi, 0, 64)
+        Memory.write_ptr(rp.frame_wait_sems_p, render_sem)
+        Memory.write_ptr(rp.frame_swapchains_arr, sc.vk_swapchain)
+        Memory.write_i32(rp.frame_img_idxs_arr, img_idx)
+
+        Memory.write_i32(pi, 1000001001)
+        Memory.write_ptr(pi + 8, 0)
+        Memory.write_i32(pi + 16, 1)
+        Memory.write_ptr(pi + 24, rp.frame_wait_sems_p)
+        Memory.write_i32(pi + 32, 1)
+        Memory.write_ptr(pi + 40, rp.frame_swapchains_arr)
+        Memory.write_ptr(pi + 48, rp.frame_img_idxs_arr)
+        Memory.write_ptr(pi + 56, 0)
+
+        vkQueuePresentKHR(present_queue, pi)
+
+        self.current_frame = (self.current_frame + 1) % rp.max_frames
+
+    fun _record_commands(self, cmd: i64, framebuffer: i64, rp: RenderPass, cam_view: i64, cam_proj: i64, width: i32, height: i32) -> void:
+        # Begin command buffer
+        begin_info: i64 = Memory.malloc_zeroed(64)
+        if begin_info == 0:
+            return
+        Memory.set(begin_info, 0, 64)
+        Memory.write_i32(begin_info, 42)
+        Memory.write_ptr(begin_info + 8, 0)
+        Memory.write_i32(begin_info + 16, 0)
+        Memory.write_ptr(begin_info + 24, 0)
+        br: i32 = vkBeginCommandBuffer(cmd, begin_info)
+        Memory.free(begin_info)
+        if br != 0:
+            return
+
+        # Begin render pass
+        rpi: i64 = Memory.malloc_zeroed(96)
+        if rpi == 0:
+            return
+        Memory.set(rpi, 0, 96)
+        Memory.write_i32(rpi, 43)
+        Memory.write_ptr(rpi + 8, 0)
+        Memory.write_ptr(rpi + 16, rp.vk_render_pass)
+        Memory.write_ptr(rpi + 24, framebuffer)
+        Memory.write_i32(rpi + 32, 0)
+        Memory.write_i32(rpi + 36, 0)
+        Memory.write_i32(rpi + 40, width)
+        Memory.write_i32(rpi + 44, height)
+
+        # Two clear values: color (RGBA float) + depth (float + uint)
+        clear_vals: i64 = Memory.malloc_zeroed(32)
+        if clear_vals != 0:
+            Memory.write_f32(clear_vals, 0.15)
+            Memory.write_f32(clear_vals + 4, 0.15)
+            Memory.write_f32(clear_vals + 8, 0.2)
+            Memory.write_f32(clear_vals + 12, 1.0)
+            Memory.write_f32(clear_vals + 16, 1.0)
+            Memory.write_i32(clear_vals + 20, 0)
+            Memory.write_i32(rpi + 48, 2)
+            Memory.write_ptr(rpi + 56, clear_vals)
+
+        vkCmdBeginRenderPass(cmd, rpi, 0)
+
+        if rp.vk_pipeline != 0:
+            vkCmdBindPipeline(cmd, 0, rp.vk_pipeline)
+
+            # Dynamic viewport
+            vp: i64 = Memory.malloc_zeroed(24)
+            if vp != 0:
+                w_f: f32 = width
+                h_f: f32 = height
+                Memory.write_f32(vp, 0.0)
+                Memory.write_f32(vp + 4, 0.0)
+                Memory.write_f32(vp + 8, w_f)
+                Memory.write_f32(vp + 12, h_f)
+                Memory.write_f32(vp + 16, 0.0)
+                Memory.write_f32(vp + 20, 1.0)
+                vkCmdSetViewport(cmd, 0, 1, vp)
+                Memory.free(vp)
+
+            # Dynamic scissor
+            sc2: i64 = Memory.malloc_zeroed(16)
+            if sc2 != 0:
+                Memory.write_i32(sc2, 0)
+                Memory.write_i32(sc2 + 4, 0)
+                Memory.write_i32(sc2 + 8, width)
+                Memory.write_i32(sc2 + 12, height)
+                vkCmdSetScissor(cmd, 0, 1, sc2)
+                Memory.free(sc2)
+
+            # Draw meshes
+            if self.vb_count > 0:
+                # Compute VP = proj * view (pointer-based multiply)
+                vp_mat: i64 = 0
+                if cam_view != 0:
+                    if cam_proj != 0:
+                        vp_mat = multiply_4x4_matrices(cam_proj, cam_view)
+
+                mi: i32 = 0
+                while mi < self.vb_count:
+                    vb_handle: i64 = Memory.read_ptr(self.vb_handles + mi * 8)
+                    vc: i32 = Memory.read_i32(self.vb_vert_counts + mi * 4)
+                    if vb_handle != 0:
+                        if vc > 0:
+                            # Read model matrix from model_matrices array
+                            model_ptr: i64 = 0
+                            if self.model_matrices != 0:
+                                model_ptr = Memory.read_ptr(self.model_matrices + mi * 8)
+
+                            mvp: i64 = 0
+                            if vp_mat != 0:
+                                if model_ptr != 0:
+                                    mvp = multiply_4x4_matrices(vp_mat, model_ptr)
+                                else:
+                                    mvp = vp_mat
+
+                            if mvp != 0:
+                                vkCmdPushConstants(cmd, rp.vk_pipeline_layout, 1, 0, 64, mvp)
+
+                            vb_arr: i64 = Memory.malloc_zeroed(8)
+                            if vb_arr != 0:
+                                Memory.write_ptr(vb_arr, vb_handle)
+                                off_arr: i64 = Memory.malloc_zeroed(8)
+                                if off_arr != 0:
+                                    Memory.write_i64(off_arr, 0)
+                                    vkCmdBindVertexBuffers(cmd, 0, 1, vb_arr, off_arr)
+                                    Memory.free(off_arr)
+                                Memory.free(vb_arr)
+
+                            vkCmdDraw(cmd, vc, 1, 0, 0)
+
+                            if mvp != 0:
+                                if mvp != vp_mat:
+                                    Memory.free(mvp)
+                    mi = mi + 1
+
+                if vp_mat != 0:
+                    Memory.free(vp_mat)
+
+        vkCmdEndRenderPass(cmd)
+        vkEndCommandBuffer(cmd)
+
+        if clear_vals != 0:
+            Memory.free(clear_vals)
+        Memory.free(rpi)
+
+    fun cleanup(self) -> void:
+        if self.vb_handles != 0:
+            vi: i32 = 0
+            while vi < self.vb_count:
+                vb: i64 = Memory.read_ptr(self.vb_handles + vi * 8)
+                if vb != 0:
+                    vkDestroyBuffer(self.device, vb, 0)
+                vi = vi + 1
+            Memory.free(self.vb_handles)
+        if self.vb_memories != 0:
+            mi: i32 = 0
+            while mi < self.vb_count:
+                vm: i64 = Memory.read_ptr(self.vb_memories + mi * 8)
+                if vm != 0:
+                    vkFreeMemory(self.device, vm, 0)
+                mi = mi + 1
+            Memory.free(self.vb_memories)
+        if self.vb_vert_counts != 0:
+            Memory.free(self.vb_vert_counts)
+        if self.model_matrices != 0:
+            Memory.free(self.model_matrices)
+        self.vb_count = 0
+        self.initialized = 0
+
+# Pointer-based 4x4 matrix multiply (column-major f32)
+fun multiply_4x4_matrices(a: i64, b: i64) -> i64:
+    out: i64 = Memory.malloc_zeroed(64)
+    if out == 0:
+        return 0
+    col: i32 = 0
+    while col < 4:
+        co: i32 = col * 16
+        r: i32 = 0
+        while r < 4:
+            ro: i32 = r * 4
+            val: f32 = 0.0
+            val = val + Memory.read_f32(a + 0 + ro) * Memory.read_f32(b + co + 0)
+            val = val + Memory.read_f32(a + 16 + ro) * Memory.read_f32(b + co + 4)
+            val = val + Memory.read_f32(a + 32 + ro) * Memory.read_f32(b + co + 8)
+            val = val + Memory.read_f32(a + 48 + ro) * Memory.read_f32(b + co + 12)
+            Memory.write_f32(out + co + ro, val)
+            r = r + 1
+        col = col + 1
+    return out

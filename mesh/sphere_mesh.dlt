@@ -1,0 +1,98 @@
+##############################
+# Kobic Engine — SphereMesh
+# UV sphere mesh generator
+##############################
+
+struct SphereMesh:
+    vertices:     i64 = 0
+    vertex_count: i32 = 0
+    is_generated: i32 = 0
+    radius:       f32 = 0.5
+    segments:     i32 = 16
+    rings:        i32 = 12
+
+imple SphereMesh:
+
+    static fun create(r: f32, segs: i32, rngs: i32) -> SphereMesh:
+        m: SphereMesh = SphereMesh(vertices=0, vertex_count=0, is_generated=0, radius=r, segments=segs, rings=rngs)
+        m.generate()
+        return m
+
+    static fun create_default() -> SphereMesh:
+        return SphereMesh.create(0.5, 16, 12)
+
+    fun generate(self) -> void:
+        if self.vertices != 0:
+            Memory.free(self.vertices)
+        pi: f32 = 3.14159265
+        # Each quad = 2 triangles = 6 verts
+        num_quads: i32 = self.segments * self.rings
+        total_verts: i32 = num_quads * 6
+        total_bytes: i32 = total_verts * 24
+        self.vertices = Memory.malloc_zeroed(total_bytes)
+        if self.vertices == 0:
+            self.is_generated = 0
+            return
+        self.vertex_count = total_verts
+        off: i64 = 0
+        ring: i32 = 0
+        while ring < self.rings:
+            seg: i32 = 0
+            while seg < self.segments:
+                theta0: f32 = pi * ring / self.rings
+                theta1: f32 = pi * (ring + 1) / self.rings
+                phi0: f32 = 2.0 * pi * seg / self.segments
+                phi1: f32 = 2.0 * pi * (seg + 1) / self.segments
+                # 4 corners
+                x00: f32 = self.radius * @sin(theta0) * @cos(phi0)
+                y00: f32 = self.radius * @cos(theta0)
+                z00: f32 = self.radius * @sin(theta0) * @sin(phi0)
+                x10: f32 = self.radius * @sin(theta1) * @cos(phi0)
+                y10: f32 = self.radius * @cos(theta1)
+                z10: f32 = self.radius * @sin(theta1) * @sin(phi0)
+                x01: f32 = self.radius * @sin(theta0) * @cos(phi1)
+                y01: f32 = self.radius * @cos(theta0)
+                z01: f32 = self.radius * @sin(theta0) * @sin(phi1)
+                x11: f32 = self.radius * @sin(theta1) * @cos(phi1)
+                y11: f32 = self.radius * @cos(theta1)
+                z11: f32 = self.radius * @sin(theta1) * @sin(phi1)
+                # Color from normal (hemisphere coloring)
+                cr: f32 = (x00 / self.radius + 1.0) / 2.0
+                cg: f32 = (y00 / self.radius + 1.0) / 2.0
+                cb: f32 = (z00 / self.radius + 1.0) / 2.0
+                # Tri 1
+                off = self._wv(off, x00, y00, z00, cr, cg, cb)
+                off = self._wv(off, x01, y01, z01, cr, cg, cb)
+                off = self._wv(off, x10, y10, z10, cr, cg, cb)
+                # Tri 2
+                off = self._wv(off, x01, y01, z01, cr, cg, cb)
+                off = self._wv(off, x11, y11, z11, cr, cg, cb)
+                off = self._wv(off, x10, y10, z10, cr, cg, cb)
+                seg = seg + 1
+            ring = ring + 1
+        self.is_generated = 1
+
+    fun _wv(self, off: i64, px: f32, py: f32, pz: f32, cr: f32, cg: f32, cb: f32) -> i64:
+        Memory.write_f32(self.vertices + off, px)
+        Memory.write_f32(self.vertices + off + 4, py)
+        Memory.write_f32(self.vertices + off + 8, pz)
+        Memory.write_f32(self.vertices + off + 12, cr)
+        Memory.write_f32(self.vertices + off + 16, cg)
+        Memory.write_f32(self.vertices + off + 20, cb)
+        return off + 24
+
+    fun get_vertices(self) -> i64:
+        return self.vertices
+
+    fun get_vertex_count(self) -> i32:
+        return self.vertex_count
+
+    fun get_data_size(self) -> i32:
+        return self.vertex_count * 24
+
+    fun free(self) -> void:
+        if self.vertices != 0:
+            Memory.free(self.vertices)
+            self.vertices = 0
+        self.vertex_count = 0
+        self.is_generated = 0

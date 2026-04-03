@@ -1,0 +1,446 @@
+##############################
+# Kobic Engine — World
+# Entity manager + component/resource registry
+# String-keyed storages, generation tracking
+##############################
+
+imm MAX_STORAGES: i32 = 64
+imm MAX_RESOURCES: i32 = 32
+imm MAX_ENTITIES: i32 = 8192
+
+# String compare helper (avoids str_eq codegen issue in packages)
+fun _kobic_str_eq(a: i64, b: i64) -> i32:
+    if a == b:
+        return 1
+    if a == 0:
+        return 0
+    if b == 0:
+        return 0
+    idx: i32 = 0
+    while idx < 256:
+        ca: i32 = Memory.read_i8(a + idx)
+        cb: i32 = Memory.read_i8(b + idx)
+        if ca != cb:
+            return 0
+        if ca == 0:
+            return 1
+        idx = idx + 1
+    return 1
+
+struct World:
+    # Entity management
+    entity_gen:     i64 = 0
+    entity_alive:   i64 = 0
+    entity_count:   i32 = 0
+    entity_cap:     i32 = 0
+    free_list:      i64 = 0
+    free_count:     i32 = 0
+    free_cap:       i32 = 0
+
+    # Component storages
+    storages:       i64 = 0
+    storage_names:  i64 = 0
+    storage_sizes:  i64 = 0
+    storage_count:  i32 = 0
+
+    # Resources
+    res_data:       i64 = 0
+    res_names:      i64 = 0
+    res_sizes:      i64 = 0
+    res_count:      i32 = 0
+
+imple World:
+
+    static fun init() -> World:
+        w: World = World()
+        cap: i32 = 8192
+        w.entity_gen = Memory.malloc_zeroed(cap * 4)
+        w.entity_alive = Memory.malloc_zeroed(cap)
+        w.entity_count = 0
+        w.entity_cap = cap
+        w.free_list = Memory.malloc_zeroed(256 * 4)
+        w.free_count = 0
+        w.free_cap = 256
+        # Storages: array of ComponentStorage pointers
+        w.storages = Memory.malloc_zeroed(64 * 8)
+        w.storage_names = Memory.malloc_zeroed(64 * 8)
+        w.storage_sizes = Memory.malloc_zeroed(64 * 4)
+        w.storage_count = 0
+        # Resources: raw data pointers
+        w.res_data = Memory.malloc_zeroed(32 * 8)
+        w.res_names = Memory.malloc_zeroed(32 * 8)
+        w.res_sizes = Memory.malloc_zeroed(32 * 4)
+        w.res_count = 0
+        return w
+
+    fun spawn(self) -> i32:
+        eid: i32 = 0 - 1
+        if self.free_count > 0:
+            self.free_count = self.free_count - 1
+            eid = Memory.read_i32(self.free_list + self.free_count * 4)
+            gen: i32 = Memory.read_i32(self.entity_gen + eid * 4)
+            Memory.write_i32(self.entity_gen + eid * 4, gen + 1)
+            Memory.write_i8(self.entity_alive + eid, 1)
+        else:
+            if self.entity_count >= self.entity_cap:
+                return 0 - 1
+            eid = self.entity_count
+            self.entity_count = self.entity_count + 1
+            Memory.write_i32(self.entity_gen + eid * 4, 0)
+            Memory.write_i8(self.entity_alive + eid, 1)
+        return eid
+
+    fun despawn(self, eid: i32) -> void:
+        if eid < 0:
+            return
+        if eid >= self.entity_count:
+            return
+        alive: i32 = Memory.read_i8(self.entity_alive + eid)
+        if alive == 0:
+            return
+        Memory.write_i8(self.entity_alive + eid, 0)
+        # Remove from all storages
+        i: i32 = 0
+        while i < self.storage_count:
+            s_ptr: i64 = Memory.read_i64(self.storages + i * 8)
+            # Check has and remove via ComponentStorage field offsets
+            # sparse at +48, sparse_cap at +56
+            sp: i64 = Memory.read_i64(s_ptr + 48)
+            sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+            if eid < sp_cap:
+                di: i32 = Memory.read_i32(sp + eid * 4)
+                if di >= 0:
+                    d_count: i32 = Memory.read_i32(s_ptr + 36)
+                    if di < d_count:
+                        # Perform swap-remove inline
+                        comp_sz: i32 = Memory.read_i32(s_ptr + 8)
+                        d_data: i64 = Memory.read_i64(s_ptr + 16)
+                        d_ents: i64 = Memory.read_i64(s_ptr + 24)
+                        last: i32 = d_count - 1
+                        if di != last:
+                            last_eid: i32 = Memory.read_i32(d_ents + last * 4)
+                            Memory.copy(d_data + di * comp_sz, d_data + last * comp_sz, comp_sz)
+                            Memory.write_i32(d_ents + di * 4, last_eid)
+                            Memory.write_i32(sp + last_eid * 4, di)
+                        Memory.write_i32(sp + eid * 4, 0 - 1)
+                        Memory.write_i32(s_ptr + 36, last)
+            i = i + 1
+        # Add to free list
+        if self.free_count >= self.free_cap:
+            new_cap: i32 = self.free_cap * 2
+            new_fl: i64 = Memory.malloc_zeroed(new_cap * 4)
+            Memory.copy(new_fl, self.free_list, self.free_count * 4)
+            Memory.free(self.free_list)
+            self.free_list = new_fl
+            self.free_cap = new_cap
+        Memory.write_i32(self.free_list + self.free_count * 4, eid)
+        self.free_count = self.free_count + 1
+
+    fun is_alive(self, eid: i32) -> i32:
+        if eid < 0:
+            return 0
+        if eid >= self.entity_count:
+            return 0
+        return Memory.read_i8(self.entity_alive + eid)
+
+    # ------- Component Registry -------
+
+    fun _find_storage(self, name: str) -> i32:
+        i: i32 = 0
+        while i < self.storage_count:
+            sn_ptr: i64 = Memory.read_ptr(self.storage_names + i * 8)
+            eq: i32 = _kobic_str_eq(sn_ptr, name)
+            if eq == 1:
+                return i
+            i = i + 1
+        return 0 - 1
+
+    fun register_component(self, name: str, comp_size: i32) -> void:
+        if self._find_storage(name) >= 0:
+            return
+        if self.storage_count >= 64:
+            return
+        idx: i32 = self.storage_count
+        # Allocate ComponentStorage struct on heap
+        # ComponentStorage is: str(8) + i32(4) + i64(8) + i64(8) + i32(4) + i32(4) + i64(8) + i32(4) = ~48 bytes
+        # We use type-erased layout: just store the raw data arrays
+        cs_ptr: i64 = Memory.malloc_zeroed(64)
+        # Write type_name ptr (offset +0, 8 bytes)
+        Memory.write_ptr(cs_ptr + 0, name)
+        # component_size (offset +8, 4 bytes)
+        Memory.write_i32(cs_ptr + 8, comp_size)
+        # Allocate dense arrays
+        cap: i32 = 64
+        d_data: i64 = Memory.malloc_zeroed(cap * comp_size)
+        d_ents: i64 = Memory.malloc_zeroed(cap * 4)
+        # dense_data (offset +16)
+        Memory.write_i64(cs_ptr + 16, d_data)
+        # dense_entities (offset +24)
+        Memory.write_i64(cs_ptr + 24, d_ents)
+        # dense_count (offset +36) = 0
+        Memory.write_i32(cs_ptr + 36, 0)
+        # dense_capacity (offset +40)
+        Memory.write_i32(cs_ptr + 40, cap)
+        # Allocate sparse
+        sp_cap: i32 = 256
+        sp: i64 = Memory.malloc_zeroed(sp_cap * 4)
+        j: i32 = 0
+        while j < sp_cap:
+            Memory.write_i32(sp + j * 4, 0 - 1)
+            j = j + 1
+        # sparse (offset +48)
+        Memory.write_i64(cs_ptr + 48, sp)
+        # sparse_capacity (offset +56)
+        Memory.write_i32(cs_ptr + 56, sp_cap)
+
+        Memory.write_i64(self.storages + idx * 8, cs_ptr)
+        Memory.write_ptr(self.storage_names + idx * 8, name)
+        Memory.write_i32(self.storage_sizes + idx * 4, comp_size)
+        self.storage_count = idx + 1
+
+    fun _storage_grow_sparse(self, s_ptr: i64, needed: i32) -> void:
+        sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+        if needed < sp_cap:
+            return
+        new_cap: i32 = sp_cap
+        while new_cap <= needed:
+            new_cap = new_cap * 2
+        sp: i64 = Memory.read_i64(s_ptr + 48)
+        new_sp: i64 = Memory.malloc_zeroed(new_cap * 4)
+        Memory.copy(new_sp, sp, sp_cap * 4)
+        j: i32 = sp_cap
+        while j < new_cap:
+            Memory.write_i32(new_sp + j * 4, 0 - 1)
+            j = j + 1
+        Memory.free(sp)
+        Memory.write_i64(s_ptr + 48, new_sp)
+        Memory.write_i32(s_ptr + 56, new_cap)
+
+    fun _storage_grow_dense(self, s_ptr: i64) -> void:
+        comp_sz: i32 = Memory.read_i32(s_ptr + 8)
+        d_cap: i32 = Memory.read_i32(s_ptr + 40)
+        d_count: i32 = Memory.read_i32(s_ptr + 36)
+        new_cap: i32 = d_cap * 2
+        d_data: i64 = Memory.read_i64(s_ptr + 16)
+        d_ents: i64 = Memory.read_i64(s_ptr + 24)
+        new_data: i64 = Memory.malloc_zeroed(new_cap * comp_sz)
+        new_ents: i64 = Memory.malloc_zeroed(new_cap * 4)
+        Memory.copy(new_data, d_data, d_count * comp_sz)
+        Memory.copy(new_ents, d_ents, d_count * 4)
+        Memory.free(d_data)
+        Memory.free(d_ents)
+        Memory.write_i64(s_ptr + 16, new_data)
+        Memory.write_i64(s_ptr + 24, new_ents)
+        Memory.write_i32(s_ptr + 40, new_cap)
+
+    fun add_component(self, eid: i32, name: str, data_ptr: i64) -> i64:
+        si: i32 = self._find_storage(name)
+        if si < 0:
+            return 0
+        s_ptr: i64 = Memory.read_i64(self.storages + si * 8)
+        comp_sz: i32 = Memory.read_i32(s_ptr + 8)
+        # Check if already has
+        sp: i64 = Memory.read_i64(s_ptr + 48)
+        sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+        if eid < sp_cap:
+            di: i32 = Memory.read_i32(sp + eid * 4)
+            d_count: i32 = Memory.read_i32(s_ptr + 36)
+            if di >= 0:
+                if di < d_count:
+                    d_data: i64 = Memory.read_i64(s_ptr + 16)
+                    return d_data + di * comp_sz
+        # Grow sparse if needed
+        self._storage_grow_sparse(s_ptr, eid + 1)
+        # Grow dense if needed
+        d_count2: i32 = Memory.read_i32(s_ptr + 36)
+        d_cap2: i32 = Memory.read_i32(s_ptr + 40)
+        if d_count2 >= d_cap2:
+            self._storage_grow_dense(s_ptr)
+        # Add to dense
+        di2: i32 = Memory.read_i32(s_ptr + 36)
+        d_data2: i64 = Memory.read_i64(s_ptr + 16)
+        d_ents2: i64 = Memory.read_i64(s_ptr + 24)
+        dest: i64 = d_data2 + di2 * comp_sz
+        if data_ptr != 0:
+            Memory.copy(dest, data_ptr, comp_sz)
+        Memory.write_i32(d_ents2 + di2 * 4, eid)
+        sp2: i64 = Memory.read_i64(s_ptr + 48)
+        Memory.write_i32(sp2 + eid * 4, di2)
+        Memory.write_i32(s_ptr + 36, di2 + 1)
+        return dest
+
+    fun get_component(self, eid: i32, name: str) -> i64:
+        si: i32 = self._find_storage(name)
+        if si < 0:
+            return 0
+        s_ptr: i64 = Memory.read_i64(self.storages + si * 8)
+        comp_sz: i32 = Memory.read_i32(s_ptr + 8)
+        sp: i64 = Memory.read_i64(s_ptr + 48)
+        sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+        if eid < 0:
+            return 0
+        if eid >= sp_cap:
+            return 0
+        di: i32 = Memory.read_i32(sp + eid * 4)
+        if di < 0:
+            return 0
+        d_count: i32 = Memory.read_i32(s_ptr + 36)
+        if di >= d_count:
+            return 0
+        d_data: i64 = Memory.read_i64(s_ptr + 16)
+        return d_data + di * comp_sz
+
+    fun has_component(self, eid: i32, name: str) -> i32:
+        si: i32 = self._find_storage(name)
+        if si < 0:
+            return 0
+        s_ptr: i64 = Memory.read_i64(self.storages + si * 8)
+        sp: i64 = Memory.read_i64(s_ptr + 48)
+        sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+        if eid < 0:
+            return 0
+        if eid >= sp_cap:
+            return 0
+        di: i32 = Memory.read_i32(sp + eid * 4)
+        if di < 0:
+            return 0
+        d_count: i32 = Memory.read_i32(s_ptr + 36)
+        if di >= d_count:
+            return 0
+        return 1
+
+    fun remove_component(self, eid: i32, name: str) -> void:
+        si: i32 = self._find_storage(name)
+        if si < 0:
+            return
+        s_ptr: i64 = Memory.read_i64(self.storages + si * 8)
+        comp_sz: i32 = Memory.read_i32(s_ptr + 8)
+        sp: i64 = Memory.read_i64(s_ptr + 48)
+        sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+        if eid < 0:
+            return
+        if eid >= sp_cap:
+            return
+        di: i32 = Memory.read_i32(sp + eid * 4)
+        if di < 0:
+            return
+        d_count: i32 = Memory.read_i32(s_ptr + 36)
+        if di >= d_count:
+            return
+        d_data: i64 = Memory.read_i64(s_ptr + 16)
+        d_ents: i64 = Memory.read_i64(s_ptr + 24)
+        last: i32 = d_count - 1
+        if di != last:
+            last_eid: i32 = Memory.read_i32(d_ents + last * 4)
+            Memory.copy(d_data + di * comp_sz, d_data + last * comp_sz, comp_sz)
+            Memory.write_i32(d_ents + di * 4, last_eid)
+            Memory.write_i32(sp + last_eid * 4, di)
+        Memory.write_i32(sp + eid * 4, 0 - 1)
+        Memory.write_i32(s_ptr + 36, last)
+
+    # ------- Resource Registry -------
+
+    fun _find_resource(self, name: str) -> i32:
+        i: i32 = 0
+        while i < self.res_count:
+            rn_ptr: i64 = Memory.read_ptr(self.res_names + i * 8)
+            eq: i32 = _kobic_str_eq(rn_ptr, name)
+            if eq == 1:
+                return i
+            i = i + 1
+        return 0 - 1
+
+    fun add_resource(self, name: str, data_ptr: i64, size: i32) -> i64:
+        ri: i32 = self._find_resource(name)
+        if ri >= 0:
+            ptr: i64 = Memory.read_i64(self.res_data + ri * 8)
+            if data_ptr != 0:
+                Memory.copy(ptr, data_ptr, size)
+            return ptr
+        if self.res_count >= 32:
+            return 0
+        idx: i32 = self.res_count
+        ptr2: i64 = Memory.malloc_zeroed(size)
+        if data_ptr != 0:
+            Memory.copy(ptr2, data_ptr, size)
+        Memory.write_i64(self.res_data + idx * 8, ptr2)
+        Memory.write_ptr(self.res_names + idx * 8, name)
+        Memory.write_i32(self.res_sizes + idx * 4, size)
+        self.res_count = idx + 1
+        return ptr2
+
+    fun get_resource(self, name: str) -> i64:
+        ri: i32 = self._find_resource(name)
+        if ri < 0:
+            return 0
+        return Memory.read_i64(self.res_data + ri * 8)
+
+    # ------- Queries -------
+
+    fun get_storage(self, name: str) -> i64:
+        si: i32 = self._find_storage(name)
+        if si < 0:
+            return 0
+        return Memory.read_i64(self.storages + si * 8)
+
+    fun query1(self, comp_a: str) -> Query:
+        s_ptr: i64 = self.get_storage(comp_a)
+        if s_ptr == 0:
+            return Query()
+        s_count: i32 = Memory.read_i32(s_ptr + 36)
+        return Query.build_one(s_ptr, s_count)
+
+    fun query2(self, comp_a: str, comp_b: str) -> Query:
+        sa: i64 = self.get_storage(comp_a)
+        sb: i64 = self.get_storage(comp_b)
+        if sa == 0:
+            return Query()
+        if sb == 0:
+            return Query()
+        sa_count: i32 = Memory.read_i32(sa + 36)
+        sb_count: i32 = Memory.read_i32(sb + 36)
+        return Query.build_two(sa, sa_count, sb, sb_count)
+
+    fun entity_count(self) -> i32:
+        return self.entity_count
+
+    fun cleanup(self) -> void:
+        i: i32 = 0
+        while i < self.storage_count:
+            s_ptr: i64 = Memory.read_i64(self.storages + i * 8)
+            if s_ptr != 0:
+                d_data: i64 = Memory.read_i64(s_ptr + 16)
+                d_ents: i64 = Memory.read_i64(s_ptr + 24)
+                sp: i64 = Memory.read_i64(s_ptr + 48)
+                if d_data != 0:
+                    Memory.free(d_data)
+                if d_ents != 0:
+                    Memory.free(d_ents)
+                if sp != 0:
+                    Memory.free(sp)
+                Memory.free(s_ptr)
+            i = i + 1
+        if self.storages != 0:
+            Memory.free(self.storages)
+        if self.storage_names != 0:
+            Memory.free(self.storage_names)
+        if self.storage_sizes != 0:
+            Memory.free(self.storage_sizes)
+        j: i32 = 0
+        while j < self.res_count:
+            r_ptr: i64 = Memory.read_i64(self.res_data + j * 8)
+            if r_ptr != 0:
+                Memory.free(r_ptr)
+            j = j + 1
+        if self.res_data != 0:
+            Memory.free(self.res_data)
+        if self.res_names != 0:
+            Memory.free(self.res_names)
+        if self.res_sizes != 0:
+            Memory.free(self.res_sizes)
+        if self.entity_gen != 0:
+            Memory.free(self.entity_gen)
+        if self.entity_alive != 0:
+            Memory.free(self.entity_alive)
+        if self.free_list != 0:
+            Memory.free(self.free_list)

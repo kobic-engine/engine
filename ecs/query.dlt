@@ -1,0 +1,105 @@
+##############################
+# Kobic Engine — Query
+# Iterate entities with specific components
+# Smallest dense set drives iteration
+##############################
+
+struct Query:
+    # Primary storage (smallest dense set — drives iteration)
+    primary:       i64 = 0
+    primary_count: i32 = 0
+
+    # Optional secondary storage for two-component queries
+    secondary:     i64 = 0
+
+    # Result cache: entity IDs that match ALL required storages
+    result_ids:    i64 = 0
+    result_count:  i32 = 0
+    result_cap:    i32 = 0
+
+imple Query:
+
+    static fun from_one(storage_ptr: i64) -> Query:
+        q: Query = Query()
+        q.primary = storage_ptr
+        # Read dense_count from ComponentStorage (+36 = dense_count offset)
+        # direct field access: storage is a struct value, not a pointer
+        # Caller passes the storage reference; we just wrap it
+        q.primary_count = 0
+        q.secondary = 0
+        q.result_ids = 0
+        q.result_count = 0
+        q.result_cap = 0
+        return q
+
+    static fun build_one(storage_ptr: i64, s_count: i32) -> Query:
+        q: Query = Query()
+        q.primary = storage_ptr
+        q.primary_count = s_count
+        q.secondary = 0
+        # All entities in primary match (single component query)
+        q.result_count = s_count
+        q.result_cap = s_count
+        if s_count > 0:
+            q.result_ids = Memory.malloc_zeroed(s_count * 4)
+            idx: i32 = 0
+            ent_arr: i64 = Memory.read_i64(storage_ptr + 24)
+            while idx < s_count:
+                eid: i32 = Memory.read_i32(ent_arr + idx * 4)
+                Memory.write_i32(q.result_ids + idx * 4, eid)
+                idx = idx + 1
+        return q
+
+    static fun build_two(sa_ptr: i64, sa_count: i32, sb_ptr: i64, sb_count: i32) -> Query:
+        q: Query = Query()
+        # Pick smaller as primary for iteration
+        p_ptr: i64 = sa_ptr
+        p_count: i32 = sa_count
+        o_ptr: i64 = sb_ptr
+        if sb_count < sa_count:
+            p_ptr = sb_ptr
+            p_count = sb_count
+            o_ptr = sa_ptr
+        q.primary = p_ptr
+        q.primary_count = p_count
+        q.secondary = o_ptr
+        # Allocate result buffer (worst case = p_count)
+        q.result_cap = p_count
+        q.result_ids = Memory.malloc_zeroed(p_count * 4)
+        q.result_count = 0
+        # Iterate primary, check if secondary also has the entity
+        ent_arr: i64 = Memory.read_i64(p_ptr + 24)
+        # secondary sparse lookup offsets:
+        # +48 = sparse ptr, +56 = sparse_capacity
+        o_sparse: i64 = Memory.read_i64(o_ptr + 48)
+        o_sparse_cap: i32 = Memory.read_i32(o_ptr + 56)
+        o_dense_count: i32 = Memory.read_i32(o_ptr + 36)
+        idx: i32 = 0
+        while idx < p_count:
+            eid: i32 = Memory.read_i32(ent_arr + idx * 4)
+            # Check if other storage has this entity
+            has_it: i32 = 0
+            if eid >= 0:
+                if eid < o_sparse_cap:
+                    di: i32 = Memory.read_i32(o_sparse + eid * 4)
+                    if di >= 0:
+                        if di < o_dense_count:
+                            has_it = 1
+            if has_it == 1:
+                Memory.write_i32(q.result_ids + q.result_count * 4, eid)
+                q.result_count = q.result_count + 1
+            idx = idx + 1
+        return q
+
+    fun entity_at(self, index: i32) -> i32:
+        if index < 0:
+            return 0 - 1
+        if index >= self.result_count:
+            return 0 - 1
+        return Memory.read_i32(self.result_ids + index * 4)
+
+    fun cleanup(self) -> void:
+        if self.result_ids != 0:
+            Memory.free(self.result_ids)
+        self.result_count = 0
+        self.result_cap = 0

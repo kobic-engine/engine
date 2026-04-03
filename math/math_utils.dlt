@@ -1,0 +1,78 @@
+##############################
+# Kobic Engine — Math Utilities
+# clamp, lerp, deg2rad, rad2deg, min, max, abs
+##############################
+
+imm PI: f32 = 3.14159265
+
+@inline
+fun clamp(value: f32, min_val: f32, max_val: f32) -> f32:
+    if value < min_val:
+        return min_val
+    if value > max_val:
+        return max_val
+    return value
+
+@inline
+fun clamp_i32(value: i32, min_val: i32, max_val: i32) -> i32:
+    if value < min_val:
+        return min_val
+    if value > max_val:
+        return max_val
+    return value
+
+@inline
+fun lerp(a: f32, b: f32, t: f32) -> f32:
+    return a + (b - a) * t
+
+@inline
+fun deg2rad(degrees: f32) -> f32:
+    return degrees * 3.14159265 / 180.0
+
+@inline
+fun rad2deg(radians: f32) -> f32:
+    return radians * 180.0 / 3.14159265
+
+@inline
+fun min_f32(a: f32, b: f32) -> f32:
+    if a < b:
+        return a
+    return b
+
+@inline
+fun max_f32(a: f32, b: f32) -> f32:
+    if a > b:
+        return a
+    return b
+
+@inline
+fun abs_f32(v: f32) -> f32:
+    if v < 0.0:
+        return 0.0 - v
+    return v
+
+@inline
+fun min_i32(a: i32, b: i32) -> i32:
+    if a < b:
+        return a
+    return b
+
+@inline
+fun max_i32(a: i32, b: i32) -> i32:
+    if a > b:
+        return a
+    return b
+
+@inline
+fun abs_i32(v: i32) -> i32:
+    if v < 0:
+        return 0 - v
+    return v
+
+@inline
+fun sign_f32(v: f32) -> f32:
+    if v > 0.0:
+        return 1.0
+    if v < 0.0:
+        return 0.0 - 1.0
+    return 0.0

@@ -1,0 +1,15 @@
+##############################
+# Kobic Engine — Time
+# DeltaTime resource + frame timing
+##############################
+
+@resource
+struct DeltaTime:
+    value: f32 = 0.0
+    total: f32 = 0.0
+    frame_count: i32 = 0
+
+@resource
+struct FixedTime:
+    fixed_step: f32 = 0.01667
+    accumulator: f32 = 0.0

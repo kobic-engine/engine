@@ -1,0 +1,152 @@
+##############################
+# Kobic Engine — Quat
+# Quaternion rotation (f32)
+##############################
+
+struct Quat:
+    x: f32 = 0.0
+    y: f32 = 0.0
+    z: f32 = 0.0
+    w: f32 = 1.0
+
+imple Quat:
+
+    static fun IDENTITY() -> Quat:
+        return Quat(0.0, 0.0, 0.0, 1.0)
+
+    static fun from_axis_angle(ax: f32, ay: f32, az: f32, angle_deg: f32) -> Quat:
+        pi: f32 = 3.14159265
+        half: f32 = angle_deg * pi / 360.0
+        s: f32 = @sin(half)
+        c: f32 = @cos(half)
+        len: f32 = @sqrt(ax * ax + ay * ay + az * az)
+        if len < 0.00001:
+            return Quat(0.0, 0.0, 0.0, 1.0)
+        nx: f32 = ax / len
+        ny: f32 = ay / len
+        nz: f32 = az / len
+        return Quat(nx * s, ny * s, nz * s, c)
+
+    static fun from_euler(rx: f32, ry: f32, rz: f32) -> Quat:
+        pi: f32 = 3.14159265
+        hx: f32 = rx * pi / 360.0
+        hy: f32 = ry * pi / 360.0
+        hz: f32 = rz * pi / 360.0
+        cx: f32 = @cos(hx)
+        sx: f32 = @sin(hx)
+        cy: f32 = @cos(hy)
+        sy: f32 = @sin(hy)
+        cz: f32 = @cos(hz)
+        sz: f32 = @sin(hz)
+        qw: f32 = cx * cy * cz + sx * sy * sz
+        qx: f32 = sx * cy * cz - cx * sy * sz
+        qy: f32 = cx * sy * cz + sx * cy * sz
+        qz: f32 = cx * cy * sz - sx * sy * cz
+        return Quat(qx, qy, qz, qw)
+
+    fun multiply(self, o: Quat) -> Quat:
+        return Quat(
+            self.w * o.x + self.x * o.w + self.y * o.z - self.z * o.y,
+            self.w * o.y - self.x * o.z + self.y * o.w + self.z * o.x,
+            self.w * o.z + self.x * o.y - self.y * o.x + self.z * o.w,
+            self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z
+        )
+
+    fun length_squared(self) -> f32:
+        return self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
+
+    fun length(self) -> f32:
+        return @sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
+
+    fun normalized(self) -> Quat:
+        len: f32 = self.length()
+        if len < 0.00001:
+            return Quat(0.0, 0.0, 0.0, 1.0)
+        return Quat(self.x / len, self.y / len, self.z / len, self.w / len)
+
+    fun conjugate(self) -> Quat:
+        return Quat(0.0 - self.x, 0.0 - self.y, 0.0 - self.z, self.w)
+
+    fun inverse(self) -> Quat:
+        ls: f32 = self.length_squared()
+        if ls < 0.00001:
+            return Quat(0.0, 0.0, 0.0, 1.0)
+        inv: f32 = 1.0 / ls
+        return Quat(
+            (0.0 - self.x) * inv,
+            (0.0 - self.y) * inv,
+            (0.0 - self.z) * inv,
+            self.w * inv
+        )
+
+    fun dot(self, o: Quat) -> f32:
+        return self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w
+
+    fun slerp(self, o: Quat, t: f32) -> Quat:
+        d: f32 = self.dot(o)
+        ox: f32 = o.x
+        oy: f32 = o.y
+        oz: f32 = o.z
+        ow: f32 = o.w
+        if d < 0.0:
+            ox = 0.0 - ox
+            oy = 0.0 - oy
+            oz = 0.0 - oz
+            ow = 0.0 - ow
+            d = 0.0 - d
+        if d > 0.9995:
+            rx: f32 = self.x + (ox - self.x) * t
+            ry: f32 = self.y + (oy - self.y) * t
+            rz: f32 = self.z + (oz - self.z) * t
+            rw: f32 = self.w + (ow - self.w) * t
+            rlen: f32 = @sqrt(rx * rx + ry * ry + rz * rz + rw * rw)
+            return Quat(rx / rlen, ry / rlen, rz / rlen, rw / rlen)
+        theta: f32 = @acos(d)
+        sin_theta: f32 = @sin(theta)
+        wa: f32 = @sin((1.0 - t) * theta) / sin_theta
+        wb: f32 = @sin(t * theta) / sin_theta
+        return Quat(
+            self.x * wa + ox * wb,
+            self.y * wa + oy * wb,
+            self.z * wa + oz * wb,
+            self.w * wa + ow * wb
+        )
+
+    fun rotate_vec3(self, vx: f32, vy: f32, vz: f32) -> Vec3:
+        qx2: f32 = self.x + self.x
+        qy2: f32 = self.y + self.y
+        qz2: f32 = self.z + self.z
+        xx: f32 = self.x * qx2
+        yy: f32 = self.y * qy2
+        zz: f32 = self.z * qz2
+        xy: f32 = self.x * qy2
+        xz: f32 = self.x * qz2
+        yz: f32 = self.y * qz2
+        wx: f32 = self.w * qx2
+        wy: f32 = self.w * qy2
+        wz: f32 = self.w * qz2
+        return Vec3(
+            (1.0 - yy - zz) * vx + (xy - wz) * vy + (xz + wy) * vz,
+            (xy + wz) * vx + (1.0 - xx - zz) * vy + (yz - wx) * vz,
+            (xz - wy) * vx + (yz + wx) * vy + (1.0 - xx - yy) * vz
+        )
+
+    fun to_mat4(self) -> Mat4:
+        x2: f32 = self.x + self.x
+        y2: f32 = self.y + self.y
+        z2: f32 = self.z + self.z
+        xx: f32 = self.x * x2
+        xy: f32 = self.x * y2
+        xz: f32 = self.x * z2
+        yy: f32 = self.y * y2
+        yz: f32 = self.y * z2
+        zz: f32 = self.z * z2
+        wx: f32 = self.w * x2
+        wy: f32 = self.w * y2
+        wz: f32 = self.w * z2
+        return Mat4(
+            m0=1.0 - yy - zz, m1=xy + wz, m2=xz - wy, m3=0.0,
+            m4=xy - wz, m5=1.0 - xx - zz, m6=yz + wx, m7=0.0,
+            m8=xz + wy, m9=yz - wx, m10=1.0 - xx - yy, m11=0.0,
+            m12=0.0, m13=0.0, m14=0.0, m15=1.0
+        )

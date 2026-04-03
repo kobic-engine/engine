@@ -1,0 +1,107 @@
+##############################
+# Kobic Engine — Camera3D
+# CameraData component + view/projection
+##############################
+
+@component
+struct CameraData:
+    fov:   f32 = 60.0
+    near:  f32 = 0.1
+    far:   f32 = 1000.0
+    pitch: f32 = 0.0
+    yaw:   f32 = 0.0
+
+imple CameraData:
+
+    static fun spawn(w: World, name: str, fov: f32) -> i32:
+        eid: i32 = Node3D.spawn(w, name)
+        if eid < 0:
+            return eid
+        c_data: i64 = Memory.malloc_zeroed(20)
+        if c_data != 0:
+            Memory.write_f32(c_data + 0, fov)
+            Memory.write_f32(c_data + 4, 0.1)
+            Memory.write_f32(c_data + 8, 1000.0)
+            Memory.write_f32(c_data + 12, 0.0)
+            Memory.write_f32(c_data + 16, 0.0)
+            w.add_component(eid, "CameraData", c_data)
+            Memory.free(c_data)
+        return eid
+
+    static fun get_view_matrix(w: World, eid: i32) -> i64:
+        t: i64 = w.get_component(eid, "Transform")
+        c: i64 = w.get_component(eid, "CameraData")
+        if t == 0:
+            return 0
+        if c == 0:
+            return 0
+        px: f32 = Memory.read_f32(t)
+        py: f32 = Memory.read_f32(t + 4)
+        pz: f32 = Memory.read_f32(t + 8)
+        rx: f32 = Memory.read_f32(t + 12)
+        ry: f32 = Memory.read_f32(t + 16)
+        pi: f32 = 3.14159265
+        rad_x: f32 = rx * pi / 180.0
+        rad_y: f32 = ry * pi / 180.0
+        cx: f32 = @cos(rad_x)
+        sx: f32 = @sin(rad_x)
+        cy: f32 = @cos(rad_y)
+        sy: f32 = @sin(rad_y)
+        cz: f32 = 1.0
+        sz: f32 = 0.0
+        r00: f32 = cy * cz
+        r01: f32 = sx * sy * cz - cx * sz
+        r02: f32 = cx * sy * cz + sx * sz
+        r10: f32 = cy * sz
+        r11: f32 = sx * sy * sz + cx * cz
+        r12: f32 = cx * sy * sz - sx * cz
+        r20: f32 = 0.0 - sy
+        r21: f32 = sx * cy
+        r22: f32 = cx * cy
+        tx: f32 = 0.0 - (r00 * px + r10 * py + r20 * pz)
+        ty: f32 = 0.0 - (r01 * px + r11 * py + r21 * pz)
+        tz: f32 = 0.0 - (r02 * px + r12 * py + r22 * pz)
+        m: i64 = Memory.malloc_zeroed(64)
+        if m == 0:
+            return 0
+        Memory.write_f32(m + 0, r00)
+        Memory.write_f32(m + 4, r01)
+        Memory.write_f32(m + 8, r02)
+        Memory.write_f32(m + 12, 0.0)
+        Memory.write_f32(m + 16, r10)
+        Memory.write_f32(m + 20, r11)
+        Memory.write_f32(m + 24, r12)
+        Memory.write_f32(m + 28, 0.0)
+        Memory.write_f32(m + 32, r20)
+        Memory.write_f32(m + 36, r21)
+        Memory.write_f32(m + 40, r22)
+        Memory.write_f32(m + 44, 0.0)
+        Memory.write_f32(m + 48, tx)
+        Memory.write_f32(m + 52, ty)
+        Memory.write_f32(m + 56, tz)
+        Memory.write_f32(m + 60, 1.0)
+        return m
+
+    static fun get_projection_matrix(w: World, eid: i32, aspect: f32) -> i64:
+        c: i64 = w.get_component(eid, "CameraData")
+        if c == 0:
+            return 0
+        fov: f32 = Memory.read_f32(c)
+        near: f32 = Memory.read_f32(c + 4)
+        far: f32 = Memory.read_f32(c + 8)
+        pi: f32 = 3.14159265
+        fov_rad: f32 = fov * pi / 180.0
+        half: f32 = fov_rad / 2.0
+        tan_half: f32 = @sin(half) / @cos(half)
+        f: f32 = 1.0 / tan_half
+        ri: f32 = 1.0 / (near - far)
+        m: i64 = Memory.malloc_zeroed(64)
+        if m == 0:
+            return 0
+        Memory.set(m, 0, 64)
+        Memory.write_f32(m + 0, f / aspect)
+        Memory.write_f32(m + 20, 0.0 - f)
+        Memory.write_f32(m + 40, far * ri)
+        Memory.write_f32(m + 44, 0.0 - 1.0)
+        Memory.write_f32(m + 56, near * far * ri)
+        return m

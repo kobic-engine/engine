@@ -1,0 +1,151 @@
+##############################
+# Kobic Engine — High-Level Helpers
+# Static utility methods that wrap engine boilerplate
+# (window creation, Vulkan init, mesh spawning, rendering, cleanup)
+##############################
+
+struct Kobic:
+    _dummy: i32 = 0
+
+imple Kobic:
+
+    # ---- Window ----
+
+    static fun create_window(title: str, width: i32, height: i32) -> i64:
+        init_r: i32 = glfwInit()
+        if init_r == 0:
+            print("Kobic: GLFW init failed")
+            return 0
+        glfwWindowHint(139265, 0)
+        glfwWindowHint(131075, 0)
+        handle: i64 = glfwCreateWindow(width, height, title, 0, 0)
+        if handle == 0:
+            print("Kobic: window creation failed")
+        return handle
+
+    # ---- World ----
+
+    static fun create_world() -> World:
+        w: World = World.init()
+        register_default_components(w)
+        return w
+
+    # ---- Vulkan ----
+
+    static fun init_render(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, window: i64, width: i32, height: i32) -> i32:
+        vk_ok: i32 = ctx.init(window)
+        if vk_ok != 1:
+            print("Kobic: Vulkan init failed")
+            return 0
+        sc.init(ctx.vk_instance, ctx.vk_physical_device, ctx.vk_device, ctx.vk_surface, width, height, ctx.graphics_family, ctx.present_family)
+        vert_shader: EmbeddedShader = get_generic_vert_shader()
+        frag_shader: EmbeddedShader = get_generic_frag_shader()
+        rp.init(ctx.vk_device, sc.format, sc.image_count, sc.image_views, sc.depth_view, width, height, ctx.graphics_family, vert_shader.data, vert_shader.size, frag_shader.data, frag_shader.size)
+        ren.init(ctx.vk_device, ctx.vk_physical_device, ctx.vk_graphics_queue, ctx.vk_present_queue)
+        print("Kobic: Vulkan ready")
+        return 1
+
+    # ---- Spawning ----
+
+    static fun spawn_cube(w: World, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
+        eid: i32 = MeshData.spawn_cube(w, name, size)
+        if eid < 0:
+            return eid
+        Node3D.set_pos(w, eid, x, y, z)
+        Kobic.upload_mesh(w, ren, eid)
+        Kobic.update_matrix(w, ren, eid)
+        return eid
+
+    static fun spawn_plane(w: World, ren: Renderer, name: str, sx: f32, sz: f32, x: f32, y: f32, z: f32) -> i32:
+        eid: i32 = MeshData.spawn_plane(w, name, sx, sz)
+        if eid < 0:
+            return eid
+        Node3D.set_pos(w, eid, x, y, z)
+        Kobic.upload_mesh(w, ren, eid)
+        Kobic.update_matrix(w, ren, eid)
+        return eid
+
+    static fun spawn_camera(w: World, name: str, fov: f32, x: f32, y: f32, z: f32) -> i32:
+        eid: i32 = CameraData.spawn(w, name, fov)
+        if eid < 0:
+            return eid
+        Node3D.set_pos(w, eid, x, y, z)
+        return eid
+
+    # ---- Mesh Upload / Matrix ----
+
+    static fun upload_mesh(w: World, ren: Renderer, eid: i32) -> void:
+        md: i64 = w.get_component(eid, "MeshData")
+        if md == 0:
+            return
+        v: i64 = Memory.read_ptr(md)
+        c: i32 = Memory.read_i32(md + 8)
+        if v == 0:
+            return
+        if c <= 0:
+            return
+        idx: i32 = ren.upload_mesh(v, c)
+        Memory.write_i32(md + 12, idx)
+
+    static fun update_matrix(w: World, ren: Renderer, eid: i32) -> void:
+        md: i64 = w.get_component(eid, "MeshData")
+        if md == 0:
+            return
+        vb_idx: i32 = Memory.read_i32(md + 12)
+        if vb_idx < 0:
+            return
+        t: i64 = w.get_component(eid, "Transform")
+        if t == 0:
+            return
+        tpx: f32 = Memory.read_f32(t)
+        tpy: f32 = Memory.read_f32(t + 4)
+        tpz: f32 = Memory.read_f32(t + 8)
+        trx: f32 = Memory.read_f32(t + 12)
+        try_v: f32 = Memory.read_f32(t + 16)
+        trz: f32 = Memory.read_f32(t + 20)
+        tsx: f32 = Memory.read_f32(t + 24)
+        tsy: f32 = Memory.read_f32(t + 28)
+        tsz: f32 = Memory.read_f32(t + 32)
+        m: Mat4 = Mat4.compose(tpx, tpy, tpz, trx, try_v, trz, tsx, tsy, tsz)
+        mat_ptr: i64 = Memory.malloc_zeroed(64)
+        if mat_ptr == 0:
+            return
+        m.write_to_ptr(mat_ptr)
+        ren.set_model_matrix(vb_idx, mat_ptr)
+
+    # ---- Frame ----
+
+    static fun begin_frame(window: i64) -> void:
+        glfwPollEvents()
+        Input.update()
+        Mouse.update()
+
+    static fun render_frame(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, w: World, cam_id: i32, width: i32, height: i32, aspect: f32) -> void:
+        if ren.initialized == 0:
+            return
+        cam_view: i64 = 0
+        cam_proj: i64 = 0
+        if cam_id >= 0:
+            cam_view = CameraData.get_view_matrix(w, cam_id)
+            cam_proj = CameraData.get_projection_matrix(w, cam_id, aspect)
+        ren.render_frame(rp, sc, ctx.vk_device, ctx.vk_graphics_queue, ctx.vk_present_queue, cam_view, cam_proj, width, height)
+        if cam_view != 0:
+            Memory.free(cam_view)
+        if cam_proj != 0:
+            Memory.free(cam_proj)
+
+    # ---- Cleanup ----
+
+    static fun cleanup(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, w: World, window: i64) -> void:
+        if ctx.initialized == 1:
+            vkDeviceWaitIdle(ctx.vk_device)
+            ren.cleanup()
+            rp.cleanup(ctx.vk_device)
+            sc.cleanup(ctx.vk_instance, ctx.vk_device)
+            ctx.cleanup()
+        Input.cleanup()
+        Mouse.cleanup()
+        w.cleanup()
+        if window != 0:
+            glfwDestroyWindow(window)
+        glfwTerminate()

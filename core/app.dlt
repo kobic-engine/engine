@@ -1,0 +1,279 @@
+##############################
+# Kobic Engine — App
+# Top-level application (owns Window + World)
+# Builder pattern: App.new().config(...).init().run()
+##############################
+
+struct App:
+    # Window
+    window_handle:  i64 = 0
+    window_width:   i32 = 1280
+    window_height:  i32 = 720
+    window_title:   str = "Kobic Engine"
+    is_running:     i32 = 0
+
+    # ECS World
+    world:          World = World()
+    scene_tree:     SceneTree = SceneTree()
+
+    # Vulkan subsystems
+    vk_ctx:         VulkanContext = VulkanContext()
+    swapchain:      Swapchain = Swapchain()
+    render_pass:    RenderPass = RenderPass()
+    renderer:       Renderer = Renderer()
+
+    # Timing
+    last_time:      f64 = 0.0
+    dt:             f32 = 0.0
+    frame_count:    i32 = 0
+
+    # Camera
+    active_camera:  i32 = -1
+
+imple App:
+
+    fun config(self, cfg: RenderConfig) -> void:
+        self.window_title = cfg.title
+        self.window_width = cfg.width
+        self.window_height = cfg.height
+
+    fun init(self) -> i32:
+        # Init GLFW
+        init_r: i32 = glfwInit()
+        if init_r == 0:
+            print("Error: Failed to initialize GLFW")
+            return 0
+        glfwWindowHint(139265, 0)
+        glfwWindowHint(131075, 0)
+        self.window_handle = glfwCreateWindow(self.window_width, self.window_height, self.window_title, 0, 0)
+        if self.window_handle == 0:
+            print("Error: Failed to create window")
+            glfwTerminate()
+            return 0
+        self.is_running = 1
+
+        # Init ECS World
+        self.world = World.init()
+        w: World = self.world
+        register_default_components(w)
+        self.world = w
+
+        # Init scene tree
+        st: SceneTree = self.scene_tree
+        st.init(w)
+        self.scene_tree = st
+
+        # Bind input
+        Input.bind(self.window_handle)
+        Mouse.bind(self.window_handle)
+
+        # Init Vulkan
+        ctx: VulkanContext = self.vk_ctx
+        vk_r: i32 = ctx.init(self.window_handle)
+        self.vk_ctx = ctx
+        if vk_r == 0:
+            print("Warning: Vulkan init failed")
+            return 1
+
+        # Use surface from VulkanContext (already created during init)
+        surface: i64 = ctx.vk_surface
+        if surface != 0:
+            print("  Initializing swapchain...")
+            # Init swapchain
+            sc: Swapchain = self.swapchain
+            sc.init(
+                ctx.vk_instance,
+                ctx.vk_physical_device,
+                ctx.vk_device,
+                surface,
+                self.window_width,
+                self.window_height,
+                ctx.graphics_family,
+                ctx.present_family
+            )
+            self.swapchain = sc
+            print("  Swapchain OK")
+
+            # Load shaders
+            print("  Loading shaders...")
+            vert_shader: EmbeddedShader = get_generic_vert_shader()
+            frag_shader: EmbeddedShader = get_generic_frag_shader()
+            print("  Shaders loaded")
+
+            # Init render pass + pipeline
+            rp: RenderPass = self.render_pass
+            rp.init(
+                ctx.vk_device,
+                sc.format,
+                sc.image_count,
+                sc.image_views,
+                sc.depth_view,
+                self.window_width,
+                self.window_height,
+                ctx.graphics_family,
+                vert_shader.data,
+                vert_shader.size,
+                frag_shader.data,
+                frag_shader.size
+            )
+            self.render_pass = rp
+            print("  RenderPass OK")
+
+            # Init renderer
+            ren: Renderer = self.renderer
+            ren.init(
+                ctx.vk_device,
+                ctx.vk_physical_device,
+                ctx.vk_graphics_queue,
+                ctx.vk_present_queue
+            )
+            self.renderer = ren
+            print("  Renderer OK")
+            if ren.device == 0:
+                print("  WARNING: renderer.device is 0 after init!")
+            if ren.initialized == 0:
+                print("  WARNING: renderer.initialized is 0 after init!")
+
+        self.last_time = glfwGetTime()
+        self.frame_count = 0
+        # Re-verify renderer state after all writes
+        ren2: Renderer = self.renderer
+        if ren2.device == 0:
+            print("  FINAL CHECK: renderer.device is 0!")
+        if ren2.initialized == 0:
+            print("  FINAL CHECK: renderer.initialized is 0!")
+        print("Kobic Engine initialized!")
+        return 1
+
+    fun should_close(self) -> i32:
+        if self.window_handle == 0:
+            return 1
+        return glfwWindowShouldClose(self.window_handle)
+
+    fun begin_frame(self) -> void:
+        glfwPollEvents()
+        Input.update()
+        Mouse.update()
+        now: f64 = glfwGetTime()
+        self.dt = now - self.last_time
+        self.last_time = now
+        self.frame_count = self.frame_count + 1
+
+    fun delta_time(self) -> f32:
+        return self.dt
+
+    fun get_world(self) -> World:
+        return self.world
+
+    fun end_frame(self) -> void:
+        ctx: VulkanContext = self.vk_ctx
+        if ctx.initialized == 0:
+            return
+        ren: Renderer = self.renderer
+        if ren.initialized == 0:
+            return
+        # Get camera view/projection
+        cam_view: i64 = 0
+        cam_proj: i64 = 0
+        w: World = self.world
+        if self.active_camera >= 0:
+            cam_view = CameraData.get_view_matrix(w, self.active_camera)
+            aspect: f32 = self.window_width
+            ah: f32 = self.window_height
+            aspect = aspect / ah
+            cam_proj = CameraData.get_projection_matrix(w, self.active_camera, aspect)
+        rp: RenderPass = self.render_pass
+        sc: Swapchain = self.swapchain
+        ren.render_frame(
+            rp,
+            sc,
+            ctx.vk_device,
+            ctx.vk_graphics_queue,
+            ctx.vk_present_queue,
+            cam_view,
+            cam_proj,
+            self.window_width,
+            self.window_height
+        )
+        self.render_pass = rp
+        self.renderer = ren
+        if cam_view != 0:
+            Memory.free(cam_view)
+        if cam_proj != 0:
+            Memory.free(cam_proj)
+
+    fun set_camera(self, cam_eid: i32) -> void:
+        self.active_camera = cam_eid
+
+    fun upload_mesh(self, entity_id: i32) -> i32:
+        ren: Renderer = self.renderer
+        if ren.initialized == 0:
+            print("  upload_mesh: renderer NOT initialized!")
+            return 0 - 1
+        if ren.device == 0:
+            print("  upload_mesh: device is NULL!")
+            return 0 - 1
+        w: World = self.world
+        md: i64 = w.get_component(entity_id, "MeshData")
+        if md == 0:
+            return 0 - 1
+        verts: i64 = Memory.read_ptr(md)
+        vc: i32 = Memory.read_i32(md + 8)
+        if verts == 0:
+            return 0 - 1
+        if vc <= 0:
+            return 0 - 1
+        idx: i32 = ren.upload_mesh(verts, vc)
+        self.renderer = ren
+        Memory.write_i32(md + 12, idx)
+        return idx
+
+    fun update_model_matrix(self, entity_id: i32) -> void:
+        w: World = self.world
+        md: i64 = w.get_component(entity_id, "MeshData")
+        if md == 0:
+            return
+        vb_idx: i32 = Memory.read_i32(md + 12)
+        if vb_idx < 0:
+            return
+        t: i64 = w.get_component(entity_id, "Transform")
+        if t == 0:
+            return
+        px: f32 = Memory.read_f32(t)
+        py: f32 = Memory.read_f32(t + 4)
+        pz: f32 = Memory.read_f32(t + 8)
+        rx: f32 = Memory.read_f32(t + 12)
+        ry: f32 = Memory.read_f32(t + 16)
+        rz: f32 = Memory.read_f32(t + 20)
+        sx: f32 = Memory.read_f32(t + 24)
+        sy: f32 = Memory.read_f32(t + 28)
+        sz: f32 = Memory.read_f32(t + 32)
+        m: Mat4 = Mat4.compose(px, py, pz, rx, ry, rz, sx, sy, sz)
+        mat_ptr: i64 = Memory.malloc_zeroed(64)
+        if mat_ptr == 0:
+            return
+        m.write_to_ptr(mat_ptr)
+        ren: Renderer = self.renderer
+        ren.set_model_matrix(vb_idx, mat_ptr)
+
+    fun cleanup(self) -> void:
+        ctx: VulkanContext = self.vk_ctx
+        if ctx.initialized == 1:
+            vkDeviceWaitIdle(ctx.vk_device)
+            ren: Renderer = self.renderer
+            ren.cleanup()
+            rp: RenderPass = self.render_pass
+            rp.cleanup(ctx.vk_device)
+            sc: Swapchain = self.swapchain
+            sc.cleanup(ctx.vk_instance, ctx.vk_device)
+            ctx.cleanup()
+        Input.cleanup()
+        Mouse.cleanup()
+        w: World = self.world
+        w.cleanup()
+        if self.window_handle != 0:
+            glfwDestroyWindow(self.window_handle)
+            self.window_handle = 0
+        glfwTerminate()
+        self.is_running = 0
+        print("Kobic Engine cleaned up")

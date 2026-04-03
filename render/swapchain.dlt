@@ -1,0 +1,324 @@
+##############################
+# Kobic Engine — Swapchain
+# Surface, swapchain, image views
+# Adapted from qubic/core/window.dlt
+##############################
+
+struct Swapchain:
+    vk_surface:       i64 = 0
+    vk_swapchain:     i64 = 0
+    images:           i64 = 0
+    image_views:      i64 = 0
+    image_count:      i32 = 0
+    format:           i32 = 0
+    width:            i32 = 0
+    height:           i32 = 0
+    depth_image:      i64 = 0
+    depth_memory:     i64 = 0
+    depth_view:       i64 = 0
+
+imple Swapchain:
+
+    fun init(self, instance: i64, phys_dev: i64, device: i64, surface: i64, width: i32, height: i32, gfx_family: i32, present_family: i32) -> i32:
+        self.vk_surface = surface
+        self.width = width
+        self.height = height
+
+        # Query surface capabilities
+        caps: i64 = Memory.malloc_zeroed(64)
+        if caps == 0:
+            return 0
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_dev, surface, caps)
+        min_images: i32 = Memory.read_i32(caps + 0)
+        max_images: i32 = Memory.read_i32(caps + 4)
+        current_transform: i32 = Memory.read_i32(caps + 40)
+        composite_alpha: i32 = Memory.read_i32(caps + 44)
+        Memory.free(caps)
+        desired_count: i32 = min_images + 1
+        if max_images > 0:
+            if desired_count > max_images:
+                desired_count = max_images
+
+        # Query surface formats → pick B8G8R8A8_SRGB (50) or first available
+        fmt_count_ptr: i64 = Memory.malloc_zeroed(4)
+        if fmt_count_ptr == 0:
+            return 0
+        vkGetPhysicalDeviceSurfaceFormatsKHR(phys_dev, surface, fmt_count_ptr, 0)
+        fmt_count: i32 = Memory.read_i32(fmt_count_ptr)
+        if fmt_count == 0:
+            Memory.free(fmt_count_ptr)
+            return 0
+        formats: i64 = Memory.malloc_zeroed(fmt_count * 8)
+        if formats == 0:
+            Memory.free(fmt_count_ptr)
+            return 0
+        vkGetPhysicalDeviceSurfaceFormatsKHR(phys_dev, surface, fmt_count_ptr, formats)
+        Memory.free(fmt_count_ptr)
+        chosen_format: i32 = Memory.read_i32(formats)
+        chosen_colorspace: i32 = Memory.read_i32(formats + 4)
+        fi: i32 = 0
+        while fi < fmt_count:
+            cf: i32 = Memory.read_i32(formats + fi * 8)
+            cs: i32 = Memory.read_i32(formats + fi * 8 + 4)
+            if cf == 50:
+                if cs == 0:
+                    chosen_format = cf
+                    chosen_colorspace = cs
+            fi = fi + 1
+        Memory.free(formats)
+        self.format = chosen_format
+
+        # Query present modes → prefer MAILBOX (1), else FIFO (2)
+        pm_count_ptr: i64 = Memory.malloc_zeroed(4)
+        if pm_count_ptr == 0:
+            return 0
+        vkGetPhysicalDeviceSurfacePresentModesKHR(phys_dev, surface, pm_count_ptr, 0)
+        pm_count: i32 = Memory.read_i32(pm_count_ptr)
+        pmodes: i64 = Memory.malloc_zeroed(pm_count * 4)
+        if pmodes == 0:
+            Memory.free(pm_count_ptr)
+            return 0
+        vkGetPhysicalDeviceSurfacePresentModesKHR(phys_dev, surface, pm_count_ptr, pmodes)
+        Memory.free(pm_count_ptr)
+        chosen_mode: i32 = 2
+        pi: i32 = 0
+        while pi < pm_count:
+            pm: i32 = Memory.read_i32(pmodes + pi * 4)
+            if pm == 1:
+                chosen_mode = 1
+            pi = pi + 1
+        Memory.free(pmodes)
+
+        # Create swapchain
+        sc_ci: i64 = Memory.malloc_zeroed(104)
+        if sc_ci == 0:
+            return 0
+        Memory.set(sc_ci, 0, 104)
+        Memory.write_i32(sc_ci, 1000001000)
+        Memory.write_ptr(sc_ci + 8, 0)
+        Memory.write_i32(sc_ci + 16, 0)
+        Memory.write_ptr(sc_ci + 24, surface)
+        Memory.write_i32(sc_ci + 32, desired_count)
+        Memory.write_i32(sc_ci + 36, chosen_format)
+        Memory.write_i32(sc_ci + 40, chosen_colorspace)
+        Memory.write_i32(sc_ci + 44, width)
+        Memory.write_i32(sc_ci + 48, height)
+        Memory.write_i32(sc_ci + 52, 1)
+        Memory.write_i32(sc_ci + 56, 16)
+        Memory.write_i32(sc_ci + 60, 0)
+        Memory.write_i32(sc_ci + 64, 0)
+        Memory.write_ptr(sc_ci + 72, 0)
+        Memory.write_i32(sc_ci + 80, current_transform)
+        Memory.write_i32(sc_ci + 84, 1)
+        Memory.write_i32(sc_ci + 88, chosen_mode)
+        Memory.write_i32(sc_ci + 92, 1)
+        Memory.write_ptr(sc_ci + 96, 0)
+
+        sc_ptr: i64 = Memory.malloc_zeroed(8)
+        if sc_ptr == 0:
+            Memory.free(sc_ci)
+            return 0
+        sc_result: i32 = vkCreateSwapchainKHR(device, sc_ci, 0, sc_ptr)
+        self.vk_swapchain = Memory.read_ptr(sc_ptr)
+        Memory.free(sc_ptr)
+        Memory.free(sc_ci)
+        if sc_result != 0:
+            return 0
+
+        # Get swapchain images
+        img_count_ptr: i64 = Memory.malloc_zeroed(4)
+        if img_count_ptr == 0:
+            return 0
+        vkGetSwapchainImagesKHR(device, self.vk_swapchain, img_count_ptr, 0)
+        self.image_count = Memory.read_i32(img_count_ptr)
+        self.images = Memory.malloc_zeroed(self.image_count * 8)
+        if self.images == 0:
+            Memory.free(img_count_ptr)
+            return 0
+        vkGetSwapchainImagesKHR(device, self.vk_swapchain, img_count_ptr, self.images)
+        Memory.free(img_count_ptr)
+
+        # Create image views
+        self.image_views = Memory.malloc_zeroed(self.image_count * 8)
+        if self.image_views == 0:
+            return 0
+        vi: i32 = 0
+        while vi < self.image_count:
+            iv_ci: i64 = Memory.malloc_zeroed(80)
+            if iv_ci == 0:
+                return 0
+            Memory.set(iv_ci, 0, 80)
+            Memory.write_i32(iv_ci, 15)
+            Memory.write_ptr(iv_ci + 8, 0)
+            Memory.write_i32(iv_ci + 16, 0)
+            img: i64 = Memory.read_ptr(self.images + vi * 8)
+            Memory.write_ptr(iv_ci + 24, img)
+            Memory.write_i32(iv_ci + 32, 1)
+            Memory.write_i32(iv_ci + 36, chosen_format)
+            Memory.write_i32(iv_ci + 40, 0)
+            Memory.write_i32(iv_ci + 44, 0)
+            Memory.write_i32(iv_ci + 48, 0)
+            Memory.write_i32(iv_ci + 52, 0)
+            Memory.write_i32(iv_ci + 56, 1)
+            Memory.write_i32(iv_ci + 60, 0)
+            Memory.write_i32(iv_ci + 64, 1)
+            Memory.write_i32(iv_ci + 68, 0)
+            Memory.write_i32(iv_ci + 72, 1)
+            iv_ptr: i64 = Memory.malloc_zeroed(8)
+            if iv_ptr == 0:
+                Memory.free(iv_ci)
+                return 0
+            iv_result: i32 = vkCreateImageView(device, iv_ci, 0, iv_ptr)
+            view: i64 = Memory.read_ptr(iv_ptr)
+            Memory.write_ptr(self.image_views + vi * 8, view)
+            Memory.free(iv_ptr)
+            Memory.free(iv_ci)
+            if iv_result != 0:
+                return 0
+            vi = vi + 1
+
+        # Create depth buffer (VK_FORMAT_D32_SFLOAT = 126)
+        depth_format: i32 = 126
+        img_ci: i64 = Memory.malloc_zeroed(88)
+        if img_ci == 0:
+            return 0
+        Memory.write_i32(img_ci, 14)
+        Memory.write_ptr(img_ci + 8, 0)
+        Memory.write_i32(img_ci + 16, 0)
+        Memory.write_i32(img_ci + 20, 1)
+        Memory.write_i32(img_ci + 24, depth_format)
+        Memory.write_i32(img_ci + 28, width)
+        Memory.write_i32(img_ci + 32, height)
+        Memory.write_i32(img_ci + 36, 1)
+        Memory.write_i32(img_ci + 40, 1)
+        Memory.write_i32(img_ci + 44, 1)
+        Memory.write_i32(img_ci + 48, 1)
+        Memory.write_i32(img_ci + 52, 0)
+        Memory.write_i32(img_ci + 56, 32)
+        Memory.write_i32(img_ci + 60, 0)
+        Memory.write_i32(img_ci + 64, 0)
+        Memory.write_ptr(img_ci + 72, 0)
+        Memory.write_i32(img_ci + 80, 0)
+
+        di_ptr: i64 = Memory.malloc_zeroed(8)
+        if di_ptr == 0:
+            Memory.free(img_ci)
+            return 0
+        di_result: i32 = vkCreateImage(device, img_ci, 0, di_ptr)
+        self.depth_image = Memory.read_ptr(di_ptr)
+        Memory.free(di_ptr)
+        Memory.free(img_ci)
+        if di_result != 0:
+            return 0
+
+        # Get memory requirements for depth image
+        mem_reqs: i64 = Memory.malloc_zeroed(24)
+        if mem_reqs == 0:
+            return 0
+        vkGetImageMemoryRequirements(device, self.depth_image, mem_reqs)
+        req_size: i64 = Memory.read_i64(mem_reqs + 0)
+        req_bits: i32 = Memory.read_i32(mem_reqs + 16)
+        Memory.free(mem_reqs)
+
+        # Find device-local memory type
+        dmem_props: i64 = Memory.malloc_zeroed(520)
+        if dmem_props == 0:
+            return 0
+        vkGetPhysicalDeviceMemoryProperties(phys_dev, dmem_props)
+        dtype_count: i32 = Memory.read_i32(dmem_props)
+        dmem_idx: i32 = 0 - 1
+        dti: i32 = 0
+        while dti < dtype_count:
+            dbit_check: i32 = 1
+            dshift: i32 = 0
+            while dshift < dti:
+                dbit_check = dbit_check * 2
+                dshift = dshift + 1
+            if (req_bits / dbit_check) - (req_bits / (dbit_check * 2)) * 2 == 1:
+                dflags: i32 = Memory.read_i32(dmem_props + 4 + dti * 8)
+                if (dflags / 1) - (dflags / 2) * 2 == 1:
+                    dmem_idx = dti
+                    dti = dtype_count
+            dti = dti + 1
+        Memory.free(dmem_props)
+        if dmem_idx < 0:
+            return 0
+
+        # Allocate and bind depth memory
+        dalloc_info: i64 = Memory.malloc_zeroed(32)
+        if dalloc_info == 0:
+            return 0
+        Memory.write_i32(dalloc_info, 5)
+        Memory.write_ptr(dalloc_info + 8, 0)
+        Memory.write_i64(dalloc_info + 16, req_size)
+        Memory.write_i32(dalloc_info + 24, dmem_idx)
+        dmem_ptr: i64 = Memory.malloc_zeroed(8)
+        if dmem_ptr == 0:
+            Memory.free(dalloc_info)
+            return 0
+        dalloc_r: i32 = vkAllocateMemory(device, dalloc_info, 0, dmem_ptr)
+        self.depth_memory = Memory.read_ptr(dmem_ptr)
+        Memory.free(dmem_ptr)
+        Memory.free(dalloc_info)
+        if dalloc_r != 0:
+            return 0
+        vkBindImageMemory(device, self.depth_image, self.depth_memory, 0)
+
+        # Create depth image view
+        div_ci: i64 = Memory.malloc_zeroed(80)
+        if div_ci == 0:
+            return 0
+        Memory.set(div_ci, 0, 80)
+        Memory.write_i32(div_ci, 15)
+        Memory.write_ptr(div_ci + 8, 0)
+        Memory.write_i32(div_ci + 16, 0)
+        Memory.write_ptr(div_ci + 24, self.depth_image)
+        Memory.write_i32(div_ci + 32, 1)
+        Memory.write_i32(div_ci + 36, depth_format)
+        Memory.write_i32(div_ci + 40, 0)
+        Memory.write_i32(div_ci + 44, 0)
+        Memory.write_i32(div_ci + 48, 0)
+        Memory.write_i32(div_ci + 52, 0)
+        Memory.write_i32(div_ci + 56, 2)
+        Memory.write_i32(div_ci + 60, 0)
+        Memory.write_i32(div_ci + 64, 1)
+        Memory.write_i32(div_ci + 68, 0)
+        Memory.write_i32(div_ci + 72, 1)
+        div_ptr: i64 = Memory.malloc_zeroed(8)
+        if div_ptr == 0:
+            Memory.free(div_ci)
+            return 0
+        div_result: i32 = vkCreateImageView(device, div_ci, 0, div_ptr)
+        self.depth_view = Memory.read_ptr(div_ptr)
+        Memory.free(div_ptr)
+        Memory.free(div_ci)
+        if div_result != 0:
+            return 0
+
+        return 1
+
+    fun cleanup(self, instance: i64, device: i64) -> void:
+        if self.depth_view != 0:
+            vkDestroyImageView(device, self.depth_view, 0)
+            self.depth_view = 0
+        if self.depth_image != 0:
+            vkDestroyImage(device, self.depth_image, 0)
+            self.depth_image = 0
+        if self.depth_memory != 0:
+            vkFreeMemory(device, self.depth_memory, 0)
+            self.depth_memory = 0
+        if self.image_views != 0:
+            qi: i32 = 0
+            while qi < self.image_count:
+                view: i64 = Memory.read_ptr(self.image_views + qi * 8)
+                if view != 0:
+                    vkDestroyImageView(device, view, 0)
+                qi = qi + 1
+            Memory.free(self.image_views)
+            self.image_views = 0
+        if self.vk_swapchain != 0:
+            vkDestroySwapchainKHR(device, self.vk_swapchain, 0)
+            self.vk_swapchain = 0
+        if self.images != 0:
+            Memory.free(self.images)
+            self.images = 0

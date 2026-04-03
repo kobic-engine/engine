@@ -1,0 +1,136 @@
+##############################
+# Kobic Engine — Input
+# Keyboard singleton (held/pressed/released)
+# Uses prev/curr frame buffers for edge detection
+##############################
+
+struct Input:
+    static window_handle: i64 = 0
+    static prev_keys:     i64 = 0
+    static curr_keys:     i64 = 0
+    static initialized:   i32 = 0
+    _dummy: i32 = 0
+
+    static fun bind(handle: i64):
+        Input.window_handle = handle
+        if Input.initialized == 0:
+            Input.prev_keys = Memory.malloc_zeroed(2048)
+            Input.curr_keys = Memory.malloc_zeroed(2048)
+            if Input.prev_keys != 0:
+                Memory.set(Input.prev_keys, 0, 2048)
+            if Input.curr_keys != 0:
+                Memory.set(Input.curr_keys, 0, 2048)
+            Input.initialized = 1
+
+    static fun update():
+        if Input.initialized == 0:
+            return
+        pk: i64 = Input.prev_keys
+        ck: i64 = Input.curr_keys
+        if pk == 0:
+            return
+        if ck == 0:
+            return
+        Memory.copy(pk, ck, 2048)
+        Input._poll_common_keys()
+
+    static fun _poll_key(key: i32):
+        if key < 0:
+            return
+        if key >= 512:
+            return
+        ck: i64 = Input.curr_keys
+        if ck == 0:
+            return
+        wh: i64 = Input.window_handle
+        if wh == 0:
+            return
+        state: i32 = glfwGetKey(wh, key)
+        pressed: i32 = 0
+        if state == 1:
+            pressed = 1
+        if state == 2:
+            pressed = 1
+        key_i64: i64 = key
+        Memory.write_i32(ck + key_i64 * 4, pressed)
+
+    static fun _poll_common_keys():
+        Input._poll_key(87)
+        Input._poll_key(65)
+        Input._poll_key(83)
+        Input._poll_key(68)
+        Input._poll_key(81)
+        Input._poll_key(69)
+        Input._poll_key(82)
+        Input._poll_key(70)
+        Input._poll_key(32)
+        Input._poll_key(340)
+        Input._poll_key(341)
+        Input._poll_key(342)
+        Input._poll_key(256)
+        Input._poll_key(257)
+        Input._poll_key(258)
+        Input._poll_key(265)
+        Input._poll_key(264)
+        Input._poll_key(263)
+        Input._poll_key(262)
+        Input._poll_key(290)
+        Input._poll_key(291)
+        Input._poll_key(292)
+        Input._poll_key(293)
+        Input._poll_key(294)
+
+    static fun held(key: i32) -> i32:
+        if Input.window_handle == 0:
+            return 0
+        state: i32 = glfwGetKey(Input.window_handle, key)
+        if state == 1:
+            return 1
+        if state == 2:
+            return 1
+        return 0
+
+    static fun pressed(key: i32) -> i32:
+        if key < 0:
+            return 0
+        if key >= 512:
+            return 0
+        if Input.initialized == 0:
+            return 0
+        pk: i64 = Input.prev_keys
+        if pk == 0:
+            return 0
+        curr_state: i32 = Input.held(key)
+        key_i64: i64 = key
+        prev_state: i32 = Memory.read_i32(pk + key_i64 * 4)
+        if prev_state == 0:
+            if curr_state == 1:
+                return 1
+        return 0
+
+    static fun released(key: i32) -> i32:
+        if key < 0:
+            return 0
+        if key >= 512:
+            return 0
+        if Input.initialized == 0:
+            return 0
+        pk: i64 = Input.prev_keys
+        if pk == 0:
+            return 0
+        curr_state: i32 = Input.held(key)
+        key_i64: i64 = key
+        prev_state: i32 = Memory.read_i32(pk + key_i64 * 4)
+        if prev_state == 1:
+            if curr_state == 0:
+                return 1
+        return 0
+
+    static fun cleanup():
+        if Input.prev_keys != 0:
+            Memory.free(Input.prev_keys)
+            Input.prev_keys = 0
+        if Input.curr_keys != 0:
+            Memory.free(Input.curr_keys)
+            Input.curr_keys = 0
+        Input.initialized = 0

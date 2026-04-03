@@ -1,0 +1,151 @@
+##############################
+# Kobic Engine — ComponentStorage
+# SparseSet: type-erased packed array
+# O(1) add/remove/get, cache-friendly dense iteration
+##############################
+
+struct ComponentStorage:
+    type_name:       str = ""
+    component_size:  i32 = 0
+
+    # Dense array: packed component data (raw bytes)
+    dense_data:      i64 = 0
+    # Dense entity IDs: which entity owns each dense slot
+    dense_entities:  i64 = 0
+    dense_count:     i32 = 0
+    dense_capacity:  i32 = 0
+
+    # Sparse array: entity_id → dense index (-1 = absent)
+    sparse:          i64 = 0
+    sparse_capacity: i32 = 0
+
+imple ComponentStorage:
+
+    static fun init(name: str, comp_size: i32) -> ComponentStorage:
+        cap: i32 = 64
+        sparse_cap: i32 = 256
+        d_data: i64 = Memory.malloc_zeroed(cap * comp_size)
+        d_ents: i64 = Memory.malloc_zeroed(cap * 4)
+        sp: i64 = Memory.malloc_zeroed(sparse_cap * 4)
+        # Fill sparse with -1
+        idx: i32 = 0
+        while idx < sparse_cap:
+            Memory.write_i32(sp + idx * 4, 0 - 1)
+            idx = idx + 1
+        return ComponentStorage(
+            type_name=name,
+            component_size=comp_size,
+            dense_data=d_data,
+            dense_entities=d_ents,
+            dense_count=0,
+            dense_capacity=cap,
+            sparse=sp,
+            sparse_capacity=sparse_cap
+        )
+
+    fun _grow_sparse(self, needed: i32) -> void:
+        if needed < self.sparse_capacity:
+            return
+        new_cap: i32 = self.sparse_capacity
+        while new_cap <= needed:
+            new_cap = new_cap * 2
+        new_sp: i64 = Memory.malloc_zeroed(new_cap * 4)
+        # Copy old sparse
+        Memory.copy(new_sp, self.sparse, self.sparse_capacity * 4)
+        # Fill new slots with -1
+        idx: i32 = self.sparse_capacity
+        while idx < new_cap:
+            Memory.write_i32(new_sp + idx * 4, 0 - 1)
+            idx = idx + 1
+        Memory.free(self.sparse)
+        self.sparse = new_sp
+        self.sparse_capacity = new_cap
+
+    fun _grow_dense(self) -> void:
+        new_cap: i32 = self.dense_capacity * 2
+        new_data: i64 = Memory.malloc_zeroed(new_cap * self.component_size)
+        new_ents: i64 = Memory.malloc_zeroed(new_cap * 4)
+        Memory.copy(new_data, self.dense_data, self.dense_count * self.component_size)
+        Memory.copy(new_ents, self.dense_entities, self.dense_count * 4)
+        Memory.free(self.dense_data)
+        Memory.free(self.dense_entities)
+        self.dense_data = new_data
+        self.dense_entities = new_ents
+        self.dense_capacity = new_cap
+
+    fun has(self, entity_id: i32) -> i32:
+        if entity_id < 0:
+            return 0
+        if entity_id >= self.sparse_capacity:
+            return 0
+        di: i32 = Memory.read_i32(self.sparse + entity_id * 4)
+        if di < 0:
+            return 0
+        if di >= self.dense_count:
+            return 0
+        return 1
+
+    fun get(self, entity_id: i32) -> i64:
+        if self.has(entity_id) == 0:
+            return 0
+        di: i32 = Memory.read_i32(self.sparse + entity_id * 4)
+        return self.dense_data + di * self.component_size
+
+    fun add(self, entity_id: i32, data_ptr: i64) -> i64:
+        if self.has(entity_id) == 1:
+            return self.get(entity_id)
+        self._grow_sparse(entity_id + 1)
+        if self.dense_count >= self.dense_capacity:
+            self._grow_dense()
+        di: i32 = self.dense_count
+        dest: i64 = self.dense_data + di * self.component_size
+        if data_ptr != 0:
+            Memory.copy(dest, data_ptr, self.component_size)
+        Memory.write_i32(self.dense_entities + di * 4, entity_id)
+        Memory.write_i32(self.sparse + entity_id * 4, di)
+        self.dense_count = self.dense_count + 1
+        return dest
+
+    fun remove(self, entity_id: i32) -> void:
+        if self.has(entity_id) == 0:
+            return
+        di: i32 = Memory.read_i32(self.sparse + entity_id * 4)
+        last: i32 = self.dense_count - 1
+        if di != last:
+            # Swap-remove: move last element into the removed slot
+            last_eid: i32 = Memory.read_i32(self.dense_entities + last * 4)
+            src: i64 = self.dense_data + last * self.component_size
+            dst: i64 = self.dense_data + di * self.component_size
+            Memory.copy(dst, src, self.component_size)
+            Memory.write_i32(self.dense_entities + di * 4, last_eid)
+            Memory.write_i32(self.sparse + last_eid * 4, di)
+        Memory.write_i32(self.sparse + entity_id * 4, 0 - 1)
+        self.dense_count = self.dense_count - 1
+
+    fun count(self) -> i32:
+        return self.dense_count
+
+    fun entity_at(self, index: i32) -> i32:
+        if index < 0:
+            return 0 - 1
+        if index >= self.dense_count:
+            return 0 - 1
+        return Memory.read_i32(self.dense_entities + index * 4)
+
+    fun data_at(self, index: i32) -> i64:
+        if index < 0:
+            return 0
+        if index >= self.dense_count:
+            return 0
+        return self.dense_data + index * self.component_size
+
+    fun cleanup(self) -> void:
+        if self.dense_data != 0:
+            Memory.free(self.dense_data)
+        if self.dense_entities != 0:
+            Memory.free(self.dense_entities)
+        if self.sparse != 0:
+            Memory.free(self.sparse)
+        self.dense_count = 0
+        self.dense_capacity = 0
+        self.sparse_capacity = 0

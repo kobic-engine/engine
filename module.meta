@@ -1,0 +1,10 @@
+[package]
+name = kobic
+version = 0.1.0
+description = Kobic Engine — High-performance ECS game engine for Dolet
+author = Dolet Team
+license = MIT
+
+[dependencies]
+glfw = "3.3"
+vulkan = "1.3"
