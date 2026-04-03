@@ -1,0 +1,16 @@
+##############################
+# Kobic Engine — Camera
+# Camera entity creation
+##############################
+
+struct Camera:
+    _dummy: i32 = 0
+
+imple Camera:
+
+    static fun spawn(w: World, name: str, fov: f32, x: f32, y: f32, z: f32) -> i32:
+        eid: i32 = CameraData.spawn(w, name, fov)
+        if eid < 0:
+            return eid
+        Node3D.set_pos(w, eid, x, y, z)
+        return eid

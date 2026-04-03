@@ -1,0 +1,72 @@
+##############################
+# Kobic Engine — Node
+# Entity creation and mesh operations
+##############################
+
+struct Node:
+    _dummy: i32 = 0
+
+imple Node:
+
+    # ---- Spawning ----
+
+    static fun spawn_cube(w: World, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
+        eid: i32 = MeshData.spawn_cube(w, name, size)
+        if eid < 0:
+            return eid
+        Node3D.set_pos(w, eid, x, y, z)
+        Node._upload_mesh(w, ren, eid)
+        Node.update_matrix(w, ren, eid)
+        return eid
+
+    static fun spawn_plane(w: World, ren: Renderer, name: str, sx: f32, sz: f32, x: f32, y: f32, z: f32) -> i32:
+        eid: i32 = MeshData.spawn_plane(w, name, sx, sz)
+        if eid < 0:
+            return eid
+        Node3D.set_pos(w, eid, x, y, z)
+        Node._upload_mesh(w, ren, eid)
+        Node.update_matrix(w, ren, eid)
+        return eid
+
+    # ---- Matrix Update (user-facing) ----
+
+    static fun update_matrix(w: World, ren: Renderer, eid: i32) -> void:
+        md: i64 = w.get_component(eid, "MeshData")
+        if md == 0:
+            return
+        vb_idx: i32 = Memory.read_i32(md + 12)
+        if vb_idx < 0:
+            return
+        t: i64 = w.get_component(eid, "Transform")
+        if t == 0:
+            return
+        tpx: f32 = Memory.read_f32(t)
+        tpy: f32 = Memory.read_f32(t + 4)
+        tpz: f32 = Memory.read_f32(t + 8)
+        trx: f32 = Memory.read_f32(t + 12)
+        try_v: f32 = Memory.read_f32(t + 16)
+        trz: f32 = Memory.read_f32(t + 20)
+        tsx: f32 = Memory.read_f32(t + 24)
+        tsy: f32 = Memory.read_f32(t + 28)
+        tsz: f32 = Memory.read_f32(t + 32)
+        m: Mat4 = Mat4.compose(tpx, tpy, tpz, trx, try_v, trz, tsx, tsy, tsz)
+        mat_ptr: i64 = Memory.malloc_zeroed(64)
+        if mat_ptr == 0:
+            return
+        m.write_to_ptr(mat_ptr)
+        ren.set_model_matrix(vb_idx, mat_ptr)
+
+    # ---- Mesh Upload (internal) ----
+
+    static fun _upload_mesh(w: World, ren: Renderer, eid: i32) -> void:
+        md: i64 = w.get_component(eid, "MeshData")
+        if md == 0:
+            return
+        v: i64 = Memory.read_ptr(md)
+        c: i32 = Memory.read_i32(md + 8)
+        if v == 0:
+            return
+        if c <= 0:
+            return
+        idx: i32 = ren.upload_mesh(v, c)
+        Memory.write_i32(md + 12, idx)

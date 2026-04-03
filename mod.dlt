@@ -58,6 +58,8 @@ load kobic/input/mouse
 # App
 load kobic/core/app
 load kobic/core/kobic
+load kobic/core/node
+load kobic/core/camera
 
 # UI
 load kobic/ui/hud
