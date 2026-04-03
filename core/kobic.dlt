@@ -3,10 +3,10 @@
 # Engine lifecycle: Vulkan init, frame loop, cleanup
 ##############################
 
-struct Kobic:
+struct Engine:
     _dummy: i32 = 0
 
-imple Kobic:
+imple Engine:
 
     # ---- Scene ----
 
