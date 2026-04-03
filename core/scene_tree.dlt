@@ -4,41 +4,41 @@
 ##############################
 
 struct SceneTree:
-    world:     World = World()
+    world:     Scene = Scene()
     root_eid:  i32 = -1
 
 imple SceneTree:
 
-    fun init(self, w: World) -> void:
+    fun init(self, w: Scene) -> void:
         self.world = w
         self.root_eid = Node3D.spawn(w, "Root")
 
     fun spawn_node3d(self, name: str) -> i32:
-        w: World = self.world
+        w: Scene = self.world
         return Node3D.spawn(w, name)
 
     fun spawn_camera(self, name: str, fov: f32) -> i32:
-        w: World = self.world
+        w: Scene = self.world
         return CameraData.spawn(w, name, fov)
 
     fun spawn_directional_light(self, name: str) -> i32:
-        w: World = self.world
+        w: Scene = self.world
         return LightData.spawn_directional(w, name)
 
     fun spawn_point_light(self, name: str) -> i32:
-        w: World = self.world
+        w: Scene = self.world
         return LightData.spawn_point(w, name)
 
     fun spawn_cube(self, name: str, size: f32) -> i32:
-        w: World = self.world
+        w: Scene = self.world
         return MeshData.spawn_cube(w, name, size)
 
     fun spawn_plane(self, name: str, sx: f32, sz: f32) -> i32:
-        w: World = self.world
+        w: Scene = self.world
         return MeshData.spawn_plane(w, name, sx, sz)
 
     fun set_parent(self, child_eid: i32, parent_eid: i32) -> void:
-        w: World = self.world
+        w: Scene = self.world
         ni: i64 = w.get_component(child_eid, "NodeInfo")
         if ni != 0:
             Memory.write_i32(ni + 8, parent_eid)

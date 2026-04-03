@@ -3,9 +3,9 @@
 # Registers all built-in ECS component types
 ##############################
 
-# Registers all engine component types into a World instance
+# Registers all engine component types into a Scene instance
 # Must be called before any entities are spawned
-fun register_default_components(w: World) -> void:
+fun register_default_components(w: Scene) -> void:
     # Transform: pos(3f), rot(3f), scale(3f) = 36 bytes
     w.register_component("Transform", 36)
     # NodeInfo: name_ptr(8), parent_eid(4), child_count(4) = 16 bytes

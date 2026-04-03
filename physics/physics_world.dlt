@@ -6,7 +6,7 @@
 imm GRAVITY: f32 = -9.81
 
 @system
-fun physics_step(w: World, dt: f32) -> void:
+fun physics_step(w: Scene, dt: f32) -> void:
     q: Query = w.query2("RigidBodyData", "Transform")
     i: i32 = 0
     while i < q.result_count:

@@ -1,6 +1,6 @@
 ##############################
 # Kobic Engine — App
-# Top-level application (owns Window + World)
+# Top-level application (owns Window + Scene)
 # Builder pattern: App.new().config(...).init().run()
 ##############################
 
@@ -12,8 +12,8 @@ struct App:
     window_title:   str = "Kobic Engine"
     is_running:     i32 = 0
 
-    # ECS World
-    world:          World = World()
+    # ECS Scene
+    world:          Scene = Scene()
     scene_tree:     SceneTree = SceneTree()
 
     # Vulkan subsystems
@@ -52,9 +52,9 @@ imple App:
             return 0
         self.is_running = 1
 
-        # Init ECS World
-        self.world = World.init()
-        w: World = self.world
+        # Init ECS Scene
+        self.world = Scene.init()
+        w: Scene = self.world
         register_default_components(w)
         self.world = w
 
@@ -162,7 +162,7 @@ imple App:
     fun delta_time(self) -> f32:
         return self.dt
 
-    fun get_world(self) -> World:
+    fun get_world(self) -> Scene:
         return self.world
 
     fun end_frame(self) -> void:
@@ -175,7 +175,7 @@ imple App:
         # Get camera view/projection
         cam_view: i64 = 0
         cam_proj: i64 = 0
-        w: World = self.world
+        w: Scene = self.world
         if self.active_camera >= 0:
             cam_view = CameraData.get_view_matrix(w, self.active_camera)
             aspect: f32 = self.window_width
@@ -213,7 +213,7 @@ imple App:
         if ren.device == 0:
             print("  upload_mesh: device is NULL!")
             return 0 - 1
-        w: World = self.world
+        w: Scene = self.world
         md: i64 = w.get_component(entity_id, "MeshData")
         if md == 0:
             return 0 - 1
@@ -229,7 +229,7 @@ imple App:
         return idx
 
     fun update_model_matrix(self, entity_id: i32) -> void:
-        w: World = self.world
+        w: Scene = self.world
         md: i64 = w.get_component(entity_id, "MeshData")
         if md == 0:
             return
@@ -269,7 +269,7 @@ imple App:
             ctx.cleanup()
         Input.cleanup()
         Mouse.cleanup()
-        w: World = self.world
+        w: Scene = self.world
         w.cleanup()
         if self.window_handle != 0:
             glfwDestroyWindow(self.window_handle)

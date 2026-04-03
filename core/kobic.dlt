@@ -1,6 +1,6 @@
 ##############################
 # Kobic Engine — Core
-# Engine lifecycle: window, Vulkan init, frame loop, cleanup
+# Engine lifecycle: Vulkan init, frame loop, cleanup
 ##############################
 
 struct Kobic:
@@ -8,24 +8,10 @@ struct Kobic:
 
 imple Kobic:
 
-    # ---- Window ----
+    # ---- Scene ----
 
-    static fun create_window(title: str, width: i32, height: i32) -> i64:
-        init_r: i32 = glfwInit()
-        if init_r == 0:
-            print("Kobic: GLFW init failed")
-            return 0
-        glfwWindowHint(139265, 0)
-        glfwWindowHint(131075, 0)
-        handle: i64 = glfwCreateWindow(width, height, title, 0, 0)
-        if handle == 0:
-            print("Kobic: window creation failed")
-        return handle
-
-    # ---- World ----
-
-    static fun create_world() -> World:
-        w: World = World.init()
+    static fun create_scene() -> Scene:
+        w: Scene = Scene.init()
         register_default_components(w)
         return w
 
@@ -51,14 +37,14 @@ imple Kobic:
         Input.update()
         Mouse.update()
 
-    static fun render_frame(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, w: World, cam_id: i32, width: i32, height: i32, aspect: f32) -> void:
+    static fun render_frame(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, s: Scene, cam_id: i32, width: i32, height: i32, aspect: f32) -> void:
         if ren.initialized == 0:
             return
         cam_view: i64 = 0
         cam_proj: i64 = 0
         if cam_id >= 0:
-            cam_view = CameraData.get_view_matrix(w, cam_id)
-            cam_proj = CameraData.get_projection_matrix(w, cam_id, aspect)
+            cam_view = CameraData.get_view_matrix(s, cam_id)
+            cam_proj = CameraData.get_projection_matrix(s, cam_id, aspect)
         ren.render_frame(rp, sc, ctx.vk_device, ctx.vk_graphics_queue, ctx.vk_present_queue, cam_view, cam_proj, width, height)
         if cam_view != 0:
             Memory.free(cam_view)
@@ -67,7 +53,7 @@ imple Kobic:
 
     # ---- Cleanup ----
 
-    static fun cleanup(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, w: World, window: i64) -> void:
+    static fun cleanup(ctx: VulkanContext, sc: Swapchain, rp: RenderPass, ren: Renderer, s: Scene, window: i64) -> void:
         if ctx.initialized == 1:
             vkDeviceWaitIdle(ctx.vk_device)
             ren.cleanup()
@@ -76,7 +62,7 @@ imple Kobic:
             ctx.cleanup()
         Input.cleanup()
         Mouse.cleanup()
-        w.cleanup()
+        s.cleanup()
         if window != 0:
             glfwDestroyWindow(window)
         glfwTerminate()

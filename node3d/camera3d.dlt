@@ -13,7 +13,7 @@ struct CameraData:
 
 imple CameraData:
 
-    static fun spawn(w: World, name: str, fov: f32) -> i32:
+    static fun spawn(w: Scene, name: str, fov: f32) -> i32:
         eid: i32 = Node3D.spawn(w, name)
         if eid < 0:
             return eid
@@ -28,7 +28,7 @@ imple CameraData:
             Memory.free(c_data)
         return eid
 
-    static fun get_view_matrix(w: World, eid: i32) -> i64:
+    static fun get_view_matrix(w: Scene, eid: i32) -> i64:
         t: i64 = w.get_component(eid, "Transform")
         c: i64 = w.get_component(eid, "CameraData")
         if t == 0:
@@ -82,7 +82,7 @@ imple CameraData:
         Memory.write_f32(m + 60, 1.0)
         return m
 
-    static fun get_projection_matrix(w: World, eid: i32, aspect: f32) -> i64:
+    static fun get_projection_matrix(w: Scene, eid: i32, aspect: f32) -> i64:
         c: i64 = w.get_component(eid, "CameraData")
         if c == 0:
             return 0

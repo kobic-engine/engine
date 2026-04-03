@@ -29,7 +29,7 @@ struct Node3D:
 
 imple Node3D:
 
-    static fun spawn(w: World, name: str) -> i32:
+    static fun spawn(w: Scene, name: str) -> i32:
         eid: i32 = w.spawn()
         if eid < 0:
             return eid
@@ -60,40 +60,40 @@ imple Node3D:
             Memory.free(n_data)
         return eid
 
-    static fun set_pos(w: World, eid: i32, x: f32, y: f32, z: f32) -> void:
+    static fun set_pos(w: Scene, eid: i32, x: f32, y: f32, z: f32) -> void:
         t: i64 = w.get_component(eid, "Transform")
         if t != 0:
             Memory.write_f32(t + 0, x)
             Memory.write_f32(t + 4, y)
             Memory.write_f32(t + 8, z)
 
-    static fun set_rot(w: World, eid: i32, x: f32, y: f32, z: f32) -> void:
+    static fun set_rot(w: Scene, eid: i32, x: f32, y: f32, z: f32) -> void:
         t: i64 = w.get_component(eid, "Transform")
         if t != 0:
             Memory.write_f32(t + 12, x)
             Memory.write_f32(t + 16, y)
             Memory.write_f32(t + 20, z)
 
-    static fun set_scale(w: World, eid: i32, x: f32, y: f32, z: f32) -> void:
+    static fun set_scale(w: Scene, eid: i32, x: f32, y: f32, z: f32) -> void:
         t: i64 = w.get_component(eid, "Transform")
         if t != 0:
             Memory.write_f32(t + 24, x)
             Memory.write_f32(t + 28, y)
             Memory.write_f32(t + 32, z)
 
-    static fun get_pos_x(w: World, eid: i32) -> f32:
+    static fun get_pos_x(w: Scene, eid: i32) -> f32:
         t: i64 = w.get_component(eid, "Transform")
         if t == 0:
             return 0.0
         return Memory.read_f32(t)
 
-    static fun get_pos_y(w: World, eid: i32) -> f32:
+    static fun get_pos_y(w: Scene, eid: i32) -> f32:
         t: i64 = w.get_component(eid, "Transform")
         if t == 0:
             return 0.0
         return Memory.read_f32(t + 4)
 
-    static fun get_pos_z(w: World, eid: i32) -> f32:
+    static fun get_pos_z(w: Scene, eid: i32) -> f32:
         t: i64 = w.get_component(eid, "Transform")
         if t == 0:
             return 0.0

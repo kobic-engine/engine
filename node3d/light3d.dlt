@@ -17,7 +17,7 @@ imm LIGHT_SPOT: i32 = 2
 
 imple LightData:
 
-    static fun spawn_directional(w: World, name: str) -> i32:
+    static fun spawn_directional(w: Scene, name: str) -> i32:
         eid: i32 = Node3D.spawn(w, name)
         if eid < 0:
             return eid
@@ -32,7 +32,7 @@ imple LightData:
             Memory.free(l_data)
         return eid
 
-    static fun spawn_point(w: World, name: str) -> i32:
+    static fun spawn_point(w: Scene, name: str) -> i32:
         eid: i32 = Node3D.spawn(w, name)
         if eid < 0:
             return eid

@@ -13,7 +13,7 @@ struct CollisionData:
 
 imple CollisionData:
 
-    static fun add_box(w: World, eid: i32, hx: f32, hy: f32, hz: f32) -> void:
+    static fun add_box(w: Scene, eid: i32, hx: f32, hy: f32, hz: f32) -> void:
         cd: i64 = Memory.malloc_zeroed(20)
         if cd != 0:
             Memory.write_i32(cd + 0, 0)
@@ -24,7 +24,7 @@ imple CollisionData:
             w.add_component(eid, "CollisionData", cd)
             Memory.free(cd)
 
-    static fun add_capsule(w: World, eid: i32, radius: f32, height: f32) -> void:
+    static fun add_capsule(w: Scene, eid: i32, radius: f32, height: f32) -> void:
         cd: i64 = Memory.malloc_zeroed(20)
         if cd != 0:
             Memory.write_i32(cd + 0, 1)
@@ -35,7 +35,7 @@ imple CollisionData:
             w.add_component(eid, "CollisionData", cd)
             Memory.free(cd)
 
-    static fun add_sphere(w: World, eid: i32, radius: f32) -> void:
+    static fun add_sphere(w: Scene, eid: i32, radius: f32) -> void:
         cd: i64 = Memory.malloc_zeroed(20)
         if cd != 0:
             Memory.write_i32(cd + 0, 2)

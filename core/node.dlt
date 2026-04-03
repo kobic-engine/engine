@@ -10,7 +10,7 @@ imple Node:
 
     # ---- Spawning ----
 
-    static fun spawn_cube(w: World, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
+    static fun spawn_cube(w: Scene, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
         eid: i32 = MeshData.spawn_cube(w, name, size)
         if eid < 0:
             return eid
@@ -19,7 +19,7 @@ imple Node:
         Node.update_matrix(w, ren, eid)
         return eid
 
-    static fun spawn_plane(w: World, ren: Renderer, name: str, sx: f32, sz: f32, x: f32, y: f32, z: f32) -> i32:
+    static fun spawn_plane(w: Scene, ren: Renderer, name: str, sx: f32, sz: f32, x: f32, y: f32, z: f32) -> i32:
         eid: i32 = MeshData.spawn_plane(w, name, sx, sz)
         if eid < 0:
             return eid
@@ -30,7 +30,7 @@ imple Node:
 
     # ---- Matrix Update (user-facing) ----
 
-    static fun update_matrix(w: World, ren: Renderer, eid: i32) -> void:
+    static fun update_matrix(w: Scene, ren: Renderer, eid: i32) -> void:
         md: i64 = w.get_component(eid, "MeshData")
         if md == 0:
             return
@@ -58,7 +58,7 @@ imple Node:
 
     # ---- Mesh Upload (internal) ----
 
-    static fun _upload_mesh(w: World, ren: Renderer, eid: i32) -> void:
+    static fun _upload_mesh(w: Scene, ren: Renderer, eid: i32) -> void:
         md: i64 = w.get_component(eid, "MeshData")
         if md == 0:
             return
