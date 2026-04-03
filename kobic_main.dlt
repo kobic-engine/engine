@@ -3,7 +3,7 @@
 # Re-exports all public types and functions
 #
 # Usage: import kobic
-#   Then access: Vec3, Mat4, World, App, Input, etc.
+#   Then access: Vec3, Mat4, Scene, App, Input, etc.
 ##############################
 
 # This file is the entry point when `import kobic` is used.

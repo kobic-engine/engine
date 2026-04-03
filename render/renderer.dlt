@@ -1,7 +1,7 @@
 ##############################
 # Kobic Engine — Renderer
 # ECS-aware Vulkan renderer
-# Queries World for renderable entities
+# Queries Scene for renderable entities
 ##############################
 
 struct Renderer:
