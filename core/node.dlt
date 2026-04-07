@@ -11,13 +11,7 @@ imple Node:
     # ---- Spawning ----
 
     static fun spawn_cube(w: Scene, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
-        eid: i32 = MeshData.spawn_cube(w, name, size)
-        if eid < 0:
-            return eid
-        Node3D.set_pos(w, eid, x, y, z)
-        Node._upload_mesh(w, ren, eid)
-        Node.update_matrix(w, ren, eid)
-        return eid
+        return MeshData.spawn_cube(w, ren, name, size, x, y, z)
 
     static fun spawn_plane(w: Scene, ren: Renderer, name: str, sx: f32, sz: f32, x: f32, y: f32, z: f32) -> i32:
         eid: i32 = MeshData.spawn_plane(w, name, sx, sz)

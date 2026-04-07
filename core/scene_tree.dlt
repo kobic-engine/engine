@@ -31,7 +31,11 @@ imple SceneTree:
 
     fun spawn_cube(self, name: str, size: f32) -> i32:
         w: Scene = self.world
-        return MeshData.spawn_cube(w, name, size)
+        eid: i32 = Node3D.spawn(w, name)
+        if eid < 0:
+            return eid
+        Node3D.set_scale(w, eid, size, size, size)
+        return eid
 
     fun spawn_plane(self, name: str, sx: f32, sz: f32) -> i32:
         w: Scene = self.world

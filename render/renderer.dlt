@@ -18,6 +18,9 @@ struct Renderer:
     vb_capacity:       i32 = 0
     initialized:       i32 = 0
     current_frame:     i32 = 0
+    # Pre-allocated scratch buffers for render loop
+    scratch_vb_arr:    i64 = 0
+    scratch_off_arr:   i64 = 0
 
 imple Renderer:
 
@@ -26,19 +29,43 @@ imple Renderer:
         self.phys_device = phys_device
         self.gfx_queue = gfx_queue
         self.present_queue = present_queue
-        self.vb_capacity = 32
+        self.vb_capacity = 1024
         self.vb_handles = Memory.malloc_zeroed(self.vb_capacity * 8)
         self.vb_memories = Memory.malloc_zeroed(self.vb_capacity * 8)
         self.vb_vert_counts = Memory.malloc_zeroed(self.vb_capacity * 4)
         self.model_matrices = Memory.malloc_zeroed(self.vb_capacity * 8)
         self.vb_count = 0
+        # Pre-allocate scratch buffers (eliminates malloc/free per draw)
+        self.scratch_vb_arr = Memory.malloc_zeroed(8)
+        self.scratch_off_arr = Memory.malloc_zeroed(8)
+        Memory.write_i64(self.scratch_off_arr, 0)
         self.initialized = 1
+
+    fun _grow_vb_arrays(self) -> void:
+        new_cap: i32 = self.vb_capacity * 2
+        new_handles: i64 = Memory.malloc_zeroed(new_cap * 8)
+        new_memories: i64 = Memory.malloc_zeroed(new_cap * 8)
+        new_vert_counts: i64 = Memory.malloc_zeroed(new_cap * 4)
+        new_matrices: i64 = Memory.malloc_zeroed(new_cap * 8)
+        Memory.copy(new_handles, self.vb_handles, self.vb_capacity * 8)
+        Memory.copy(new_memories, self.vb_memories, self.vb_capacity * 8)
+        Memory.copy(new_vert_counts, self.vb_vert_counts, self.vb_capacity * 4)
+        Memory.copy(new_matrices, self.model_matrices, self.vb_capacity * 8)
+        Memory.free(self.vb_handles)
+        Memory.free(self.vb_memories)
+        Memory.free(self.vb_vert_counts)
+        Memory.free(self.model_matrices)
+        self.vb_handles = new_handles
+        self.vb_memories = new_memories
+        self.vb_vert_counts = new_vert_counts
+        self.model_matrices = new_matrices
+        self.vb_capacity = new_cap
 
     fun upload_mesh(self, vertices: i64, vertex_count: i32) -> i32:
         if self.initialized == 0:
             return 0 - 1
         if self.vb_count >= self.vb_capacity:
-            return 0 - 1
+            self._grow_vb_arrays()
         data_size: i64 = vertex_count * 24
         # Create buffer (VkBufferCreateInfo = 56 bytes)
         buf_ci: i64 = Memory.malloc_zeroed(56)
@@ -134,6 +161,27 @@ imple Renderer:
         Memory.write_ptr(self.vb_handles + idx * 8, buf)
         Memory.write_ptr(self.vb_memories + idx * 8, mem)
         Memory.write_i32(self.vb_vert_counts + idx * 4, vertex_count)
+        Memory.write_ptr(self.model_matrices + idx * 8, 0)
+        self.vb_count = idx + 1
+        return idx
+
+    # Register an instance that shares VkBuffer with source but gets own model matrix
+    fun register_instance(self, src_vb_idx: i32) -> i32:
+        if self.initialized == 0:
+            return 0 - 1
+        if src_vb_idx < 0:
+            return 0 - 1
+        if src_vb_idx >= self.vb_count:
+            return 0 - 1
+        if self.vb_count >= self.vb_capacity:
+            self._grow_vb_arrays()
+        idx: i32 = self.vb_count
+        # Copy VkBuffer handle (shared), set memory to 0 (don't free on cleanup)
+        src_handle: i64 = Memory.read_ptr(self.vb_handles + src_vb_idx * 8)
+        src_vc: i32 = Memory.read_i32(self.vb_vert_counts + src_vb_idx * 4)
+        Memory.write_ptr(self.vb_handles + idx * 8, src_handle)
+        Memory.write_ptr(self.vb_memories + idx * 8, 0)
+        Memory.write_i32(self.vb_vert_counts + idx * 4, src_vc)
         Memory.write_ptr(self.model_matrices + idx * 8, 0)
         self.vb_count = idx + 1
         return idx
@@ -294,44 +342,40 @@ imple Renderer:
                     if cam_proj != 0:
                         vp_mat = multiply_4x4_matrices(cam_proj, cam_view)
 
+                # Pre-allocate MVP scratch (reused, not freed per draw)
+                mvp_scratch: i64 = Memory.malloc_zeroed(64)
+                last_bound: i64 = 0
+
                 mi: i32 = 0
                 while mi < self.vb_count:
                     vb_handle: i64 = Memory.read_ptr(self.vb_handles + mi * 8)
                     vc: i32 = Memory.read_i32(self.vb_vert_counts + mi * 4)
                     if vb_handle != 0:
                         if vc > 0:
-                            # Read model matrix from model_matrices array
                             model_ptr: i64 = 0
                             if self.model_matrices != 0:
                                 model_ptr = Memory.read_ptr(self.model_matrices + mi * 8)
 
-                            mvp: i64 = 0
+                            # Compute MVP into scratch buffer (no alloc)
                             if vp_mat != 0:
                                 if model_ptr != 0:
-                                    mvp = multiply_4x4_matrices(vp_mat, model_ptr)
+                                    if mvp_scratch != 0:
+                                        _multiply_4x4_into(vp_mat, model_ptr, mvp_scratch)
+                                        vkCmdPushConstants(cmd, rp.vk_pipeline_layout, 1, 0, 64, mvp_scratch)
                                 else:
-                                    mvp = vp_mat
+                                    vkCmdPushConstants(cmd, rp.vk_pipeline_layout, 1, 0, 64, vp_mat)
 
-                            if mvp != 0:
-                                vkCmdPushConstants(cmd, rp.vk_pipeline_layout, 1, 0, 64, mvp)
-
-                            vb_arr: i64 = Memory.malloc_zeroed(8)
-                            if vb_arr != 0:
-                                Memory.write_ptr(vb_arr, vb_handle)
-                                off_arr: i64 = Memory.malloc_zeroed(8)
-                                if off_arr != 0:
-                                    Memory.write_i64(off_arr, 0)
-                                    vkCmdBindVertexBuffers(cmd, 0, 1, vb_arr, off_arr)
-                                    Memory.free(off_arr)
-                                Memory.free(vb_arr)
+                            # Skip rebind if same VkBuffer as previous draw
+                            if vb_handle != last_bound:
+                                Memory.write_ptr(self.scratch_vb_arr, vb_handle)
+                                vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
+                                last_bound = vb_handle
 
                             vkCmdDraw(cmd, vc, 1, 0, 0)
-
-                            if mvp != 0:
-                                if mvp != vp_mat:
-                                    Memory.free(mvp)
                     mi = mi + 1
 
+                if mvp_scratch != 0:
+                    Memory.free(mvp_scratch)
                 if vp_mat != 0:
                     Memory.free(vp_mat)
 
@@ -343,26 +387,29 @@ imple Renderer:
         Memory.free(rpi)
 
     fun cleanup(self) -> void:
+        # Only destroy VkBuffers/Memory that are owned (memory != 0)
+        # Shared instances have memory = 0
         if self.vb_handles != 0:
             vi: i32 = 0
             while vi < self.vb_count:
-                vb: i64 = Memory.read_ptr(self.vb_handles + vi * 8)
-                if vb != 0:
-                    vkDestroyBuffer(self.device, vb, 0)
+                vm: i64 = Memory.read_ptr(self.vb_memories + vi * 8)
+                if vm != 0:
+                    vb: i64 = Memory.read_ptr(self.vb_handles + vi * 8)
+                    if vb != 0:
+                        vkDestroyBuffer(self.device, vb, 0)
+                    vkFreeMemory(self.device, vm, 0)
                 vi = vi + 1
             Memory.free(self.vb_handles)
         if self.vb_memories != 0:
-            mi: i32 = 0
-            while mi < self.vb_count:
-                vm: i64 = Memory.read_ptr(self.vb_memories + mi * 8)
-                if vm != 0:
-                    vkFreeMemory(self.device, vm, 0)
-                mi = mi + 1
             Memory.free(self.vb_memories)
         if self.vb_vert_counts != 0:
             Memory.free(self.vb_vert_counts)
         if self.model_matrices != 0:
             Memory.free(self.model_matrices)
+        if self.scratch_vb_arr != 0:
+            Memory.free(self.scratch_vb_arr)
+        if self.scratch_off_arr != 0:
+            Memory.free(self.scratch_off_arr)
         self.vb_count = 0
         self.initialized = 0
 
@@ -386,3 +433,21 @@ fun multiply_4x4_matrices(a: i64, b: i64) -> i64:
             r = r + 1
         col = col + 1
     return out
+
+# Zero-alloc version: writes result into pre-allocated out buffer
+fun _multiply_4x4_into(a: i64, b: i64, out: i64) -> void:
+    col: i32 = 0
+    while col < 4:
+        co: i32 = col * 16
+        r: i32 = 0
+        while r < 4:
+            ro: i32 = r * 4
+            val: f32 = 0.0
+            val = val + Memory.read_f32(a + 0 + ro) * Memory.read_f32(b + co + 0)
+            val = val + Memory.read_f32(a + 16 + ro) * Memory.read_f32(b + co + 4)
+            val = val + Memory.read_f32(a + 32 + ro) * Memory.read_f32(b + co + 8)
+            val = val + Memory.read_f32(a + 48 + ro) * Memory.read_f32(b + co + 12)
+            Memory.write_f32(out + co + ro, val)
+            r = r + 1
+        col = col + 1
+

@@ -18,20 +18,45 @@ struct EmissionData:
 
 imple MeshData:
 
-    static fun spawn_cube(w: Scene, name: str, size: f32) -> i32:
+    # Shared unit cube VkBuffer index (-1 = not yet uploaded)
+    static fun _get_shared_cube_vb(w: Scene, ren: Renderer) -> i32:
+        # Check if shared cube resource exists
+        res: i64 = w.get_resource("_shared_cube_vb")
+        if res != 0:
+            return Memory.read_i32(res)
+        # First call: generate unit cube mesh, upload once
+        cube: CubeMesh = CubeMesh(vertices=0, vertex_count=0, is_generated=0, size_x=1.0, size_y=1.0, size_z=1.0)
+        cube.generate()
+        vb: i32 = ren.upload_mesh(cube.vertices, cube.vertex_count)
+        # Store vb_index as a resource for reuse
+        tmp: i64 = Memory.malloc_zeroed(4)
+        if tmp != 0:
+            Memory.write_i32(tmp, vb)
+            w.add_resource("_shared_cube_vb", tmp, 4)
+            Memory.free(tmp)
+        return vb
+
+    static fun spawn_cube(w: Scene, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
         eid: i32 = Node3D.spawn(w, name)
         if eid < 0:
             return eid
-        # Generate cube mesh
-        cube: CubeMesh = CubeMesh(vertices=0, vertex_count=0, is_generated=0, size_x=size, size_y=size, size_z=size)
-        cube.generate()
+        # Get shared VkBuffer index (uploads unit cube only once)
+        shared_vb: i32 = MeshData._get_shared_cube_vb(w, ren)
+        # Register a new instance slot (own model matrix, shared VkBuffer)
+        inst_idx: i32 = ren.register_instance(shared_vb)
+        # Store MeshData with instance vb_index
         m_data: i64 = Memory.malloc_zeroed(16)
         if m_data != 0:
-            Memory.write_ptr(m_data + 0, cube.vertices)
-            Memory.write_i32(m_data + 8, cube.vertex_count)
-            Memory.write_i32(m_data + 12, 0 - 1)
+            Memory.write_ptr(m_data + 0, 0)
+            Memory.write_i32(m_data + 8, 36)
+            Memory.write_i32(m_data + 12, inst_idx)
             w.add_component(eid, "MeshData", m_data)
             Memory.free(m_data)
+        # Set position + scale via transform
+        Node3D.set_pos(w, eid, x, y, z)
+        Node3D.set_scale(w, eid, size, size, size)
+        # Compute model matrix and register with renderer
+        Node.update_matrix(w, ren, eid)
         return eid
 
     static fun spawn_plane(w: Scene, name: str, sx: f32, sz: f32) -> i32:

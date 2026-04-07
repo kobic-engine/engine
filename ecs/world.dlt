@@ -6,7 +6,7 @@
 
 imm MAX_STORAGES: i32 = 64
 imm MAX_RESOURCES: i32 = 32
-imm MAX_ENTITIES: i32 = 8192
+imm MAX_ENTITIES: i32 = 131072
 
 # String compare helper (avoids str_eq codegen issue in packages)
 fun _kobic_str_eq(a: i64, b: i64) -> i32:
@@ -53,7 +53,7 @@ imple Scene:
 
     static fun init() -> Scene:
         w: Scene = Scene()
-        cap: i32 = 8192
+        cap: i32 = 131072
         w.entity_gen = Memory.malloc_zeroed(cap * 4)
         w.entity_alive = Memory.malloc_zeroed(cap)
         w.entity_count = 0
