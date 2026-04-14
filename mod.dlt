@@ -70,6 +70,6 @@ load kobic/ui/crosshair
 
 # Exports
 export Vec2, Vec3, Mat4, Quat, Color
-export Scene, Query, ComponentStorage
+export Scene, Query, QueryIter, ComponentStorage
 export DeltaTime, FixedTime
 export clamp, lerp, deg2rad, rad2deg

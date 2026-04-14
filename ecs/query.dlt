@@ -103,3 +103,110 @@ imple Query:
             Memory.free(self.result_ids)
         self.result_count = 0
         self.result_cap = 0
+
+struct QueryIter:
+    # Driver storage (smallest dense set)
+    driver_entities:   i64 = 0
+    driver_data:       i64 = 0
+    driver_comp_size:  i32 = 0
+    driver_count:      i32 = 0
+
+    # Optional secondary storage for membership lookup
+    other_data:        i64 = 0
+    other_sparse:      i64 = 0
+    other_sparse_cap:  i32 = 0
+    other_dense_count: i32 = 0
+    other_comp_size:   i32 = 0
+
+    # When 1, the driver storage corresponds to component A.
+    # When 0, the driver storage corresponds to component B.
+    driver_is_a:       i32 = 1
+
+    cursor:            i32 = 0
+    current_entity:    i32 = -1
+    current_a:         i64 = 0
+    current_b:         i64 = 0
+
+imple QueryIter:
+
+    static fun build_one(storage_ptr: i64, s_count: i32) -> QueryIter:
+        it: QueryIter = QueryIter()
+        it.driver_entities = Memory.read_i64(storage_ptr + 24)
+        it.driver_data = Memory.read_i64(storage_ptr + 16)
+        it.driver_comp_size = Memory.read_i32(storage_ptr + 8)
+        it.driver_count = s_count
+        it.driver_is_a = 1
+        return it
+
+    static fun build_two(sa_ptr: i64, sa_count: i32, sb_ptr: i64, sb_count: i32) -> QueryIter:
+        it: QueryIter = QueryIter()
+        driver_ptr: i64 = sa_ptr
+        driver_count: i32 = sa_count
+        other_ptr: i64 = sb_ptr
+        driver_is_a: i32 = 1
+
+        if sb_count < sa_count:
+            driver_ptr = sb_ptr
+            driver_count = sb_count
+            other_ptr = sa_ptr
+            driver_is_a = 0
+
+        it.driver_entities = Memory.read_i64(driver_ptr + 24)
+        it.driver_data = Memory.read_i64(driver_ptr + 16)
+        it.driver_comp_size = Memory.read_i32(driver_ptr + 8)
+        it.driver_count = driver_count
+
+        it.other_data = Memory.read_i64(other_ptr + 16)
+        it.other_sparse = Memory.read_i64(other_ptr + 48)
+        it.other_sparse_cap = Memory.read_i32(other_ptr + 56)
+        it.other_dense_count = Memory.read_i32(other_ptr + 36)
+        it.other_comp_size = Memory.read_i32(other_ptr + 8)
+        it.driver_is_a = driver_is_a
+        return it
+
+    fun reset(self) -> void:
+        self.cursor = 0
+        self.current_entity = 0 - 1
+        self.current_a = 0
+        self.current_b = 0
+
+    fun next(self) -> i32:
+        self.current_entity = 0 - 1
+        self.current_a = 0
+        self.current_b = 0
+
+        while self.cursor < self.driver_count:
+            di: i32 = self.cursor
+            eid: i32 = Memory.read_i32(self.driver_entities + di * 4)
+            driver_ptr: i64 = self.driver_data + di * self.driver_comp_size
+            self.cursor = self.cursor + 1
+
+            if self.other_sparse == 0:
+                self.current_entity = eid
+                self.current_a = driver_ptr
+                return 1
+
+            if eid >= 0:
+                if eid < self.other_sparse_cap:
+                    other_di: i32 = Memory.read_i32(self.other_sparse + eid * 4)
+                    if other_di >= 0:
+                        if other_di < self.other_dense_count:
+                            other_ptr: i64 = self.other_data + other_di * self.other_comp_size
+                            self.current_entity = eid
+                            if self.driver_is_a == 1:
+                                self.current_a = driver_ptr
+                                self.current_b = other_ptr
+                            else:
+                                self.current_a = other_ptr
+                                self.current_b = driver_ptr
+                            return 1
+        return 0
+
+    fun entity(self) -> i32:
+        return self.current_entity
+
+    fun data_a(self) -> i64:
+        return self.current_a
+
+    fun data_b(self) -> i64:
+        return self.current_b

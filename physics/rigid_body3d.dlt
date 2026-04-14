@@ -14,15 +14,13 @@ struct RigidBodyData:
 imple RigidBodyData:
 
     static fun add_to(w: Scene, eid: i32, mass: f32) -> void:
-        rb: i64 = Memory.malloc_zeroed(20)
+        rb: i64 = w.add_component_zeroed(eid, "RigidBodyData")
         if rb != 0:
             Memory.write_f32(rb + 0, mass)
             Memory.write_f32(rb + 4, 0.0)
             Memory.write_f32(rb + 8, 0.0)
             Memory.write_f32(rb + 12, 0.0)
             Memory.write_i32(rb + 16, 0)
-            w.add_component(eid, "RigidBodyData", rb)
-            Memory.free(rb)
 
     static fun apply_impulse(w: Scene, eid: i32, ix: f32, iy: f32, iz: f32) -> void:
         rb: i64 = w.get_component(eid, "RigidBodyData")

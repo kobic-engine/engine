@@ -34,30 +34,18 @@ imple Node3D:
         if eid < 0:
             return eid
         # Add Transform (36 bytes)
-        t_data: i64 = Memory.malloc_zeroed(36)
+        t_data: i64 = w.add_component_zeroed(eid, "Transform")
         if t_data != 0:
-            # pos = 0,0,0
-            Memory.write_f32(t_data + 0, 0.0)
-            Memory.write_f32(t_data + 4, 0.0)
-            Memory.write_f32(t_data + 8, 0.0)
-            # rot = 0,0,0
-            Memory.write_f32(t_data + 12, 0.0)
-            Memory.write_f32(t_data + 16, 0.0)
-            Memory.write_f32(t_data + 20, 0.0)
             # scale = 1,1,1
             Memory.write_f32(t_data + 24, 1.0)
             Memory.write_f32(t_data + 28, 1.0)
             Memory.write_f32(t_data + 32, 1.0)
-            w.add_component(eid, "Transform", t_data)
-            Memory.free(t_data)
         # Add NodeInfo (16 bytes)
-        n_data: i64 = Memory.malloc_zeroed(16)
+        n_data: i64 = w.add_component_zeroed(eid, "NodeInfo")
         if n_data != 0:
             Memory.write_ptr(n_data + 0, name)
             Memory.write_i32(n_data + 8, 0 - 1)
             Memory.write_i32(n_data + 12, 0)
-            w.add_component(eid, "NodeInfo", n_data)
-            Memory.free(n_data)
         return eid
 
     static fun set_pos(w: Scene, eid: i32, x: f32, y: f32, z: f32) -> void:

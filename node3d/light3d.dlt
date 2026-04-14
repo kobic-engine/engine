@@ -21,28 +21,24 @@ imple LightData:
         eid: i32 = Node3D.spawn(w, name)
         if eid < 0:
             return eid
-        l_data: i64 = Memory.malloc_zeroed(20)
+        l_data: i64 = w.add_component_zeroed(eid, "LightData")
         if l_data != 0:
             Memory.write_i32(l_data + 0, 0)
             Memory.write_f32(l_data + 4, 1.0)
             Memory.write_f32(l_data + 8, 1.0)
             Memory.write_f32(l_data + 12, 1.0)
             Memory.write_f32(l_data + 16, 1.0)
-            w.add_component(eid, "LightData", l_data)
-            Memory.free(l_data)
         return eid
 
     static fun spawn_point(w: Scene, name: str) -> i32:
         eid: i32 = Node3D.spawn(w, name)
         if eid < 0:
             return eid
-        l_data: i64 = Memory.malloc_zeroed(20)
+        l_data: i64 = w.add_component_zeroed(eid, "LightData")
         if l_data != 0:
             Memory.write_i32(l_data + 0, 1)
             Memory.write_f32(l_data + 4, 1.0)
             Memory.write_f32(l_data + 8, 1.0)
             Memory.write_f32(l_data + 12, 1.0)
             Memory.write_f32(l_data + 16, 1.0)
-            w.add_component(eid, "LightData", l_data)
-            Memory.free(l_data)
         return eid

@@ -14,34 +14,28 @@ struct CollisionData:
 imple CollisionData:
 
     static fun add_box(w: Scene, eid: i32, hx: f32, hy: f32, hz: f32) -> void:
-        cd: i64 = Memory.malloc_zeroed(20)
+        cd: i64 = w.add_component_zeroed(eid, "CollisionData")
         if cd != 0:
             Memory.write_i32(cd + 0, 0)
             Memory.write_f32(cd + 4, hx)
             Memory.write_f32(cd + 8, hy)
             Memory.write_f32(cd + 12, hz)
             Memory.write_f32(cd + 16, 0.0)
-            w.add_component(eid, "CollisionData", cd)
-            Memory.free(cd)
 
     static fun add_capsule(w: Scene, eid: i32, radius: f32, height: f32) -> void:
-        cd: i64 = Memory.malloc_zeroed(20)
+        cd: i64 = w.add_component_zeroed(eid, "CollisionData")
         if cd != 0:
             Memory.write_i32(cd + 0, 1)
             Memory.write_f32(cd + 4, radius)
             Memory.write_f32(cd + 8, height)
             Memory.write_f32(cd + 12, 0.0)
             Memory.write_f32(cd + 16, radius)
-            w.add_component(eid, "CollisionData", cd)
-            Memory.free(cd)
 
     static fun add_sphere(w: Scene, eid: i32, radius: f32) -> void:
-        cd: i64 = Memory.malloc_zeroed(20)
+        cd: i64 = w.add_component_zeroed(eid, "CollisionData")
         if cd != 0:
             Memory.write_i32(cd + 0, 2)
             Memory.write_f32(cd + 4, radius)
             Memory.write_f32(cd + 8, radius)
             Memory.write_f32(cd + 12, radius)
             Memory.write_f32(cd + 16, radius)
-            w.add_component(eid, "CollisionData", cd)
-            Memory.free(cd)

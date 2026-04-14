@@ -251,11 +251,15 @@ imple App:
         sy: f32 = Memory.read_f32(t + 28)
         sz: f32 = Memory.read_f32(t + 32)
         m: Mat4 = Mat4.compose(px, py, pz, rx, ry, rz, sx, sy, sz)
-        mat_ptr: i64 = Memory.malloc_zeroed(64)
+        ren: Renderer = self.renderer
+        mat_ptr: i64 = 0
+        if ren.model_matrices != 0:
+            mat_ptr = Memory.read_ptr(ren.model_matrices + vb_idx * 8)
+        if mat_ptr == 0:
+            mat_ptr = Memory.malloc_zeroed(64)
         if mat_ptr == 0:
             return
         m.write_to_ptr(mat_ptr)
-        ren: Renderer = self.renderer
         ren.set_model_matrix(vb_idx, mat_ptr)
 
     fun cleanup(self) -> void:

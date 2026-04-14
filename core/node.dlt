@@ -44,7 +44,11 @@ imple Node:
         tsy: f32 = Memory.read_f32(t + 28)
         tsz: f32 = Memory.read_f32(t + 32)
         m: Mat4 = Mat4.compose(tpx, tpy, tpz, trx, try_v, trz, tsx, tsy, tsz)
-        mat_ptr: i64 = Memory.malloc_zeroed(64)
+        mat_ptr: i64 = 0
+        if ren.model_matrices != 0:
+            mat_ptr = Memory.read_ptr(ren.model_matrices + vb_idx * 8)
+        if mat_ptr == 0:
+            mat_ptr = Memory.malloc_zeroed(64)
         if mat_ptr == 0:
             return
         m.write_to_ptr(mat_ptr)

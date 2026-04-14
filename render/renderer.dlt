@@ -193,6 +193,10 @@ imple Renderer:
             return
         if self.model_matrices == 0:
             return
+        old_ptr: i64 = Memory.read_ptr(self.model_matrices + vb_idx * 8)
+        if old_ptr != 0:
+            if old_ptr != mat_ptr:
+                Memory.free(old_ptr)
         Memory.write_ptr(self.model_matrices + vb_idx * 8, mat_ptr)
 
     fun render_frame(self, rp: RenderPass, sc: Swapchain, device: i64, gfx_queue: i64, present_queue: i64, cam_view: i64, cam_proj: i64, width: i32, height: i32) -> void:
@@ -398,6 +402,11 @@ imple Renderer:
                     if vb != 0:
                         vkDestroyBuffer(self.device, vb, 0)
                     vkFreeMemory(self.device, vm, 0)
+                if self.model_matrices != 0:
+                    model_ptr: i64 = Memory.read_ptr(self.model_matrices + vi * 8)
+                    if model_ptr != 0:
+                        Memory.free(model_ptr)
+                        Memory.write_ptr(self.model_matrices + vi * 8, 0)
                 vi = vi + 1
             Memory.free(self.vb_handles)
         if self.vb_memories != 0:

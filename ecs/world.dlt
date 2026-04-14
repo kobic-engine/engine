@@ -269,6 +269,37 @@ imple Scene:
         Memory.write_i32(s_ptr + 36, di2 + 1)
         return dest
 
+    fun add_component_zeroed(self, eid: i32, name: str) -> i64:
+        si: i32 = self._find_storage(name)
+        if si < 0:
+            return 0
+        s_ptr: i64 = Memory.read_i64(self.storages + si * 8)
+        comp_sz: i32 = Memory.read_i32(s_ptr + 8)
+        sp: i64 = Memory.read_i64(s_ptr + 48)
+        sp_cap: i32 = Memory.read_i32(s_ptr + 56)
+        if eid < sp_cap:
+            di: i32 = Memory.read_i32(sp + eid * 4)
+            d_count: i32 = Memory.read_i32(s_ptr + 36)
+            if di >= 0:
+                if di < d_count:
+                    d_data: i64 = Memory.read_i64(s_ptr + 16)
+                    return d_data + di * comp_sz
+        self._storage_grow_sparse(s_ptr, eid + 1)
+        d_count2: i32 = Memory.read_i32(s_ptr + 36)
+        d_cap2: i32 = Memory.read_i32(s_ptr + 40)
+        if d_count2 >= d_cap2:
+            self._storage_grow_dense(s_ptr)
+        di2: i32 = Memory.read_i32(s_ptr + 36)
+        d_data2: i64 = Memory.read_i64(s_ptr + 16)
+        d_ents2: i64 = Memory.read_i64(s_ptr + 24)
+        dest: i64 = d_data2 + di2 * comp_sz
+        Memory.zero(dest, comp_sz as i64)
+        Memory.write_i32(d_ents2 + di2 * 4, eid)
+        sp2: i64 = Memory.read_i64(s_ptr + 48)
+        Memory.write_i32(sp2 + eid * 4, di2)
+        Memory.write_i32(s_ptr + 36, di2 + 1)
+        return dest
+
     fun get_component(self, eid: i32, name: str) -> i64:
         si: i32 = self._find_storage(name)
         if si < 0:
@@ -400,6 +431,24 @@ imple Scene:
         sa_count: i32 = Memory.read_i32(sa + 36)
         sb_count: i32 = Memory.read_i32(sb + 36)
         return Query.build_two(sa, sa_count, sb, sb_count)
+
+    fun iter1(self, comp_a: str) -> QueryIter:
+        s_ptr: i64 = self.get_storage(comp_a)
+        if s_ptr == 0:
+            return QueryIter()
+        s_count: i32 = Memory.read_i32(s_ptr + 36)
+        return QueryIter.build_one(s_ptr, s_count)
+
+    fun iter2(self, comp_a: str, comp_b: str) -> QueryIter:
+        sa: i64 = self.get_storage(comp_a)
+        sb: i64 = self.get_storage(comp_b)
+        if sa == 0:
+            return QueryIter()
+        if sb == 0:
+            return QueryIter()
+        sa_count: i32 = Memory.read_i32(sa + 36)
+        sb_count: i32 = Memory.read_i32(sb + 36)
+        return QueryIter.build_two(sa, sa_count, sb, sb_count)
 
     fun entity_count(self) -> i32:
         return self.entity_count
