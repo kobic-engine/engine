@@ -4,6 +4,12 @@
 # Adapted from qubic/core/window.dlt
 ##############################
 
+extern lib "kernel32":
+    fun GetModuleHandleA(lpModuleName: i64) -> i64
+
+extern lib "vulkan-1":
+    fun vkCreateWin32SurfaceKHR(instance: i64, pCreateInfo: i64, pAllocator: i64, pSurface: i64) -> i32
+
 struct VulkanContext:
     vk_instance:        i64 = 0
     vk_physical_device: i64 = 0

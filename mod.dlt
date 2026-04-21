@@ -3,6 +3,9 @@
 ##############################
 module kobic
 
+# Transitive deps — users of kobic get these for free.
+import window
+import input
 requires vulkan
 
 # ECS Core
