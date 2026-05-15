@@ -27,7 +27,7 @@ struct Node3D:
     entity_id: i32 = -1
     _dummy:    i32 = 0
 
-imple Node3D:
+attach Node3D:
 
     static fun spawn(w: Scene, name: str) -> i32:
         eid: i32 = w.spawn()

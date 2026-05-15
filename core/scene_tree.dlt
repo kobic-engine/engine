@@ -7,7 +7,7 @@ struct SceneTree:
     world:     Scene = Scene()
     root_eid:  i32 = -1
 
-imple SceneTree:
+attach SceneTree:
 
     fun init(self, w: Scene) -> void:
         self.world = w

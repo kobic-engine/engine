@@ -16,7 +16,7 @@ struct EmissionData:
     emission_b:    f32 = 0.0
     emission_str:  f32 = 0.0
 
-imple MeshData:
+attach MeshData:
 
     # Shared unit cube VkBuffer index (-1 = not yet uploaded)
     static fun _get_shared_cube_vb(w: Scene, ren: Renderer) -> i32:

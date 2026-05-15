@@ -21,7 +21,7 @@ struct VulkanContext:
     present_family:     i32 = -1
     initialized:        i32 = 0
 
-imple VulkanContext:
+attach VulkanContext:
 
     fun init(self, window_handle: i64) -> i32:
         # Step 1: Required Vulkan extensions (replaces glfwGetRequiredInstanceExtensions)

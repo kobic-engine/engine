@@ -17,7 +17,7 @@ struct Query:
     result_count:  i32 = 0
     result_cap:    i32 = 0
 
-imple Query:
+attach Query:
 
     static fun from_one(storage_ptr: i64) -> Query:
         q: Query = Query()
@@ -127,7 +127,7 @@ struct QueryIter:
     current_a:         i64 = 0
     current_b:         i64 = 0
 
-imple QueryIter:
+attach QueryIter:
 
     static fun build_one(storage_ptr: i64, s_count: i32) -> QueryIter:
         it: QueryIter = QueryIter()

@@ -17,7 +17,7 @@ struct Swapchain:
     depth_memory:     i64 = 0
     depth_view:       i64 = 0
 
-imple Swapchain:
+attach Swapchain:
 
     fun init(self, instance: i64, phys_dev: i64, device: i64, surface: i64, width: i32, height: i32, gfx_family: i32, present_family: i32) -> i32:
         self.vk_surface = surface

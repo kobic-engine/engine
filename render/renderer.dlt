@@ -22,7 +22,7 @@ struct Renderer:
     scratch_vb_arr:    i64 = 0
     scratch_off_arr:   i64 = 0
 
-imple Renderer:
+attach Renderer:
 
     fun init(self, device: i64, phys_device: i64, gfx_queue: i64, present_queue: i64) -> void:
         self.device = device

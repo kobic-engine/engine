@@ -33,7 +33,7 @@ struct App:
     # Camera
     active_camera:  i32 = -1
 
-imple App:
+attach App:
 
     fun config(self, cfg: RenderConfig) -> void:
         self.window_title = cfg.title

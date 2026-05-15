@@ -11,7 +11,7 @@ struct CameraData:
     pitch: f32 = 0.0
     yaw:   f32 = 0.0
 
-imple CameraData:
+attach CameraData:
 
     static fun spawn(w: Scene, name: str, fov: f32) -> i32:
         eid: i32 = Node3D.spawn(w, name)

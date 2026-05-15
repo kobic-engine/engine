@@ -11,7 +11,7 @@ struct RigidBodyData:
     vel_z:       f32 = 0.0
     is_grounded: i32 = 0
 
-imple RigidBodyData:
+attach RigidBodyData:
 
     static fun add_to(w: Scene, eid: i32, mass: f32) -> void:
         rb: i64 = w.add_component_zeroed(eid, "RigidBodyData")

@@ -34,7 +34,7 @@ struct RenderPass:
     frame_img_idxs_arr:   i64 = 0
     frame_initialized:    i32 = 0
 
-imple RenderPass:
+attach RenderPass:
 
     fun init(self, device: i64, swapchain_format: i32, sc_image_count: i32, sc_image_views: i64, depth_view: i64, width: i32, height: i32, gfx_family: i32, vert_data: i64, vert_size: i64, frag_data: i64, frag_size: i64) -> i32:
         # 1. Create render pass — color + depth attachments

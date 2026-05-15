@@ -11,7 +11,7 @@ struct CollisionData:
     half_z:     f32 = 0.5
     radius:     f32 = 0.5
 
-imple CollisionData:
+attach CollisionData:
 
     static fun add_box(w: Scene, eid: i32, hx: f32, hy: f32, hz: f32) -> void:
         cd: i64 = w.add_component_zeroed(eid, "CollisionData")

@@ -19,7 +19,7 @@ struct ComponentStorage:
     sparse:          i64 = 0
     sparse_capacity: i32 = 0
 
-imple ComponentStorage:
+attach ComponentStorage:
 
     static fun init(name: str, comp_size: i32) -> ComponentStorage:
         cap: i32 = 64

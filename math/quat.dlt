@@ -9,7 +9,7 @@ struct Quat:
     z: f32 = 0.0
     w: f32 = 1.0
 
-imple Quat:
+attach Quat:
 
     static fun IDENTITY() -> Quat:
         return Quat(0.0, 0.0, 0.0, 1.0)

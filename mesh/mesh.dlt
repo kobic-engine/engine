@@ -9,7 +9,7 @@ struct Mesh:
     vertex_count: i32 = 0
     is_generated: i32 = 0
 
-imple Mesh:
+attach Mesh:
 
     fun get_vertices(self) -> i64:
         return self.vertices

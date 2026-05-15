@@ -6,7 +6,7 @@
 struct Camera:
     _dummy: i32 = 0
 
-imple Camera:
+attach Camera:
 
     static fun spawn(w: Scene, name: str, fov: f32, x: f32, y: f32, z: f32) -> i32:
         eid: i32 = CameraData.spawn(w, name, fov)

@@ -49,7 +49,7 @@ struct Scene:
     res_sizes:      i64 = 0
     res_count:      i32 = 0
 
-imple Scene:
+attach Scene:
 
     static fun init() -> Scene:
         w: Scene = Scene()

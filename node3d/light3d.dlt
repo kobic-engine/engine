@@ -15,7 +15,7 @@ imm LIGHT_DIRECTIONAL: i32 = 0
 imm LIGHT_POINT: i32 = 1
 imm LIGHT_SPOT: i32 = 2
 
-imple LightData:
+attach LightData:
 
     static fun spawn_directional(w: Scene, name: str) -> i32:
         eid: i32 = Node3D.spawn(w, name)

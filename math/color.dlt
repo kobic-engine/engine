@@ -9,7 +9,7 @@ struct Color:
     b: f32 = 1.0
     a: f32 = 1.0
 
-imple Color:
+attach Color:
 
     static fun WHITE() -> Color:
         return Color(1.0, 1.0, 1.0, 1.0)

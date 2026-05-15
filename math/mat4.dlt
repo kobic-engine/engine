@@ -22,7 +22,7 @@ struct Mat4:
     m14: f32 = 0.0
     m15: f32 = 1.0
 
-imple Mat4:
+attach Mat4:
 
     static fun IDENTITY() -> Mat4:
         return Mat4(
