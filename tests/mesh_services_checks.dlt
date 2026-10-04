@@ -1,0 +1,89 @@
+# Headless engine regression: no window, Vulkan device, or game imports.
+import std
+import frog
+
+fun mesh_service_check(ok: bool, message: str):
+    if ok == false:
+        print("FAIL: " + message)
+        Command.exit(1)
+
+fun run_mesh_service_checks():
+    budget: MeshUpdateBudget = MeshUpdateBudget()
+    mesh_service_check(budget.can_publish_at(999999, 0), "default unlimited for legacy callers")
+    mesh_service_check(budget.can_publish_at(-1, 0) == false, "negative byte estimate rejected")
+    budget.begin_at(1, 128, 1000, 0)
+    mesh_service_check(budget.can_publish_at(256, 5000), "first indivisible oversized group never starves")
+    budget.note_publication(256)
+    mesh_service_check(budget.groups == 1 and budget.bytes == 256 and budget.can_publish_at(0, 5000) == false, "count limit and accounting")
+    budget.begin_at(3, 128, 1000, 100)
+    budget.note_publication(64)
+    mesh_service_check(budget.can_publish_at(64, 1099), "exact byte boundary accepted")
+    mesh_service_check(budget.can_publish_at(65, 1099) == false, "byte limit enforced after first group")
+    mesh_service_check(budget.can_publish_at(0, 1100) == false, "deadline exact boundary")
+    budget.begin_at(0, 0, 0, 0)
+    budget.note_publication(64)
+    mesh_service_check(budget.can_publish_at(999999, 999999), "zero limits remain unlimited")
+    budget.begin_at(1, 0, 0, 0)
+    mesh_service_check(budget.groups == 0 and budget.bytes == 0, "new frame resets counters")
+    other_budget: MeshUpdateBudget = MeshUpdateBudget()
+    other_budget.begin_at(1, 0, 0, 0)
+    budget.note_publication(0)
+    mesh_service_check(budget.can_publish_at(0, 0) == false and other_budget.can_publish_at(0, 0), "independent foreground/background admission")
+
+    group: MeshTransformGroup = MeshTransformGroup.create(3)
+    mesh_service_check(group.capacity == 3 and group.mesh_ids != 0 and group.matrix_ptr != 0, "group allocation")
+    mesh_service_check(group.add(-1) == false and group.count == 0, "invalid membership rejected")
+    mesh_service_check(group.add(0) and group.add(1) and group.add(0), "O(1) group membership")
+    mesh_service_check(group.add(2) == false and group.count == 3, "capacity bound preserved")
+    matrix: Mat4 = Mat4.trs(20.0, -4.0, 7.0, 12.0, 45.0, -9.0, 1.0, 1.0, 1.0)
+    group.set_matrix(matrix)
+    mesh_service_check(Memory.read_f32(group.matrix_ptr + 48) == 20.0, "matrix copied into owned storage")
+    mesh_service_check(group.apply() == 0, "public apply before Engine.start is safe")
+
+    # Engine-internal CPU harness. Synthetic registry only: no GPU handles.
+    # Proves renderer ownership, invalid ID bounds, and dirty classifications.
+    renderer: GpuRendererCore = GpuRendererCore()
+    renderer.vb_count = 2
+    renderer.model_matrices = Memory.malloc_zeroed(16)
+    cull: GpuCullPipeline = GpuCullPipeline()
+    renderer.gpu_cull_ptr = cull as i64
+    mesh_service_check(renderer.model_matrices != 0, "test registry allocation")
+    updated: i32 = gpu_set_model_matrix_group(renderer, group.mesh_ids, group.count, group.matrix_ptr)
+    mesh_service_check(updated == 3 and renderer.gpu_static_dirty == 1 and cull.in_dirty == 1, "new group marks structural cull dirty")
+    first: i64 = Memory.read_ptr(renderer.model_matrices)
+    second: i64 = Memory.read_ptr(renderer.model_matrices + 8)
+    mesh_service_check(first != 0 and second != 0 and first != second and first != group.matrix_ptr and second != group.matrix_ptr, "no aliasing or double-free ownership")
+    i: i32 = 0
+    while i < 16:
+        mesh_service_check(Memory.read_f32(first + (i as i64) * 4) == Memory.read_f32(group.matrix_ptr + (i as i64) * 4), "first full matrix matches")
+        mesh_service_check(Memory.read_f32(second + (i as i64) * 4) == Memory.read_f32(group.matrix_ptr + (i as i64) * 4), "second full matrix matches")
+        i = i + 1
+    renderer.gpu_static_dirty = 0
+    cull.in_dirty = 0
+    cull.xform_dirty = 0
+    matrix.m12 = 99.0
+    group.set_matrix(matrix)
+    mesh_service_check(gpu_set_model_matrix_group(renderer, group.mesh_ids, group.count, group.matrix_ptr) == 3, "repeat group update")
+    mesh_service_check(renderer.gpu_static_dirty == 0 and Memory.read_f32(first + 48) == 99.0 and Memory.read_f32(second + 48) == 99.0, "existing transforms need no structural rebuild")
+    mesh_service_check(cull.in_dirty == 0 and cull.xform_dirty == 1, "moving group invalidates cached GPU transforms")
+    Memory.write_i32(group.mesh_ids, -1)
+    Memory.write_i32(group.mesh_ids + 4, 2)
+    mesh_service_check(gpu_set_model_matrix_group(renderer, group.mesh_ids, group.count, group.matrix_ptr) == 1, "backend skips negative and out-of-range IDs")
+    mesh_service_check(gpu_set_model_matrix_group(renderer, 0, 3, group.matrix_ptr) == 0 and gpu_set_model_matrix_group(renderer, group.mesh_ids, -1, group.matrix_ptr) == 0 and gpu_set_model_matrix_group(renderer, group.mesh_ids, 3, 0) == 0, "empty/null group safe")
+    Memory.free(first)
+    Memory.free(second)
+    Memory.free(renderer.model_matrices)
+    Memory.free(cull as i64)
+    group.clear()
+    mesh_service_check(group.count == 0 and group.add(1), "membership rebuild")
+    group.destroy()
+    group.destroy()
+    mesh_service_check(group.count == 0 and group.mesh_ids == 0 and group.matrix_ptr == 0 and group.add(1) == false, "idempotent buffer cleanup")
+    Memory.free(group as i64)
+    empty: MeshTransformGroup = MeshTransformGroup.create(0)
+    mesh_service_check(empty.capacity == 0 and empty.add(1) == false and empty.apply() == 0, "empty group safe")
+    empty.destroy()
+    Memory.free(empty as i64)
+    print("PASS: Frog mesh publication budget and rigid transform group")
+
+run_mesh_service_checks()

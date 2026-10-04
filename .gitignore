@@ -15,4 +15,5 @@ node_modules/
 _*/
 *.tmp
 *.bak
+build/*.log
 __pycache__/

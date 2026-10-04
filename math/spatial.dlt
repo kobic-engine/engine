@@ -1,0 +1,150 @@
+# Optional sector/local coordinates: import frog.spatial.
+# CPU-only; no renderer, scene graph or game policy dependencies.
+# This does NOT automatically rebase Camera3D, render meshes or physics.
+# SpatialFrame stores caller-managed frame metadata, not a scene hierarchy.
+
+fun space_sector_metres() -> f64:
+    return 1048576.0
+
+fun spatial_floor_div_i64(value: i64, divisor: i64) -> i64:
+    quotient: i64 = value / divisor
+    remainder: i64 = value % divisor
+    if remainder != 0 and value < 0:
+        quotient = quotient - 1
+    return quotient
+
+fun spatial_floor_mod_i64(value: i64, divisor: i64) -> i64:
+    return value - spatial_floor_div_i64(value, divisor) * divisor
+
+struct SpacePosition:
+    sector_x: i64 = 0
+    sector_y: i64 = 0
+    sector_z: i64 = 0
+    local_x: f64 = 0.0
+    local_y: f64 = 0.0
+    local_z: f64 = 0.0
+
+fun space_position_zero() -> SpacePosition:
+    return SpacePosition()
+
+fun space_position_normalize_axis(sector: i64, local: f64) -> SpacePosition:
+    result: SpacePosition = SpacePosition()
+    result.sector_x = sector
+    result.local_x = local
+    span: f64 = space_sector_metres()
+    while result.local_x >= span:
+        result.local_x = result.local_x - span
+        result.sector_x = result.sector_x + 1
+    while result.local_x < 0.0:
+        result.local_x = result.local_x + span
+        result.sector_x = result.sector_x - 1
+    return result
+
+fun space_position_normalize(position: SpacePosition) -> SpacePosition:
+    result: SpacePosition = position
+    x_axis: SpacePosition = space_position_normalize_axis(result.sector_x, result.local_x)
+    y_axis: SpacePosition = space_position_normalize_axis(result.sector_y, result.local_y)
+    z_axis: SpacePosition = space_position_normalize_axis(result.sector_z, result.local_z)
+    result.sector_x = x_axis.sector_x
+    result.sector_y = y_axis.sector_x
+    result.sector_z = z_axis.sector_x
+    result.local_x = x_axis.local_x
+    result.local_y = y_axis.local_x
+    result.local_z = z_axis.local_x
+    return result
+
+fun space_position_make(sector_x: i64, sector_y: i64, sector_z: i64, local_x: f64, local_y: f64, local_z: f64) -> SpacePosition:
+    result: SpacePosition = SpacePosition()
+    result.sector_x = sector_x
+    result.sector_y = sector_y
+    result.sector_z = sector_z
+    result.local_x = local_x
+    result.local_y = local_y
+    result.local_z = local_z
+    return space_position_normalize(result)
+
+fun space_relative_x(position: SpacePosition, origin: SpacePosition) -> f64:
+    return ((position.sector_x - origin.sector_x) as f64) * space_sector_metres() + position.local_x - origin.local_x
+
+fun space_relative_y(position: SpacePosition, origin: SpacePosition) -> f64:
+    return ((position.sector_y - origin.sector_y) as f64) * space_sector_metres() + position.local_y - origin.local_y
+
+fun space_relative_z(position: SpacePosition, origin: SpacePosition) -> f64:
+    return ((position.sector_z - origin.sector_z) as f64) * space_sector_metres() + position.local_z - origin.local_z
+
+fun space_position_offset(position: SpacePosition, dx: f64, dy: f64, dz: f64) -> SpacePosition:
+    result: SpacePosition = position
+    result.local_x = result.local_x + dx
+    result.local_y = result.local_y + dy
+    result.local_z = result.local_z + dz
+    return space_position_normalize(result)
+
+fun space_distance_squared(a: SpacePosition, b: SpacePosition) -> f64:
+    dx: f64 = space_relative_x(a, b)
+    dy: f64 = space_relative_y(a, b)
+    dz: f64 = space_relative_z(a, b)
+    return dx * dx + dy * dy + dz * dz
+
+fun space_distance(a: SpacePosition, b: SpacePosition) -> f64:
+    return @sqrt(space_distance_squared(a, b))
+
+struct SpatialVector:
+    x: f64 = 0.0
+    y: f64 = 0.0
+    z: f64 = 0.0
+
+fun spatial_vector_make(x: f64, y: f64, z: f64) -> SpatialVector:
+    result: SpatialVector = SpatialVector()
+    result.x = x
+    result.y = y
+    result.z = z
+    return result
+
+fun spatial_vector_length(value: SpatialVector) -> f64:
+    return @sqrt(value.x * value.x + value.y * value.y + value.z * value.z)
+
+fun spatial_vector_normalize(value: SpatialVector) -> SpatialVector:
+    length: f64 = spatial_vector_length(value)
+    if length <= 0.000000001:
+        return spatial_vector_make(0.0, 1.0, 0.0)
+    return spatial_vector_make(value.x / length, value.y / length, value.z / length)
+
+fun spatial_vector_dot(a: SpatialVector, b: SpatialVector) -> f64:
+    return a.x * b.x + a.y * b.y + a.z * b.z
+
+@heap struct SpatialFrame:
+    frame_id: i32 = 0
+    parent_frame_id: i32 = 0 - 1
+    origin: SpacePosition = SpacePosition()
+    rotation_x: f64 = 0.0
+    rotation_y: f64 = 0.0
+    rotation_z: f64 = 0.0
+    rotation_w: f64 = 1.0
+    scale: f64 = 1.0
+
+attach SpatialFrame:
+
+    static fun create(frame_id: i32, parent_frame_id: i32, origin: SpacePosition) -> SpatialFrame:
+        frame: SpatialFrame = SpatialFrame()
+        frame.frame_id = frame_id
+        frame.parent_frame_id = parent_frame_id
+        frame.origin = space_position_normalize(origin)
+        frame.rotation_x = 0.0
+        frame.rotation_y = 0.0
+        frame.rotation_z = 0.0
+        frame.rotation_w = 1.0
+        frame.scale = 1.0
+        return frame
+
+    fun set_rotation(self, x: f64, y: f64, z: f64, w: f64):
+        self.rotation_x = x
+        self.rotation_y = y
+        self.rotation_z = z
+        self.rotation_w = w
+
+    fun set_scale(self, value: f64):
+        if value > 0.0:
+            self.scale = value
+
+    fun destroy(self):
+        Memory.free(self as i64)

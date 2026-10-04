@@ -53,6 +53,22 @@ Current local shape:
 Vulkan rendering is available through the `Engine` facade while lower-level
 runtime/backend types remain internal package plumbing.
 
+## Opt-in dynamic mesh services
+
+- `MeshUpdateBudget`: reusable main-thread count/byte/time admission for
+  indivisible publication groups. Application priority and result ownership
+  remain with the caller; it is not a job queue or atomic upload transaction.
+- `MeshTransformGroup`: OOP rigid membership with a common local vertex frame.
+  `Engine.set_model_matrix_group(ids, count, matrix)` also supports existing
+  compact membership lists without creating another list.
+
+Existing upload, transform, and Node3D APIs retain their behavior. See
+[Mesh service contracts and tests](docs/MESH_SERVICES.md).
+
+Large-world coordinate math is separately opt-in with `import frog.spatial`:
+`SpacePosition`, `SpatialVector`, and `SpatialFrame` have no renderer/window
+dependencies. This does not automatically rebase the scene or camera.
+
 ## Dependencies
 
 - `json` package - general JSON parsing for glTF metadata

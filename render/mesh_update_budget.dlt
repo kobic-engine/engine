@@ -1,0 +1,53 @@
+# Main-thread admission for indivisible mesh-publication groups. No GPU
+# handles or game policy: each caller chooses its count/byte/time limits.
+# Zero limits mean unlimited. One oversized first group is allowed so a
+# large result cannot starve forever; limits are soft, not preemptive.
+struct MeshUpdateBudget:
+    max_groups: i32 = 0
+    max_bytes: i64 = 0
+    max_ns: i64 = 0
+    groups: i32 = 0
+    bytes: i64 = 0
+    start_ns: i64 = 0
+
+attach MeshUpdateBudget:
+    fun begin(self, groups: i32, bytes: i64, nanoseconds: i64):
+        now_ns: i64 = 0
+        if nanoseconds > 0:
+            now_ns = Time.now_ns()
+        self.begin_at(groups, bytes, nanoseconds, now_ns)
+
+    # Explicit clock variants make policy tests deterministic/headless.
+    fun begin_at(self, groups: i32, bytes: i64, nanoseconds: i64, now_ns: i64):
+        self.max_groups = groups
+        self.max_bytes = bytes
+        self.max_ns = nanoseconds
+        self.groups = 0
+        self.bytes = 0
+        self.start_ns = now_ns
+
+    fun can_publish(self, bytes: i64) -> bool:
+        if self.max_ns > 0 and self.groups > 0:
+            return self.can_publish_at(bytes, Time.now_ns())
+        return self.can_publish_at(bytes, self.start_ns)
+
+    fun can_publish_at(self, bytes: i64, now_ns: i64) -> bool:
+        if bytes < 0:
+            return false
+        if self.max_groups > 0 and self.groups >= self.max_groups:
+            return false
+        if self.groups == 0:
+            return true
+        if self.max_bytes > 0 and (self.bytes >= self.max_bytes or bytes > self.max_bytes - self.bytes):
+            return false
+        if self.max_ns > 0 and now_ns - self.start_ns >= self.max_ns:
+            return false
+        return true
+
+    # Record only an accepted group. A group can contain several related
+    # uploads; a count budget is not a per-mesh limit. Caller keeps ownership
+    # of deferred worker results and decides when a group is complete.
+    fun note_publication(self, bytes: i64):
+        self.groups = self.groups + 1
+        if bytes > 0:
+            self.bytes = self.bytes + bytes

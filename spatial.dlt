@@ -1,0 +1,2 @@
+# Optional entry point, deliberately outside Frog's renderer umbrella loads.
+import frog.math.spatial

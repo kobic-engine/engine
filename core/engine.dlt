@@ -612,6 +612,13 @@ attach Engine:
     static fun set_model_matrix_raw(mesh_id: i32, src: i64):
         g_engine_runtime.set_model_matrix_raw(mesh_id, src)
 
+    # Borrowed ID array (count x i32), shared 64-byte column-major matrix.
+    # Call on the main thread before render. No pointer is retained.
+    static fun set_model_matrix_group(mesh_ids: i64, count: i32, src: i64) -> i32:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.set_model_matrix_group(mesh_ids, count, src)
+
     static fun set_instance_visible(mesh_id: i32, on: i32):
         g_engine_runtime.set_instance_visible(mesh_id, on)
 

@@ -1,7 +1,6 @@
 ##############################
 # Frog Engine — GpuRendererCore
-# ECS-aware Vulkan renderer
-# Queries Scene for renderable entities
+# Vulkan backend for Frog's OOP scene/Engine facade.
 ##############################
 
 struct GpuBufferUpload:
@@ -4182,10 +4181,11 @@ attach GpuRendererCore:
             Memory.write_i32(self.mesh_transparent + mesh_id * 4, tflag)
         off: i64 = (mesh_id as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
         packed_material: f32 = _frog_pack_material(material)
+        surface_parameter: f32 = material.gpu_surface_parameter()
         # GPU-cull instance records contain a snapshot of these values. Mark
         # them dirty only when the material actually changes so live toggles
         # such as alpha_clip update correctly without adding per-frame work.
-        if Memory.read_f32(self.mesh_material_params + off) != material.metallic:
+        if Memory.read_f32(self.mesh_material_params + off) != surface_parameter:
             grouping_changed = 1
         if Memory.read_f32(self.mesh_material_params + off + 4) != material.roughness:
             grouping_changed = 1
@@ -4204,7 +4204,7 @@ attach GpuRendererCore:
         material_alpha: f32 = clamp(material.alpha, 0.0, 1.0)
         if Memory.read_f32(self.mesh_material_params + off + 32) != material_alpha:
             grouping_changed = 1
-        Memory.write_f32(self.mesh_material_params + off, material.metallic)
+        Memory.write_f32(self.mesh_material_params + off, surface_parameter)
         Memory.write_f32(self.mesh_material_params + off + 4, material.roughness)
         Memory.write_f32(self.mesh_material_params + off + 8, material.emissive_strength)
         Memory.write_f32(self.mesh_material_params + off + 12, packed_material)
@@ -6984,4 +6984,3 @@ fun _frog_multiply_4x4_into(a: i64, b: i64, out: i64) -> void:
             Memory.write_f32(out + co + ro, val)
             r = r + 1
         col = col + 1
-

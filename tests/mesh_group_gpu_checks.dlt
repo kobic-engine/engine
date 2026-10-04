@@ -1,0 +1,59 @@
+# Small native Engine example independent of Bitora/terrain. Auto-exits.
+import std
+import frog
+
+fun group_gpu_check(ok: bool, message: str):
+    if ok == false:
+        print("FAIL: " + message)
+        Command.exit(1)
+
+fun run_group_gpu_checks():
+    Engine.window.create("Frog rigid group GPU checks", 320, 180)
+    Engine.properties.set_target_fps(120)
+    Engine.properties.set_culling_mode(1)
+    scene: Scene = Scene.create()
+    camera: Camera3D = Camera3D.create("test")
+    camera.position(0.0, 0.0, 8.0)
+    camera.set_clip_planes(0.1, 100.0)
+    scene.add_child(camera)
+    Engine.scene.set(scene)
+    group_gpu_check(Engine.start() == 1, "native engine startup")
+    first: i32 = Engine.upload_cube_mesh()
+    second: i32 = Engine.register_instance(first)
+    group_gpu_check(first >= 0 and second >= 0 and first != second, "independent mesh IDs")
+    group: MeshTransformGroup = MeshTransformGroup.create(2)
+    group_gpu_check(group.add(first) and group.add(second), "public group membership")
+    frame: i32 = 0
+    while frame < 8:
+        Engine.begin_frame()
+        matrix: Mat4 = Mat4.trs((frame as f32) * 0.1, 0.0, 0.0, 0.0, (frame as f32) * 17.0, 0.0, 1.0, 1.0, 1.0)
+        group.set_matrix(matrix)
+        group_gpu_check(group.apply() == 2, "group apply updates both native instances")
+        # Test-only backend readback of the CPU registry. Applications use
+        # Engine; low-level ownership introspection stays in engine tests.
+        renderer: Renderer = g_engine_runtime.active_renderer()
+        first_matrix: i64 = Memory.read_ptr(renderer.core.model_matrices + (first as i64) * 8)
+        second_matrix: i64 = Memory.read_ptr(renderer.core.model_matrices + (second as i64) * 8)
+        group_gpu_check(first_matrix != 0 and second_matrix != 0 and first_matrix != second_matrix, "native matrix ownership remains independent")
+        i: i32 = 0
+        while i < 16:
+            group_gpu_check(Memory.read_f32(first_matrix + (i as i64) * 4) == Memory.read_f32(group.matrix_ptr + (i as i64) * 4), "first matrix matches rigid body")
+            group_gpu_check(Memory.read_f32(second_matrix + (i as i64) * 4) == Memory.read_f32(group.matrix_ptr + (i as i64) * 4), "second matrix matches rigid body")
+            i = i + 1
+        Engine.render()
+        frame = frame + 1
+    group.destroy()
+    Memory.free(group as i64)
+    # Renderer still owns the instances after CPU group cleanup.
+    final_matrix: i64 = Memory.malloc(64)
+    group_gpu_check(final_matrix != 0, "test final matrix allocation")
+    identity: Mat4 = Mat4.identity()
+    identity.write_to_ptr(final_matrix)
+    Engine.set_model_matrix_raw(first, final_matrix)
+    Memory.free(final_matrix)
+    Engine.begin_frame()
+    Engine.render()
+    Engine.shutdown()
+    print("PASS: native GPU rigid groups, transforms, rendering and shutdown")
+
+run_group_gpu_checks()

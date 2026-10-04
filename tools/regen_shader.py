@@ -105,6 +105,23 @@ def main():
             obsolete_start = src.index(obsolete_begin)
             obsolete_stop = src.index(obsolete_end, obsolete_start) + len(obsolete_end)
             src = src[:obsolete_start].rstrip() + "\n\n" + src[obsolete_stop:].lstrip()
+        # Old vertex getter spellings are not used by the renderer. Preserve
+        # them as aliases instead of embedding duplicate, stale SPIR-V blobs.
+        # This also leaves room for new material branches under Dolet's fixed
+        # token budget, without changing the renderer's active vertex shaders.
+        for old_name, old_getter, active_getter in (
+            ("bindless_vert", "get_bindless_vert_shader", "get_textured_bindless_vert_shader"),
+            ("bindless_ssbo_vert", "get_bindless_ssbo_vert_shader", "get_textured_bindless_ssbo_vert_shader"),
+        ):
+            old_begin = f"# >>> EMBED {old_name} BEGIN"
+            old_end = f"# <<< EMBED {old_name} END"
+            if old_begin in src and old_end in src:
+                start = src.index(old_begin)
+                stop = src.index(old_end, start) + len(old_end)
+                alias = (f"# Compatibility getter; active shader is embedded once.\n"
+                         f"fun {old_getter}() -> EmbeddedShader:\n"
+                         f"    return {active_getter}()\n")
+                src = src[:start] + alias + src[stop:]
 
     if begin in src and end in src:
         pre = src[: src.index(begin)]

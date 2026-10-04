@@ -1,0 +1,53 @@
+# Public material API + native registry/render regression. No game dependencies.
+import std
+import frog
+
+fun uniform_gpu_require(ok: bool, message: str):
+    if ok == false:
+        print("FAIL: " + message)
+        Command.exit(1)
+
+fun run_uniform_gpu_checks():
+    Engine.window.create("Frog uniform lighting checks", 320, 180)
+    Engine.properties.set_target_fps(120)
+    scene: Scene = Scene.create()
+    camera: Camera3D = Camera3D.create("test")
+    camera.position(0.0, 0.0, 8.0)
+    camera.set_clip_planes(0.1, 100.0)
+    scene.add_child(camera)
+    Engine.scene.set(scene)
+    uniform_gpu_require(Engine.start() == 1, "Native engine startup")
+    first: i32 = Engine.upload_cube_mesh()
+    second: i32 = Engine.register_instance(first)
+    uniform_gpu_require(first >= 0 and second >= 0, "Independent shared-geometry instances")
+    mat: Material3D = Material3D.create().set_surface(0.35, 0.6).set_alpha_clip(1).set_double_sided(0)
+    Engine.bind_material(second, mat.set_uniform_lighting(0.88))
+    renderer: Renderer = g_engine_runtime.active_renderer()
+    first_off: i64 = (first as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
+    second_off: i64 = (second as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
+    preserved_flags: f32 = Memory.read_f32(renderer.core.mesh_material_params + second_off + 12)
+    sample: i32 = 0
+    while sample < 9:
+        Engine.begin_frame()
+        energy: f32 = (sample as f32) * 0.5
+        mat.set_uniform_lighting(energy)
+        Engine.bind_material(first, mat)
+        uniform_gpu_require(Memory.read_f32(renderer.core.mesh_material_params + first_off) == mat.gpu_surface_parameter(), "Full-precision uniform energy reaches native instance record")
+        uniform_gpu_require(Memory.read_f32(renderer.core.mesh_material_params + second_off) < -1.879, "Shared geometry does not leak another instance's lighting")
+        uniform_gpu_require(Memory.read_f32(renderer.core.mesh_material_params + first_off + 12) == preserved_flags, "Alpha/culling flags survive lighting updates")
+        uniform_gpu_require(Memory.read_f32(renderer.core.mesh_material_params + first_off + 4) > 0.599, "Roughness ABI is unchanged")
+        Engine.render()
+        sample = sample + 1
+    mat.clear_uniform_lighting()
+    Engine.bind_material(first, mat)
+    uniform_gpu_require(Memory.read_f32(renderer.core.mesh_material_params + first_off) > 0.349, "Restores PBR without losing original metallic")
+    mat.set_uniform_lighting(0.18)
+    mat.set_unlit(1)
+    Engine.bind_material(first, mat)
+    uniform_gpu_require(Memory.read_f32(renderer.core.mesh_material_params + first_off) > 0.349, "Existing unlit path retains precedence")
+    Engine.begin_frame()
+    Engine.render()
+    Engine.shutdown()
+    print("PASS: native uniform material energy, instance isolation, cutout flags, PBR/unlit compatibility")
+
+run_uniform_gpu_checks()

@@ -1,0 +1,38 @@
+# CPU-only optional import: this must not load the Vulkan renderer/window.
+import std
+import frog.spatial
+
+fun spatial_check(ok: bool, message: str):
+    if ok == false:
+        print("FAIL: " + message)
+        Command.exit(1)
+
+fun run_spatial_checks():
+    span: f64 = space_sector_metres()
+    origin: SpacePosition = space_position_make(1000000000, -1000000000, 700000000, 0.25, 0.5, 0.75)
+    nearby: SpacePosition = space_position_offset(origin, 0.125, -0.25, 0.5)
+    spatial_check(space_relative_x(nearby, origin) == 0.125 and space_relative_y(nearby, origin) == -0.25 and space_relative_z(nearby, origin) == 0.5, "local precision at huge sector coordinates")
+    negative: SpacePosition = space_position_make(0, 0, 0, -0.25, -span, -span - 0.5)
+    spatial_check(negative.sector_x == -1 and negative.local_x == span - 0.25, "negative fractional boundary")
+    spatial_check(negative.sector_y == -1 and negative.local_y == 0.0, "negative exact boundary")
+    spatial_check(negative.sector_z == -2 and negative.local_z == span - 0.5, "negative multi-sector boundary")
+    positive: SpacePosition = space_position_make(0, 0, 0, span, span * 3.0 + 0.25, 0.0)
+    spatial_check(positive.sector_x == 1 and positive.local_x == 0.0 and positive.sector_y == 3 and positive.local_y == 0.25, "positive boundaries")
+    returned: SpacePosition = space_position_offset(nearby, -0.125, 0.25, -0.5)
+    spatial_check(space_distance_squared(origin, returned) == 0.0, "offset round trip")
+    spatial_check(spatial_floor_div_i64(-1, 1024) == -1 and spatial_floor_mod_i64(-1, 1024) == 1023, "negative streaming address")
+    vector: SpatialVector = spatial_vector_make(3.0, 4.0, 0.0)
+    spatial_check(spatial_vector_length(vector) == 5.0, "f64 vector operations")
+    normalized: SpatialVector = spatial_vector_normalize(vector)
+    spatial_check(spatial_vector_dot(normalized, normalized) > 0.999999 and spatial_vector_dot(normalized, normalized) < 1.000001, "normalization")
+    zero_up: SpatialVector = spatial_vector_normalize(spatial_vector_make(0.0, 0.0, 0.0))
+    spatial_check(zero_up.y == 1.0, "existing zero-normal fallback preserved")
+    frame: SpatialFrame = SpatialFrame.create(7, -1, negative)
+    frame.set_rotation(0.0, 0.5, 0.0, 0.8660254)
+    frame.set_scale(2.0)
+    frame.set_scale(-1.0)
+    spatial_check(frame.frame_id == 7 and frame.parent_frame_id == -1 and frame.origin.sector_z == -2 and frame.rotation_y == 0.5 and frame.scale == 2.0, "frame metadata and positive-scale contract")
+    frame.destroy()
+    print("PASS: optional Frog spatial coordinates without renderer dependencies")
+
+run_spatial_checks()

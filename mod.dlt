@@ -33,6 +33,7 @@ load frog/assets/assets
 # Phase 3: Scene objects
 load frog/scene/environment
 load frog/scene/node
+load frog/scene/mesh_transform_group
 load frog/scene/game_object
 load frog/scene/material3d
 load frog/scene/mesh3d
@@ -62,6 +63,7 @@ load frog/render/gpu_temporal
 load frog/render/gpu_renderer_core
 load frog/render/gpu_debug
 load frog/render/gpu_mesh
+load frog/render/mesh_update_budget
 load frog/render/gpu
 load frog/core/runtime
 load frog/core/engine
@@ -95,3 +97,4 @@ export Ray3D, RaycastHit, Raycast3D, Physics
 export SoftwareRenderer
 export init_engine_timer, engine_time_seconds
 export engine_parallel_for
+export MeshUpdateBudget, MeshTransformGroup

@@ -605,7 +605,20 @@ void main() {
     vec4 emissive = unpackEmissive();
     float packedLight = max(pushConstants.fogColor.a, 0.0);
     float lightIntensity = max(pushConstants.lightDirectionIntensity.w, 0.0);
-    if (emissive.a < 0.5) {
+    if (fragmentMaterial.x <= -1.0 && emissive.a < 0.5) {
+        // Scalar albedo illumination, NOT a glowing unlit material. A game can
+        // drive dawn/night or lightmaps without exposing polygon orientation.
+        float energy = clamp(-1.0 - fragmentMaterial.x, 0.0, 4.0);
+        surfaceColor.rgb = albedo * energy * skyVisibility();
+        int pointCount = int(clamp(floor(pointLights.meta.x + 0.5), 0.0, float(MAX_POINT_LIGHTS)));
+        for (int index = 0; index < pointCount; index++) {
+            vec4 positionRange = pointLights.positionRange[index];
+            float distanceToLight = length(positionRange.xyz - fragmentWorldPosition);
+            float fill = clamp(1.0 - distanceToLight / max(positionRange.w, 0.0001), 0.0, 1.0);
+            vec4 colorEnergy = pointLights.colorEnergy[index];
+            surfaceColor.rgb += albedo * colorEnergy.rgb * colorEnergy.a * fill * fill;
+        }
+    } else if (emissive.a < 0.5) {
         vec3 normal = normalize(fragmentWorldNormal);
         if (dot(normal, normal) < 0.0001) {
             vec3 dx = dFdx(fragmentWorldPosition);

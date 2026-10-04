@@ -48,6 +48,35 @@ fun gpu_set_model_matrix_raw(ren: GpuRendererCore, mesh_id: i32, src: i64):
     else:
         ren._mark_cull_dirty()
 
+# Update a rigid render group with one backend traversal and one cull dirty
+# notification. Matrices remain independently owned by the renderer: NEVER
+# alias the caller's matrix across IDs (cleanup would double-free it).
+fun gpu_set_model_matrix_group(ren: GpuRendererCore, mesh_ids: i64, count: i32, src: i64) -> i32:
+    if mesh_ids == 0 or src == 0 or count <= 0 or ren.model_matrices == 0:
+        return 0
+    updated: i32 = 0
+    structural: i32 = 0
+    index: i32 = 0
+    while index < count:
+        mesh_id: i32 = Memory.read_i32(mesh_ids + (index as i64) * 4)
+        if mesh_id >= 0 and mesh_id < ren.vb_count:
+            slot: i64 = ren.model_matrices + (mesh_id as i64) * 8
+            matrix: i64 = Memory.read_ptr(slot)
+            if matrix == 0:
+                matrix = Memory.malloc(64)
+                if matrix != 0:
+                    Memory.write_ptr(slot, matrix)
+                    structural = 1
+            if matrix != 0:
+                Memory.copy(matrix, src, 64)
+                updated = updated + 1
+        index = index + 1
+    if structural != 0:
+        ren._mark_cull_dirty_struct()
+    elif updated > 0:
+        ren._mark_cull_dirty()
+    return updated
+
 fun gpu_camera_view_roll_into(cam_x: f32, cam_y: f32, cam_z: f32, pitch: f32, yaw: f32, roll: f32, m: i64):
     if m == 0:
         return
@@ -526,6 +555,9 @@ attach Renderer:
 
     fun set_model_matrix_raw(self, mesh_id: i32, src: i64):
         self.core.set_model_matrix_raw(mesh_id, src)
+
+    fun set_model_matrix_group(self, mesh_ids: i64, count: i32, src: i64) -> i32:
+        return gpu_set_model_matrix_group(self.core, mesh_ids, count, src)
 
     fun set_instance_visible(self, mesh_id: i32, on: i32):
         self.core.set_instance_visible(mesh_id, on)

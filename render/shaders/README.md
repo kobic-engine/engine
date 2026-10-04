@@ -20,3 +20,18 @@ node tools/embed_debug_spirv.mjs render/shaders/debug_collision.vert.spv render/
 ```
 
 The `.spv` files are temporary build artifacts and should not be committed.
+
+## Uniform object lighting
+
+`Material3D.set_uniform_lighting(energy)` selects normal-independent scalar
+albedo lighting (0–4). The default remains PBR/vanilla; `clear_uniform_lighting()`
+restores it and `set_unlit(1)` keeps its historical full-bright behavior.
+The uniform branch does not use directional/specular/sky/shadow-map shading.
+Distance-attenuated point lights still add soft albedo fill, without Lambert
+face bands. Texture alpha cutout, vertex colour, atlas skylight, emissive and
+fog continue to work. Games own their time-of-day/lightmap energy calculation.
+
+The existing instance/material ABI is unchanged: negative GPU metallic values
+encode `-1 - energy`; ordinary materials still encode metallic in 0–1. Do not
+mix different uniform energies in a static arena page (one material per page).
+Both classic and bindless fragment shaders implement the same branch.

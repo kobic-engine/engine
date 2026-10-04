@@ -1,0 +1,58 @@
+# A rigid set of render meshes whose vertices use the SAME local frame.
+# OOP opt-in helper, not an ECS and not a replacement for Node3D parenting.
+# Owns only its CPU ID list/matrix; GPU mesh IDs are borrowed from Engine.
+@heap struct MeshTransformGroup:
+    mesh_ids: i64 = 0
+    matrix_ptr: i64 = 0
+    count: i32 = 0
+    capacity: i32 = 0
+
+attach MeshTransformGroup:
+    static fun create(capacity: i32) -> MeshTransformGroup:
+        group: MeshTransformGroup = MeshTransformGroup()
+        if capacity <= 0:
+            return group
+        group.mesh_ids = Memory.malloc((capacity as i64) * 4)
+        group.matrix_ptr = Memory.malloc(64)
+        if group.mesh_ids == 0 or group.matrix_ptr == 0:
+            group.destroy()
+            return group
+        group.capacity = capacity
+        identity: Mat4 = Mat4.identity()
+        identity.write_to_ptr(group.matrix_ptr)
+        return group
+
+    fun clear(self):
+        self.count = 0
+
+    # O(1) append. Duplicate IDs are harmless/idempotent on apply; callers
+    # building large membership lists need not pay O(n squared) deduplication.
+    fun add(self, mesh_id: i32) -> bool:
+        if mesh_id < 0 or self.mesh_ids == 0 or self.count >= self.capacity:
+            return false
+        Memory.write_i32(self.mesh_ids + (self.count as i64) * 4, mesh_id)
+        self.count = self.count + 1
+        return true
+
+    fun set_matrix(self, matrix: Mat4):
+        if self.matrix_ptr != 0:
+            matrix.write_to_ptr(self.matrix_ptr)
+
+    fun set_matrix_raw(self, source: i64):
+        if source != 0 and self.matrix_ptr != 0:
+            Memory.copy(self.matrix_ptr, source, 64)
+
+    fun apply(self) -> i32:
+        return Engine.set_model_matrix_group(self.mesh_ids, self.count, self.matrix_ptr)
+
+    # Releases only owned CPU buffers, never the borrowed GPU meshes. The
+    # heap object itself follows Node3D convention: caller frees after destroy.
+    fun destroy(self):
+        if self.mesh_ids != 0:
+            Memory.free(self.mesh_ids)
+            self.mesh_ids = 0
+        if self.matrix_ptr != 0:
+            Memory.free(self.matrix_ptr)
+            self.matrix_ptr = 0
+        self.count = 0
+        self.capacity = 0
