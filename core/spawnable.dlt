@@ -1,0 +1,61 @@
+##############################
+# Kobic Engine — Spawnable
+#
+# Type-tag structs + the trait that `App.spawn<T>()` dispatches
+# through. Each tag's `build` adds the right components to a fresh
+# entity and returns its id; `App.spawn` wraps that id in a `Node`.
+#
+# Adding a new spawnable kind (Light, Sphere, ...) is a local change:
+# declare a tag struct + `attach Spawnable for It` — `App` is untouched.
+#
+# NOTE: each `build` copies `app.world` / `app.renderer` into locals,
+# mutates the locals, then writes them back — the same copy-out /
+# copy-back idiom App.init uses. Mutating a struct *field* in place
+# across a call does not reliably propagate; a local does.
+##############################
+
+trait Spawnable:
+    static fun build(app: App) -> i32
+
+# Tag structs — carry no data, they only select a `build` at compile
+# time via monomorphization of `App.spawn<T>()`.
+struct Cube:
+    _dummy: i32 = 0
+
+struct Plane:
+    _dummy: i32 = 0
+
+# `Camera` is declared in core/camera.dlt — we only add the trait here.
+
+attach Spawnable for Camera:
+    static fun build(app: App) -> i32:
+        w: Scene = app.world
+        eid: i32 = CameraData.spawn(w, "Camera", 60.0)
+        app.world = w
+        # The first camera spawned becomes the one end_frame renders
+        # from; an explicit override can come later if multi-camera.
+        if app.active_camera < 0:
+            app.active_camera = eid
+        return eid
+
+attach Spawnable for Cube:
+    static fun build(app: App) -> i32:
+        w: Scene = app.world
+        ren: Renderer = app.renderer
+        eid: i32 = MeshData.spawn_cube(w, ren, "Cube", 1.0, 0.0, 0.0, 0.0)
+        app.world = w
+        app.renderer = ren
+        return eid
+
+attach Spawnable for Plane:
+    static fun build(app: App) -> i32:
+        w: Scene = app.world
+        ren: Renderer = app.renderer
+        eid: i32 = MeshData.spawn_plane(w, "Plane", 1.0, 1.0)
+        if eid < 0:
+            app.world = w
+            return eid
+        Node._upload_mesh(w, ren, eid)
+        app.world = w
+        app.renderer = ren
+        return eid

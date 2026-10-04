@@ -1,14 +1,64 @@
 ##############################
 # Kobic Engine — Node
-# Entity creation and mesh operations
+#
+# `Node` is a lightweight HANDLE into the ECS scene: it pairs the
+# `Scene` with an entity id. Every transform / identity operation is
+# a thin wrapper over the component arrays — the Node stores no
+# entity data itself, so copying a handle is free (12 bytes).
 ##############################
 
 struct Node:
-    _dummy: i32 = 0
+    scene: Scene = Scene()
+    id:    i32   = -1
 
 attach Node:
 
-    # ---- Spawning ----
+    # ---- Transform (fluent — every setter returns the handle) ----
+
+    fun position(self, x: f32, y: f32, z: f32) -> Node:
+        Node3D.set_pos(self.scene, self.id, x, y, z)
+        return Node(scene=self.scene, id=self.id)
+
+    fun rotation(self, x: f32, y: f32, z: f32) -> Node:
+        Node3D.set_rot(self.scene, self.id, x, y, z)
+        return Node(scene=self.scene, id=self.id)
+
+    fun scale(self, x: f32, y: f32, z: f32) -> Node:
+        Node3D.set_scale(self.scene, self.id, x, y, z)
+        return Node(scene=self.scene, id=self.id)
+
+    fun pos_x(self) -> f32:
+        return Node3D.get_pos_x(self.scene, self.id)
+
+    fun pos_y(self) -> f32:
+        return Node3D.get_pos_y(self.scene, self.id)
+
+    fun pos_z(self) -> f32:
+        return Node3D.get_pos_z(self.scene, self.id)
+
+    # ---- Identity / camera config ----
+
+    fun set_name(self, name: str) -> Node:
+        ni: i64 = self.scene.get_component(self.id, "NodeInfo")
+        if ni != 0:
+            Memory.write_ptr(ni + 0, name)
+        return Node(scene=self.scene, id=self.id)
+
+    fun set_fov(self, fov: f32) -> Node:
+        c: i64 = self.scene.get_component(self.id, "CameraData")
+        if c != 0:
+            Memory.write_f32(c + 0, fov)
+        return Node(scene=self.scene, id=self.id)
+
+    # ---- Flat-array addressing ----
+    # `first.at(i)` is the handle of the entity `i` slots after `first`.
+    # Valid when a batch was spawned consecutively (the ECS hands out
+    # sequential ids) — which is exactly how the mob arrays are built.
+
+    fun at(self, offset: i32) -> Node:
+        return Node(scene=self.scene, id=self.id + offset)
+
+    # ---- Internal spawn helpers (used by the Spawnable impls) ----
 
     static fun spawn_cube(w: Scene, ren: Renderer, name: str, size: f32, x: f32, y: f32, z: f32) -> i32:
         return MeshData.spawn_cube(w, ren, name, size, x, y, z)
@@ -22,7 +72,9 @@ attach Node:
         Node.update_matrix(w, ren, eid)
         return eid
 
-    # ---- Matrix Update (user-facing) ----
+    # ---- Matrix Update — recomposes an entity's model matrix from
+    # its Transform and hands it to the renderer. Called every frame
+    # by App.end_frame for all mesh entities.
 
     static fun update_matrix(w: Scene, ren: Renderer, eid: i32) -> void:
         md: i64 = w.get_component(eid, "MeshData")

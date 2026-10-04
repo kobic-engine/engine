@@ -65,6 +65,7 @@ load kobic/core/app
 load kobic/core/kobic
 load kobic/core/node
 load kobic/core/camera
+load kobic/core/spawnable
 
 # UI
 load kobic/ui/hud

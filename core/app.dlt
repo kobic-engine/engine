@@ -4,9 +4,6 @@
 # Builder pattern: App.new().config(...).init().run()
 ##############################
 
-# Global Window for App builder API (persistent lifetime)
-g_app_window: Window = Window()
-
 struct App:
     # Window
     window_handle:  i64 = 0
@@ -41,12 +38,11 @@ attach App:
         self.window_height = cfg.height
 
     fun init(self) -> i32:
-        # Create window via native window package
-        g_app_window = Window.create(self.window_title, self.window_width, self.window_height)
-        self.window_handle = g_app_window.handle
-        if self.window_handle == 0:
+        # Create the main native window through the window package.
+        if Window.open(self.window_title, self.window_width, self.window_height) == 0:
             print("Error: Failed to create window")
             return 0
+        self.window_handle = Window.handle()
         self.is_running = 1
 
         # Init ECS Scene
@@ -146,14 +142,12 @@ attach App:
     fun should_close(self) -> i32:
         if self.window_handle == 0:
             return 1
-        win: Window = g_app_window
-        result: i32 = win.should_close()
-        return result
+        return Window.should_close()
 
     fun begin_frame(self) -> void:
-        win: Window = g_app_window
-        win.poll_events()
-        g_app_window = win
+        Window.poll()
+        self.window_width = Window.width()
+        self.window_height = Window.height()
         KbInput.update()
         Mouse.update()
         now: f64 = kobic_get_time()
@@ -278,9 +272,7 @@ attach App:
         w: Scene = self.world
         w.cleanup()
         if self.window_handle != 0:
-            win: Window = g_app_window
-            win.destroy()
-            g_app_window = win
+            Window.shutdown()
             self.window_handle = 0
         self.is_running = 0
         print("Kobic Engine cleaned up")

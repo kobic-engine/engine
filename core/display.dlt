@@ -1,4 +1,4 @@
 ##############################
 # Kobic Engine — Display
-# (Deprecated: use Window.create() directly from window package)
+# (Deprecated: use Window.open() directly from window package)
 ##############################
