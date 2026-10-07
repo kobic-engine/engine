@@ -63,10 +63,13 @@ load frog/render/gpu_temporal
 load frog/render/gpu_renderer_core
 load frog/render/gpu_debug
 load frog/render/gpu_mesh
+load frog/render/gpu_skinning
 load frog/render/mesh_update_budget
 load frog/render/gpu
 load frog/core/runtime
 load frog/core/engine
+load frog/scene/skeleton3d
+load frog/scene/spring_arm3d
 
 # Benchmarks
 load frog/core/benchmark
@@ -98,3 +101,5 @@ export SoftwareRenderer
 export init_engine_timer, engine_time_seconds
 export engine_parallel_for
 export MeshUpdateBudget, MeshTransformGroup
+export Skeleton3D, SkinnedMesh3D
+export SpringArm3D

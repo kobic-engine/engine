@@ -547,6 +547,9 @@ struct GpuRendererCore:
     # Borrowed Scene light registry plus double-buffered GPU uniform data.
     point_light_ptrs:  i64 = 0
     point_light_count: i32 = 0
+    skin_buffers: i64 = 0
+    skin_memories: i64 = 0
+    skin_mapped: i64 = 0
     point_light_buffers: i64 = 0
     point_light_memories: i64 = 0
     point_light_mapped_ptrs: i64 = 0
@@ -1746,7 +1749,7 @@ attach GpuRendererCore:
         Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 8, normal)
         Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 12, mr)
         Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 16, occ)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 20, 0)
+        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 20, frog_skin_offset(gi))
         Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 24, 0)
         alpha: f32 = 1.0
         if self.mesh_material_params != 0:
@@ -3269,6 +3272,40 @@ attach GpuRendererCore:
         Memory.free(zeros)
         return 1
 
+    fun _ensure_skin_buffers(self) -> i32:
+        if self.skin_buffers == 0:
+            self.skin_buffers = Memory.malloc_zeroed(16)
+            self.skin_memories = Memory.malloc_zeroed(16)
+            self.skin_mapped = Memory.malloc_zeroed(16)
+        if self.skin_buffers == 0 or self.skin_memories == 0 or self.skin_mapped == 0:
+            return 0
+        if Memory.read_ptr(self.skin_buffers) != 0 and Memory.read_ptr(self.skin_buffers + 8) != 0:
+            return 1
+        zero: i64 = Memory.malloc_zeroed(FROG_SKIN_BYTES)
+        if zero == 0:
+            return 0
+        slot: i32 = 0
+        while slot < 2:
+            if Memory.read_ptr(self.skin_buffers + slot * 8) == 0:
+                upload: GpuBufferUpload = self._upload_buffer(zero, FROG_SKIN_BYTES, 32)
+                if upload.ok == 0:
+                    Memory.free(zero)
+                    return 0
+                Memory.write_ptr(self.scratch_map_pp, 0)
+                result: i32 = vkMapMemory(self.device, upload.memory, 0, FROG_SKIN_BYTES, 0, self.scratch_map_pp)
+                mapped: i64 = Memory.read_ptr(self.scratch_map_pp)
+                if result != 0 or mapped == 0:
+                    vkDestroyBuffer(self.device, upload.handle, 0)
+                    vkFreeMemory(self.device, upload.memory, 0)
+                    Memory.free(zero)
+                    return 0
+                Memory.write_ptr(self.skin_buffers + slot * 8, upload.handle)
+                Memory.write_ptr(self.skin_memories + slot * 8, upload.memory)
+                Memory.write_ptr(self.skin_mapped + slot * 8, mapped)
+            slot = slot + 1
+        Memory.free(zero)
+        return 1
+
     fun _ensure_point_light_globals(self, rp: RenderPass) -> i32:
         if self.point_light_buffers == 0:
             self.point_light_buffers = Memory.malloc_zeroed(16)
@@ -3305,7 +3342,11 @@ attach GpuRendererCore:
                 buffer = uploaded.handle
             desc: i64 = Memory.read_ptr(self.point_light_desc_sets + slot * 8)
             if desc == 0:
-                desc = rp.make_lighting_descriptor(self.device, buffer, FROG_POINT_LIGHT_DATA_SIZE)
+                if self._ensure_skin_buffers() == 0:
+                    Memory.free(zero_data)
+                    return 0
+                skin_buffer: i64 = Memory.read_ptr(self.skin_buffers + slot * 8)
+                desc = rp.make_lighting_descriptor(self.device, buffer, FROG_POINT_LIGHT_DATA_SIZE, skin_buffer)
                 if desc == 0:
                     Memory.free(zero_data)
                     return 0
@@ -3324,7 +3365,7 @@ attach GpuRendererCore:
             if self.point_light_buffers != 0:
                 buffer = Memory.read_ptr(self.point_light_buffers + slot * 8)
             if buffer != 0:
-                desc: i64 = rp.make_lighting_descriptor(self.device, buffer, FROG_POINT_LIGHT_DATA_SIZE)
+                desc: i64 = rp.make_lighting_descriptor(self.device, buffer, FROG_POINT_LIGHT_DATA_SIZE, Memory.read_ptr(self.skin_buffers + slot * 8))
                 if desc == 0:
                     return 0
                 Memory.write_ptr(self.point_light_desc_sets + slot * 8, desc)
@@ -5860,6 +5901,8 @@ attach GpuRendererCore:
             frame_slot = 0
         if frame_slot > 1:
             frame_slot = 1
+        if self.skin_mapped != 0:
+            frog_skin_publish_slot(Memory.read_ptr(self.skin_mapped + frame_slot * 8), frame_slot)
         hzb_cam_x: f32 = Memory.read_f32(self.render_state + 64)
         hzb_cam_y: f32 = Memory.read_f32(self.render_state + 68)
         hzb_cam_z: f32 = Memory.read_f32(self.render_state + 72)
@@ -6821,6 +6864,25 @@ attach GpuRendererCore:
             Memory.free(self.point_light_mapped_ptrs)
         if self.point_light_desc_sets != 0:
             Memory.free(self.point_light_desc_sets)
+        if self.skin_buffers != 0:
+            skin_slot: i32 = 0
+            while skin_slot < 2:
+                skin_mem: i64 = Memory.read_ptr(self.skin_memories + skin_slot * 8)
+                skin_buf: i64 = Memory.read_ptr(self.skin_buffers + skin_slot * 8)
+                if skin_mem != 0:
+                    vkUnmapMemory(self.device, skin_mem)
+                if skin_buf != 0:
+                    vkDestroyBuffer(self.device, skin_buf, 0)
+                if skin_mem != 0:
+                    vkFreeMemory(self.device, skin_mem, 0)
+                skin_slot = skin_slot + 1
+        Memory.free(self.skin_buffers)
+        Memory.free(self.skin_memories)
+        Memory.free(self.skin_mapped)
+        self.skin_buffers = 0
+        self.skin_memories = 0
+        self.skin_mapped = 0
+        frog_skin_reset()
         self.point_light_buffers = 0
         self.point_light_memories = 0
         self.point_light_mapped_ptrs = 0

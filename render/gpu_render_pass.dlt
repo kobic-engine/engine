@@ -165,7 +165,7 @@ fun frog_create_color_depth_render_pass(device: i64, color_format: i32) -> i64:
 attach RenderPass:
 
     fun _make_descriptor_pool(self, device: i64) -> i64:
-        sizes: i64 = Memory.malloc_zeroed(16)
+        sizes: i64 = Memory.malloc_zeroed(24)
         info: i64 = Memory.malloc_zeroed(40)
         out: i64 = Memory.malloc_zeroed(8)
         if sizes == 0 or info == 0 or out == 0:
@@ -177,9 +177,11 @@ attach RenderPass:
         Memory.write_i32(sizes + 4, 49152)  # six samplers per material
         Memory.write_i32(sizes + 8, 6)      # UNIFORM_BUFFER
         Memory.write_i32(sizes + 12, 64)
+        Memory.write_i32(sizes + 16, 7)     # skinning storage buffers
+        Memory.write_i32(sizes + 20, 64)
         Memory.write_i32(info, 33)
         Memory.write_i32(info + 20, 8192)
-        Memory.write_i32(info + 24, 2)
+        Memory.write_i32(info + 24, 3)
         Memory.write_ptr(info + 32, sizes)
         result: i32 = vkCreateDescriptorPool(device, info, 0, out)
         pool: i64 = Memory.read_ptr(out)
@@ -466,7 +468,7 @@ attach RenderPass:
 
         # Set 1: shared point-light data. Keeping this separate prevents each
         # material descriptor set from duplicating the scene lighting buffer.
-        lighting_bind: i64 = Memory.malloc_zeroed(24)
+        lighting_bind: i64 = Memory.malloc_zeroed(48)
         lighting_ci: i64 = Memory.malloc_zeroed(32)
         lighting_out: i64 = Memory.malloc_zeroed(8)
         if lighting_bind == 0 or lighting_ci == 0 or lighting_out == 0:
@@ -481,8 +483,12 @@ attach RenderPass:
         Memory.write_i32(lighting_bind + 4, 6)
         Memory.write_i32(lighting_bind + 8, 1)
         Memory.write_i32(lighting_bind + 12, 16)
+        Memory.write_i32(lighting_bind + 24, 1)
+        Memory.write_i32(lighting_bind + 28, 7)
+        Memory.write_i32(lighting_bind + 32, 1)
+        Memory.write_i32(lighting_bind + 36, 1)
         Memory.write_i32(lighting_ci, 32)
-        Memory.write_i32(lighting_ci + 20, 1)
+        Memory.write_i32(lighting_ci + 20, 2)
         Memory.write_ptr(lighting_ci + 24, lighting_bind)
         lighting_r: i32 = vkCreateDescriptorSetLayout(device, lighting_ci, 0, lighting_out)
         self.lighting_set_layout = Memory.read_ptr(lighting_out)
@@ -800,7 +806,7 @@ attach RenderPass:
         self.material_desc_count = self.material_desc_count + 1
         return dset
 
-    fun make_lighting_descriptor(self, device: i64, buffer: i64, size: i64) -> i64:
+    fun make_lighting_descriptor(self, device: i64, buffer: i64, size: i64, skin_buffer: i64) -> i64:
         if self.desc_pool == 0:
             return 0
         if self.lighting_set_layout == 0:
@@ -830,6 +836,11 @@ attach RenderPass:
         Memory.write_i32(write + 32, 1)
         Memory.write_i32(write + 36, 6)
         Memory.write_ptr(write + 48, buffer_info)
+        vkUpdateDescriptorSets(device, 1, write, 0, 0)
+        Memory.write_ptr(buffer_info, skin_buffer)
+        Memory.write_i64(buffer_info + 16, FROG_SKIN_BYTES)
+        Memory.write_i32(write + 24, 1)
+        Memory.write_i32(write + 36, 7)
         vkUpdateDescriptorSets(device, 1, write, 0, 0)
         Memory.free(write)
         Memory.free(buffer_info)
@@ -927,7 +938,7 @@ attach RenderPass:
         Memory.write_i32(bind + 28, 0)
         Memory.write_i32(bind + 32, 1)
 
-        attrs: i64 = Memory.malloc_zeroed(336)
+        attrs: i64 = Memory.malloc_zeroed(352)
         if attrs == 0:
             Memory.free(stages)
             Memory.free(bind)
@@ -996,6 +1007,10 @@ attach RenderPass:
         Memory.write_i32(attrs + 324, 1)
         Memory.write_i32(attrs + 328, 98)
         Memory.write_i32(attrs + 332, FROG_GPU_INSTANCE_ALPHA_OFFSET)
+        Memory.write_i32(attrs + 336, 22)
+        Memory.write_i32(attrs + 340, 1)
+        Memory.write_i32(attrs + 344, 98)
+        Memory.write_i32(attrs + 348, 116)
 
         vi_ci: i64 = Memory.malloc_zeroed(48)
         if vi_ci == 0:
@@ -1008,7 +1023,7 @@ attach RenderPass:
         Memory.write_i32(vi_ci + 16, 0)
         Memory.write_i32(vi_ci + 20, 3)
         Memory.write_ptr(vi_ci + 24, bind)
-        Memory.write_i32(vi_ci + 32, 21)
+        Memory.write_i32(vi_ci + 32, 22)
         Memory.write_ptr(vi_ci + 40, attrs)
 
         # Input assembly

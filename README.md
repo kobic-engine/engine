@@ -55,6 +55,11 @@ runtime/backend types remain internal package plumbing.
 
 ## Opt-in dynamic mesh services
 
+`Skeleton3D` and `SkinnedMesh3D` provide frame-isolated GPU skeletal deformation;
+`SpringArm3D` provides a collision-clearance-driven camera boom. See
+[skeletal animation](docs/SKELETAL_ANIMATION.md) for the offline cooker, API,
+limits, ownership, and regression checks.
+
 - `MeshUpdateBudget`: reusable main-thread count/byte/time admission for
   indivisible publication groups. Application priority and result ownership
   remain with the caller; it is not a job queue or atomic upload transaction.

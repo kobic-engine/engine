@@ -1,0 +1,18 @@
+# Generic camera boom state. The game supplies collision clearance from its
+# own physics world; this component never moves the physical player.
+struct SpringArm3D:
+    desired_length: f32 = 4.0
+    length: f32 = 4.0
+    return_speed: f32 = 8.0
+    margin: f32 = 0.18
+
+attach SpringArm3D:
+    fun resolve(self, clearance: f32, dt: f32) -> f32:
+        target: f32 = clamp(clearance - self.margin, 0.0, self.desired_length)
+        # Obstructions retract immediately; release is exponential and smooth.
+        if target < self.length:
+            self.length = target
+        else:
+            self.length = damp(self.length, target, self.return_speed, max_f32(0.0, dt))
+        self.length = min_f32(self.length, target)
+        return self.length

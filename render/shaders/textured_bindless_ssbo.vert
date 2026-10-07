@@ -46,6 +46,26 @@ layout(std430, set = 3, binding = 0) readonly buffer InstanceBuffer {
     InstanceRecord instances[];
 };
 
+layout(std430, set = 1, binding = 1) readonly buffer SkinBuffer { vec4 skinData[]; };
+
+mat4 vertexSkin(uint record) {
+    if (record == 0u) return mat4(1.0);
+    vec4 header = skinData[record - 1u];
+    uint vertex = uint(gl_VertexIndex);
+    if (vertex >= uint(header.z)) return mat4(1.0);
+    uint at = uint(header.x) + vertex * 2u;
+    uvec4 joints = uvec4(skinData[at]);
+    vec4 weights = skinData[at + 1u];
+    mat4 result = mat4(0.0);
+    for (uint i = 0u; i < 4u; ++i) {
+        if (weights[i] > 0.0 && joints[i] < uint(header.w)) {
+            uint b = uint(header.y) + joints[i] * 4u;
+            result += weights[i] * mat4(skinData[b], skinData[b+1u], skinData[b+2u], skinData[b+3u]);
+        }
+    }
+    return result;
+}
+
 layout(location = 0) out vec3 fragmentColor;
 layout(location = 1) out vec2 fragmentUv;
 layout(location = 2) out float fragmentFogDistance;
@@ -72,7 +92,14 @@ layout(push_constant) uniform PushConstants {
 void main() {
     InstanceRecord inst = instances[gl_InstanceIndex];
     mat4 model = mat4(inst.col0, inst.col1, inst.col2, inst.col3);
-    vec4 worldPosition = model * vec4(inPosition, 1.0);
+    vec4 localPosition = vec4(inPosition, 1.0);
+    vec3 localNormal = inNormal;
+    if (inst.texIndex1.y != 0u) {
+        mat4 skin = vertexSkin(inst.texIndex1.y);
+        localPosition = skin * localPosition;
+        localNormal = mat3(skin) * localNormal;
+    }
+    vec4 worldPosition = model * localPosition;
     vec3 vertexColor = inColor;
 
     // Interactive foliage packs flexibility8 + tintRGB555 into color.r and
@@ -128,7 +155,7 @@ void main() {
     fragmentWorldPosition = worldPosition.xyz;
     fragmentMaterial = inst.material;
     mat3 normalMatrix = transpose(inverse(mat3(model)));
-    fragmentWorldNormal = normalMatrix * inNormal;
+    fragmentWorldNormal = normalMatrix * localNormal;
     fragmentShadowPosition0 = mat4(
         shadowColumn0,
         shadowColumn1,

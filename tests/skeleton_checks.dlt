@@ -1,0 +1,54 @@
+# Headless regression. No game assets, renderer startup, input, or saves.
+import std
+import frog
+
+fun skeleton_require(ok: bool, message: str):
+    if ok == false:
+        print("FAIL skeleton: " + message)
+        Command.exit(1)
+
+fun run_skeleton_checks():
+    skeleton_require(skin_validate(0,0)==0,"null asset rejected")
+    header: i64 = Memory.malloc_zeroed(48)
+    skeleton_require(skin_validate(header,48)==0,"invalid/truncated asset rejected")
+    Memory.free(header)
+    rig: Skeleton3D = Skeleton3D.create(2)
+    skeleton_require(rig.configure_joint(0,-1,Mat4.translation(0.0,1.0,0.0),Mat4.translation(0.0,-1.0,0.0))==1,"root")
+    skeleton_require(rig.configure_joint(1,0,Mat4.translation(0.0,1.0,0.0),Mat4.translation(0.0,-2.0,0.0))==1,"child")
+    skeleton_require(rig.configure_joint(0,1,Mat4.identity(),Mat4.identity())==0,"cycle rejected")
+    weights: i64 = Memory.malloc_zeroed(32)
+    Memory.write_f32(weights+16,1.0)
+    rig.palette = frog_skin_reserve(1,weights,1,2)
+    rig.evaluate()
+    skeleton_require(Memory.read_f32(g_frog_skin_cpu+rig.palette+52)==0.0,"root inverse bind")
+    skeleton_require(Memory.read_f32(g_frog_skin_cpu+rig.palette+64+52)==0.0,"child inverse bind")
+    rig.set_local_pose(0,Mat4.translation(3.0,1.0,0.0))
+    rig.evaluate()
+    skeleton_require(Memory.read_f32(g_frog_skin_cpu+rig.palette+64+48)==3.0,"hierarchical pose")
+    a: i64 = Memory.malloc_zeroed(FROG_SKIN_BYTES)
+    b: i64 = Memory.malloc_zeroed(FROG_SKIN_BYTES)
+    frog_skin_publish_slot(a,0)
+    frog_skin_publish_slot(b,1)
+    rig.set_deformation(1,Mat4.translation(7.0,0.0,0.0))
+    frog_skin_publish_slot(a,0)
+    skeleton_require(Memory.read_f32(a+rig.palette+64+48)==7.0 and Memory.read_f32(b+rig.palette+64+48)==3.0,"frame-owned isolation")
+    reserved: i64 = g_frog_skin_used
+    frog_skin_release(1)
+    i: i32 = 0
+    while i < 500:
+        next: i64 = frog_skin_reserve(2,weights,1,2)
+        skeleton_require(next>0 and g_frog_skin_used==reserved,"bounded allocation recycling")
+        frog_skin_publish_slot(b,1)
+        skeleton_require(Memory.read_f32(b+next+64+48)==0.0,"recycled palette initialized for old slot")
+        frog_skin_release(2)
+        i = i+1
+    rig.destroy()
+    Memory.free(rig as i64)
+    Memory.free(weights)
+    Memory.free(a)
+    Memory.free(b)
+    frog_skin_reset()
+    skeleton_require(g_frog_skin_cpu==0 and g_frog_skin_pose_count==0,"shutdown resets resources")
+    print("PASS skeleton: strict header, hierarchy, inverse binds, frame isolation, 500 recycled allocations")
+
+run_skeleton_checks()
