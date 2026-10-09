@@ -432,6 +432,12 @@ fun _frog_cull_one(self_addr: i64, vp: i64, gi: i32, res: i64):
     if core.vb_visible != 0:
         if Memory.read_i32(core.vb_visible + gi * 4) == 0:
             visible = 0
+    if visible==1 and core.mesh_material_params!=0:
+        if Memory.read_f32(core.mesh_material_params+(gi as i64)*(FROG_GPU_MESH_MATERIAL_STRIDE as i64)+8)<0.0:
+            # Viewmodels use their own near-depth projection in the vertex
+            # shader, so the world near-plane cannot cull them on the CPU.
+            Memory.write_i32(res+(gi as i64)*4,1)
+            return
     static_gpu_owned: i32 = 0
     if core.gpu_static_active == 1:
         if core.mesh_static_batches != 0:
@@ -4223,6 +4229,10 @@ attach GpuRendererCore:
         off: i64 = (mesh_id as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
         packed_material: f32 = _frog_pack_material(material)
         surface_parameter: f32 = material.gpu_surface_parameter()
+        emission_parameter: f32 = material.gpu_emission_parameter()
+        if material.viewmodel!=0:
+            self.set_mesh_static_batch(mesh_id,0)
+            self.set_shadow_flags(mesh_id,0,0)
         # GPU-cull instance records contain a snapshot of these values. Mark
         # them dirty only when the material actually changes so live toggles
         # such as alpha_clip update correctly without adding per-frame work.
@@ -4230,7 +4240,7 @@ attach GpuRendererCore:
             grouping_changed = 1
         if Memory.read_f32(self.mesh_material_params + off + 4) != material.roughness:
             grouping_changed = 1
-        if Memory.read_f32(self.mesh_material_params + off + 8) != material.emissive_strength:
+        if Memory.read_f32(self.mesh_material_params + off + 8) != emission_parameter:
             grouping_changed = 1
         if Memory.read_f32(self.mesh_material_params + off + 12) != packed_material:
             grouping_changed = 1
@@ -4247,7 +4257,7 @@ attach GpuRendererCore:
             grouping_changed = 1
         Memory.write_f32(self.mesh_material_params + off, surface_parameter)
         Memory.write_f32(self.mesh_material_params + off + 4, material.roughness)
-        Memory.write_f32(self.mesh_material_params + off + 8, material.emissive_strength)
+        Memory.write_f32(self.mesh_material_params + off + 8, emission_parameter)
         Memory.write_f32(self.mesh_material_params + off + 12, packed_material)
         Memory.write_f32(self.mesh_material_params + off + 16, material.uv_scale_x)
         Memory.write_f32(self.mesh_material_params + off + 20, material.uv_scale_y)

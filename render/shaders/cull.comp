@@ -173,6 +173,12 @@ void main() {
             visible = false;
         }
     }
+    // Dynamic camera-relative geometry has its own 2cm near plane. World
+    // frustum/HZB cannot classify this foreground depth band. Shadow lists
+    // exclude viewmodels through the normal per-instance cast flag.
+    if (inst.material.z < 0.0 && push.camDistance.w == 0.0) {
+        visible = true;
+    }
 
     // Static-arena command mode. cmds[cmdIndex].instanceCount is a page-local
     // atomic draw counter/header; visible slices append compact commands after

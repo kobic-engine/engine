@@ -27,6 +27,9 @@ struct Material3D:
     # Non-negative values multiply albedo uniformly, independent of normals,
     # directional lights and shadow maps. Point lights still add soft fill.
     uniform_light: f32 = -1.0
+    # Camera-attached arms/weapons: independent 2cm near clip + foreground
+    # depth band. Keep the scene camera's planetary depth range unchanged.
+    viewmodel: i32 = 0
     # Preserve Frog's historical two-sided rendering by default. Materials
     # that explicitly opt out can reject back-facing fragments without
     # changing the global pipeline used by legacy meshes.
@@ -209,6 +212,17 @@ attach Material3D:
     fun clear_uniform_lighting(self) -> Material3D:
         self.uniform_light = -1.0
         return self
+
+    fun set_viewmodel(self, enabled: i32) -> Material3D:
+        self.viewmodel = 0
+        if enabled!=0:
+            self.viewmodel = 1
+        return self
+
+    fun gpu_emission_parameter(self) -> f32:
+        if self.viewmodel!=0:
+            return -1.0-max_f32(0.0,self.emissive_strength)
+        return self.emissive_strength
 
     # Keep the existing GPU material/instance ABI. Metallic is unused in the
     # uniform branch, so its otherwise-invalid negative range carries energy.

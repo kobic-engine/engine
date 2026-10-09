@@ -141,6 +141,13 @@ void main() {
         }
     }
     vec4 clipPosition = pushConstants.viewProjection * worldPosition;
+    bool viewmodel = inst.material.z < 0.0;
+    if (viewmodel) {
+        // Retain camera FOV/XY, but bypass its world near/far depth range.
+        // Positive-w clipping and perspective-correct self-occlusion remain.
+        clipPosition.z = clipPosition.w >= 0.02
+            ? 0.0001 * (clipPosition.w - 0.02) : -1.0;
+    }
 
     gl_Position = clipPosition;
     fragmentColor = vertexColor;
@@ -151,9 +158,10 @@ void main() {
         fragmentUv = inUv * inst.uvTransform.xy + inst.uvTransform.zw;
     }
     fragmentUvTransform = inst.uvTransform;
-    fragmentFogDistance = abs(clipPosition.w);
+    fragmentFogDistance = viewmodel ? 0.0 : abs(clipPosition.w);
     fragmentWorldPosition = worldPosition.xyz;
     fragmentMaterial = inst.material;
+    if (viewmodel) fragmentMaterial.z = -1.0 - fragmentMaterial.z;
     mat3 normalMatrix = transpose(inverse(mat3(model)));
     fragmentWorldNormal = normalMatrix * localNormal;
     fragmentShadowPosition0 = mat4(
