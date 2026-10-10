@@ -12,9 +12,12 @@
 # 4 timestamps per frame: [0]=frame start, [1]=after shadow, [2]=after main,
 # [3]=after bloom/present. Double-buffered across 2 slots so we read slot
 # (frame-1) results while slot (frame) is being written.
-imm FROG_GPU_TS_PER_FRAME: i32 = 4
+# Indices 4..7 split the main pass: [4] after sky, [5] after static-batch
+# draws, [6] after GPU-driven per-group draws, [7] before the render pass
+# ends. [2] then also covers the HZB/end-of-pass work.
+imm FROG_GPU_TS_PER_FRAME: i32 = 8
 imm FROG_GPU_TS_SLOTS: i32 = 4
-imm FROG_GPU_TS_TOTAL: i32 = 16   # FROG_GPU_TS_PER_FRAME * FROG_GPU_TS_SLOTS
+imm FROG_GPU_TS_TOTAL: i32 = 32   # FROG_GPU_TS_PER_FRAME * FROG_GPU_TS_SLOTS
 
 struct GpuProfiler:
     device:        i64 = 0
@@ -32,6 +35,16 @@ struct GpuProfiler:
     acc_main_ms:   f32 = 0.0
     acc_post_ms:   f32 = 0.0
     acc_total_ms:  f32 = 0.0
+    acc_sky_ms:    f32 = 0.0
+    acc_static_ms: f32 = 0.0
+    acc_groups_ms: f32 = 0.0
+    acc_inst_ms:   f32 = 0.0
+    acc_tail_ms:   f32 = 0.0
+    acc_groups:    i64 = 0
+    # Bit i set once timestamp i was written this frame. Every query of the
+    # slot must be written before readback (WAIT would otherwise block), so
+    # missing sub-marks are filled at the main-pass boundary.
+    written_mask:  i32 = 0
 
 attach GpuProfiler:
 
@@ -101,6 +114,7 @@ attach GpuProfiler:
         vkCmdResetQueryPool(cmd, self.query_pool, base, FROG_GPU_TS_PER_FRAME)
         # Write at TOP_OF_PIPE (stage bit 1) for the frame-start marker.
         vkCmdWriteTimestamp(cmd, 1, self.query_pool, base)
+        self.written_mask = 1
 
     # Mark a stage boundary (1 = after shadow, 2 = after main, 3 = after post).
     # Written at BOTTOM_OF_PIPE (stage bit 4096) so it captures all prior work.
@@ -112,7 +126,25 @@ attach GpuProfiler:
         if stage_index >= FROG_GPU_TS_PER_FRAME:
             return
         base: i32 = self._slot_base()
+        if stage_index == 2:
+            # Fill any main-pass sub-mark this frame skipped (same instant).
+            sub: i32 = 4
+            while sub < FROG_GPU_TS_PER_FRAME:
+                if (self.written_mask >> sub) % 2 == 0:
+                    vkCmdWriteTimestamp(cmd, 4096, self.query_pool, base + sub)
+                    self.written_mask = self.written_mask | (1 << sub)
+                sub = sub + 1
+        if (self.written_mask >> stage_index) % 2 == 1:
+            return
         vkCmdWriteTimestamp(cmd, 4096, self.query_pool, base + stage_index)
+        self.written_mask = self.written_mask | (1 << stage_index)
+
+    # Number of GPU-driven draw groups issued this frame (one indirect draw
+    # command each), reported next to the segment times.
+    fun note_groups(self, groups: i32):
+        if self.is_active() == 0:
+            return
+        self.acc_groups = self.acc_groups + (groups as i64)
 
     # End-of-frame (CPU side, after submit): read back the PREVIOUS slot's
     # completed timestamps and accumulate. Advances the frame counter.
@@ -122,19 +154,29 @@ attach GpuProfiler:
             return
 
         # Read back a slot that completed several frames ago (FROG_GPU_TS_SLOTS
-        # rotation guarantees the GPU is long done with it — no stall, no
-        # NOT_READY). We still pass WAIT for safety.
+        # rotation means the GPU is long done with it). No WAIT flag: a frame
+        # that ended early (resize/scale change) leaves queries unwritten, and
+        # waiting on those can stall; NOT_READY just skips that sample.
         if self.frame >= FROG_GPU_TS_SLOTS:
             old_frame: i32 = self.frame - (FROG_GPU_TS_SLOTS - 1)
             prev_slot: i32 = old_frame - (old_frame / FROG_GPU_TS_SLOTS) * FROG_GPU_TS_SLOTS
             prev_base: i32 = prev_slot * FROG_GPU_TS_PER_FRAME
-            # flags: WAIT(1) | 64BIT(8) = 9. Read 4 u64 results.
-            r: i32 = vkGetQueryPoolResults(self.device, self.query_pool, prev_base, FROG_GPU_TS_PER_FRAME, (FROG_GPU_TS_PER_FRAME as i64) * 8, self.readback, 8, 9)
+            # flags: 64BIT(8). Read all u64 results of the slot.
+            r: i32 = vkGetQueryPoolResults(self.device, self.query_pool, prev_base, FROG_GPU_TS_PER_FRAME, (FROG_GPU_TS_PER_FRAME as i64) * 8, self.readback, 8, 8)
             if r == 0:
                 t0: i64 = Memory.read_i64(self.readback + 0)
                 t1: i64 = Memory.read_i64(self.readback + 8)
                 t2: i64 = Memory.read_i64(self.readback + 16)
                 t3: i64 = Memory.read_i64(self.readback + 24)
+                t4: i64 = Memory.read_i64(self.readback + 32)
+                t5: i64 = Memory.read_i64(self.readback + 40)
+                t6: i64 = Memory.read_i64(self.readback + 48)
+                t7: i64 = Memory.read_i64(self.readback + 56)
+                self.acc_sky_ms = self.acc_sky_ms + self._ticks_to_ms(t4 - t1)
+                self.acc_static_ms = self.acc_static_ms + self._ticks_to_ms(t5 - t4)
+                self.acc_groups_ms = self.acc_groups_ms + self._ticks_to_ms(t6 - t5)
+                self.acc_inst_ms = self.acc_inst_ms + self._ticks_to_ms(t7 - t6)
+                self.acc_tail_ms = self.acc_tail_ms + self._ticks_to_ms(t2 - t7)
                 self.acc_shadow_ms = self.acc_shadow_ms + self._ticks_to_ms(t1 - t0)
                 self.acc_main_ms = self.acc_main_ms + self._ticks_to_ms(t2 - t1)
                 self.acc_post_ms = self.acc_post_ms + self._ticks_to_ms(t3 - t2)
@@ -147,6 +189,19 @@ attach GpuProfiler:
                     po: f32 = self.acc_post_ms / n
                     tot: f32 = self.acc_total_ms / n
                     print(@"[frog.gpu_timer] gpu_ms total={tot} shadow={sh} main={mn} post={po} (avg/{self.acc_count})")
+                    sky_ms: f32 = self.acc_sky_ms / n
+                    static_ms: f32 = self.acc_static_ms / n
+                    groups_ms: f32 = self.acc_groups_ms / n
+                    inst_ms: f32 = self.acc_inst_ms / n
+                    tail_ms: f32 = self.acc_tail_ms / n
+                    groups_per_frame: i64 = self.acc_groups / (self.acc_count as i64)
+                    print(@"[frog.gpu_timer] main split: sky={sky_ms} staticBatches={static_ms} perGroupDraws={groups_ms} (groups/frame={groups_per_frame}) instances={inst_ms} endPassHzb={tail_ms}")
+                    self.acc_sky_ms = 0.0
+                    self.acc_static_ms = 0.0
+                    self.acc_groups_ms = 0.0
+                    self.acc_inst_ms = 0.0
+                    self.acc_tail_ms = 0.0
+                    self.acc_groups = 0
                     self.acc_count = 0
                     self.acc_shadow_ms = 0.0
                     self.acc_main_ms = 0.0

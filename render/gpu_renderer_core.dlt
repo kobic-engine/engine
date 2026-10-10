@@ -6102,6 +6102,7 @@ attach GpuRendererCore:
 
         vkCmdBeginRenderPass(cmd, rpi, 0)
         self._record_sky(cmd, width, height, env.sky, cam_view, cam_proj)
+        self.profiler.mark(cmd, 4)
 
         if rp.vk_pipeline != 0:
             # Phase 1 bindless: when enabled, draw with the bindless pipeline
@@ -6374,6 +6375,9 @@ attach GpuRendererCore:
                 if self.transparent_visible_count > 0:
                     if transparent_pipeline != 0:
                         transparent_supported = 1
+                # GPU-timer: static batches are done; [5]..[6] is the
+                # per-mesh path (GPU-driven groups or the CPU registry loop).
+                self.profiler.mark(cmd, 5)
                 draw_pass: i32 = 0
                 mi: i32 = 0
                 if self.gpu_draw_enabled == 1:
@@ -6381,6 +6385,7 @@ attach GpuRendererCore:
                     # visible instances + filled indirect commands. Draw them
                     # and skip the CPU per-instance loop entirely.
                     self.gpu_draw_main(cmd, rp)
+                    self.profiler.note_groups(self.gpu_grp_n)
                     mi = self.vb_count
                 while mi < self.vb_count:
                     vb_handle: i64 = Memory.read_ptr(self.vb_handles + mi * 8)
@@ -6565,6 +6570,9 @@ attach GpuRendererCore:
                             last_desc = 0
                             vkCmdBindPipeline(cmd, 0, transparent_pipeline)
 
+                self.profiler.mark(cmd, 6)
+                if self.gpu_draw_enabled == 0:
+                    self.profiler.note_groups(frame_draw_calls)
                 if self.debug_render_stats_enabled == 1:
                     self.debug_draw_calls = self.debug_draw_calls + frame_draw_calls
                     self.debug_indexed_draw_calls = self.debug_indexed_draw_calls + frame_indexed_draw_calls
@@ -6578,6 +6586,7 @@ attach GpuRendererCore:
                     _frog_multiply_4x4_into(cam_proj, cam_view, debug_vp)
             self._record_collision_debug(cmd, rp, debug_vp, width, height)
 
+        self.profiler.mark(cmd, 7)
         vkCmdEndRenderPass(cmd)
         depth_is_sampled: i32 = 0
         if self.gpu_hzb_ptr != 0:
