@@ -126,8 +126,12 @@ def main():
     if begin in src and end in src:
         pre = src[: src.index(begin)]
         post = src[src.index(end) + len(end):]
+        if f"fun {getter}()" in pre + post:
+            raise SystemExit(f"duplicate getter {getter} outside {name}; resolve the existing shader name first")
         new = pre + block + post
     else:
+        if f"fun {getter}()" in src:
+            raise SystemExit(f"getter {getter} already exists under another shader name; refusing to append a duplicate")
         new = src.rstrip("\n") + "\n\n" + block + "\n"
 
     with open(target, "w", encoding="utf-8") as f:

@@ -29,6 +29,7 @@ load frog/assets/gltf_loader
 load frog/assets/frog_model_loader
 load frog/assets/frog_texture_loader
 load frog/assets/assets
+load frog/assets/tiled_atlas
 
 # Phase 3: Scene objects
 load frog/scene/environment

@@ -304,6 +304,34 @@ attach EngineRuntime:
     fun bind_texture(self, mesh_id: i32, tex_id: i32):
         self.renderer.bind_texture(mesh_id, tex_id)
 
+    # Prepare/upload once. PNG wins in editable projects; packaged builds
+    # can omit it and use a lossless RGBA8 cooked source instead.
+    fun upload_texture_atlas_spec(self, path: str, spec: TextureSpec, columns: i32, rows: i32, core_pixels: i32, gutter_pixels: i32) -> i32:
+        resolved: str = Assets.resolve(path)
+        if Str.equals(resolved, ""):
+            return -1
+        source: Image = Image.empty()
+        if PathOps.exists(resolved):
+            source = PNG.load(resolved)
+        cooked: CookedTexture = CookedTexture()
+        if source.is_valid() == 0:
+            cooked_path: str = AssetTextures.runtime_cooked_path(path)
+            if Str.equals(cooked_path, "") == false:
+                cooked_resolved: str = Assets.resolve(cooked_path)
+                if Str.equals(cooked_resolved, "") == false:
+                    cooked = FrogTextureLoader.load(cooked_resolved)
+                    if cooked.valid != 0 and cooked.format == FROG_TEXTURE_FORMAT_RGBA8 and cooked.swizzle == 0:
+                        source = Image.wrap_rgba(cooked.width,cooked.height,cooked.pixels+cooked.level_offset(0))
+        padded: Image = frog_texture_pad_atlas(source,columns,rows,core_pixels,gutter_pixels)
+        source.free()
+        cooked.free()
+        if padded.is_valid() == 0:
+            print(@"Tiled atlas load/shape failed: {path}")
+            return -1
+        tid: i32 = self.renderer.upload_texture_image_spec(self.render_pass,self.render_pass.vk_command_pool,padded,spec)
+        padded.free()
+        return tid
+
     fun bind_material(self, mesh_id: i32, material: Material3D):
         self.renderer.bind_material(mesh_id, material)
 

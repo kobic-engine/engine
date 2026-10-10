@@ -257,6 +257,17 @@ attach Material3D:
         self.uv_offset_y = 0.0
         return self
 
+    # Atlas-only interpretation of the otherwise-unused UV offset Y. Reuses
+    # the existing instance ABI; ordinary mesh UV offsets are unaffected.
+    # One is the legacy one-tile-per-world-unit scale. Invalid input restores it.
+    fun set_world_pixel_scale(self, tiles_per_unit: f32) -> Material3D:
+        if self.world_pixel_sampling == 0:
+            return self
+        self.uv_offset_y = 1.0
+        if tiles_per_unit > 0.0 and tiles_per_unit <= 16.0:
+            self.uv_offset_y = max_f32(0.0625, tiles_per_unit)
+        return self
+
     # Compatibility alias kept for code written against the atlas-only API.
     fun clear_world_pixel_atlas(self) -> Material3D:
         return self.clear_world_pixel_sampling()

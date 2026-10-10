@@ -122,6 +122,10 @@ TextureCoordinates resolveTextureCoordinates(vec2 meshUv, vec2 textureSizePixels
     } else {
         worldUv = vec2(fragmentWorldPosition.x, -fragmentWorldPosition.y);
     }
+    // Same atlas-only scale and legacy default as the classic path.
+    float repeatScale = fragmentUvTransform.w;
+    repeatScale = (repeatScale > 0.0 && repeatScale <= 16.0) ? max(repeatScale, 0.0625) : 1.0;
+    worldUv *= repeatScale;
     vec2 tile = floor(meshUv);
     result.uv = (tile + vec2(padding) + fract(worldUv) * usable) / grid;
     result.dx = dFdx(worldUv) * usable / grid;

@@ -129,6 +129,29 @@ Packaged builds omit a PNG only when its cooked sidecar validates; set
 Frog Cooker remains part of the engine package as an internal Dolet tool; there
 is intentionally no separate `frog.exe` workflow.
 
+`TextureSpec.with_mip_lod_bias(bias)` optionally adjusts sampled mip detail;
+the default is zero and preserves existing materials. Negative values prefer
+finer mip levels without disabling minification/mipmaps. Runtime sampler bias
+is bounded to +/-2 and NaN falls back to zero. Applications own this art policy;
+packed atlases should use zero or negative bias to retain their safe-mip limit.
+
+`Assets.textures.load_tiled_atlas(path, spec, columns, rows, core_pixels, gutter_pixels)`
+combines with `Material3D.set_world_pixel_atlas(cols, rows, padding_ratio)`.
+The optional `set_world_pixel_scale(tiles_per_unit)` changes repeat density
+without changing authored texels or the GPU instance ABI. It applies only to
+world-projected atlas materials; ordinary mesh UV offsets are untouched.
+Zero legacy encoding means one repeat/unit. Invalid input resets to one;
+valid density is bounded to 0.0625..16. Both classic/bindless shaders scale
+UV derivatives too, retaining correct mip selection.
+
+The tiled-atlas loader
+  loads complete editable cells and adds wrapped gutters to a separate upload image.
+PNG is preferred while authoring; PNG-free packages require a lossless RGBA8
+cooked sidecar. Packing and mip generation happen once at texture load, never
+per draw. Material UV padding is `gutter_pixels/(core_pixels+2*gutter_pixels)`.
+The source PNG is not cropped, resized or rewritten. Invalid dimensions fail
+without an upload; the preparation buffer is limited to 64MiB.
+
 ## Philosophy
 
 Frog exists to make the ECS vs OOP performance / ergonomics trade-off

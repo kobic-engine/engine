@@ -1,0 +1,44 @@
+import frog
+
+fun atlas_require(ok: bool, label: str):
+    if ok == false:
+        print("FAIL atlas: "+label)
+        Command.exit(1)
+
+fun atlas_check_resolution(core: i32):
+    source: Image = Image.create(core*7,core*3)
+    y: i32 = 0
+    while y < source.height:
+        x: i32 = 0
+        while x < source.width:
+            # Unique RGBA value for every source pixel, including every corner.
+            Memory.write_i32(source.data+source.pixel_offset(x,y),x+y*source.width+1)
+            x += 1
+        y += 1
+    gutter: i32 = core/2
+    cell: i32 = core+2*gutter
+    packed: Image = frog_texture_pad_atlas(source,7,3,core,gutter)
+    atlas_require(packed.is_valid()!=0 and packed.width==cell*7 and packed.height==cell*3,"upload dimensions")
+    y = 0
+    while y < packed.height:
+        x: i32 = 0
+        while x < packed.width:
+            sx: i32 = (x/cell)*core+(x%cell+core-gutter)%core
+            sy: i32 = (y/cell)*core+(y%cell+core-gutter)%core
+            actual: i32 = Memory.read_i32(packed.data+packed.pixel_offset(x,y))
+            atlas_require(actual==sx+sy*source.width+1,"byte-exact core/corners and wrapped gutter, no neighbouring tile")
+            x += 1
+        y += 1
+    atlas_require(Memory.read_i32(source.data)==1,"source unchanged")
+    rejected: Image = frog_texture_pad_atlas(source,0,3,core,gutter)
+    atlas_require(rejected.is_valid()==0,"zero columns rejected")
+    rejected = frog_texture_pad_atlas(source,7,3,core,core+1)
+    atlas_require(rejected.is_valid()==0,"oversize gutter rejected")
+    rejected = frog_texture_pad_atlas(source,6,3,core,gutter)
+    atlas_require(rejected.is_valid()==0,"source shape mismatch rejected")
+    packed.free()
+    source.free()
+
+atlas_check_resolution(32)
+atlas_check_resolution(64)
+print("PASS tiled atlas: every pixel of 21 tiles at 32px and 64px, full corners, isolated wrapped gutters, input unchanged and invalid sizes rejected")

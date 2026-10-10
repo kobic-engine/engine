@@ -1,0 +1,35 @@
+# No renderer/window required: public material API and unchanged UV ABI.
+import std
+import frog
+
+fun world_scale_require(ok: bool, label: str):
+    if ok == false:
+        print("FAIL world-pixel scale: " + label)
+        Command.exit(1)
+
+regular: Material3D = Material3D.create().set_uv_offset(0.25,0.75)
+regular = regular.set_world_pixel_scale(1.5)
+world_scale_require(regular.world_pixel_sampling==0 and regular.uv_offset_y==0.75,"ordinary mesh UV offset is unchanged")
+atlas: Material3D = Material3D.create().set_world_pixel_atlas(7,3,0.333333333)
+world_scale_require(atlas.uv_offset_y==0.0,"legacy zero encoding retains one repeat")
+atlas = atlas.set_world_pixel_scale(1.5)
+world_scale_require(atlas.uv_offset_y==1.5 and atlas.uv_scale_x==7.0 and atlas.uv_scale_y==3.0,"scale uses spare channel without changing grid")
+atlas = atlas.set_world_pixel_scale(0.001)
+world_scale_require(atlas.uv_offset_y==0.0625,"tiny valid scale bounded")
+atlas = atlas.set_world_pixel_scale(0.0)
+world_scale_require(atlas.uv_offset_y==1.0,"zero restores default")
+atlas = atlas.set_world_pixel_scale(-1.0)
+world_scale_require(atlas.uv_offset_y==1.0,"negative restores default")
+atlas = atlas.set_world_pixel_scale(17.0)
+world_scale_require(atlas.uv_offset_y==1.0,"excessive scale restores default")
+bits: i64 = Memory.malloc(4)
+Memory.write_i32(bits,0x7fc00000)
+atlas = atlas.set_world_pixel_scale(Memory.read_f32(bits))
+world_scale_require(atlas.uv_offset_y==1.0,"NaN restores default")
+Memory.write_i32(bits,0x7f800000)
+atlas = atlas.set_world_pixel_scale(Memory.read_f32(bits))
+world_scale_require(atlas.uv_offset_y==1.0,"infinity restores default")
+Memory.free(bits)
+atlas = atlas.clear_world_pixel_atlas()
+world_scale_require(atlas.world_pixel_sampling==0 and atlas.uv_scale_x==1.0 and atlas.uv_offset_y==0.0,"clear restores ordinary UV state")
+print("PASS world-pixel scale: opt-in atlas density, unchanged mesh offsets/grid/ABI, bounded/invalid/legacy defaults")

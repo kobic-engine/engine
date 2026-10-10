@@ -41,8 +41,26 @@ struct TextureSpec:
     srgb:        i32 = 1
     mipmaps:     i32 = 0
     mipmap_filter: i32 = 1
+    # Optional sampling preference, not a change to image resolution or mips.
+    # Zero retains every existing sampler's behaviour; negative prefers detail.
+    mip_lod_bias: f32 = 0.0
 
 attach TextureSpec:
+
+    fun with_mip_lod_bias(self, bias: f32) -> TextureSpec:
+        self.mip_lod_bias = bias
+        return self
+
+    fun resolved_mip_lod_bias(self) -> f32:
+        # Vulkan core guarantees at least +/-2. Keep a portable small range.
+        # NaN must not enter VkSamplerCreateInfo. Infinity clamps at the ends.
+        if self.mip_lod_bias >= -2.0 and self.mip_lod_bias <= 2.0:
+            return self.mip_lod_bias
+        if self.mip_lod_bias < -2.0:
+            return -2.0
+        if self.mip_lod_bias > 2.0:
+            return 2.0
+        return 0.0
 
     # Smooth + repeat + sRGB. The engine default.
     static fun smooth() -> TextureSpec:
@@ -600,6 +618,7 @@ fun gpu_tex_make_sampler_mips(device: i64, spec: TextureSpec, mip_levels: i32) -
     Memory.write_i32(ci + 32, spec.address_u)    # addressU
     Memory.write_i32(ci + 36, spec.address_v)    # addressV
     Memory.write_i32(ci + 40, spec.address_w)    # addressW
+    Memory.write_f32(ci + 44, spec.resolved_mip_lod_bias()) # mipLodBias
     Memory.write_i32(ci + 48, aniso_enable)      # anisotropyEnable
     Memory.write_f32(ci + 52, aniso_max)         # maxAnisotropy
     Memory.write_i32(ci + 56, 0)                 # compareEnable false

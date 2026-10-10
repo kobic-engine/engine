@@ -594,6 +594,9 @@ attach Engine:
     static fun upload_texture_spec(path: str, spec: TextureSpec) -> i32:
         return g_engine_runtime.upload_texture_spec(path, spec)
 
+    static fun upload_texture_atlas_spec(path: str, spec: TextureSpec, columns: i32, rows: i32, core_pixels: i32, gutter_pixels: i32) -> i32:
+        return g_engine_runtime.upload_texture_atlas_spec(path,spec,columns,rows,core_pixels,gutter_pixels)
+
     static fun bind_texture(mesh_id: i32, texture_id: i32):
         g_engine_runtime.bind_texture(mesh_id, texture_id)
 
