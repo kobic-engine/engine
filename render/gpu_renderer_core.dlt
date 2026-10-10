@@ -2990,11 +2990,33 @@ attach GpuRendererCore:
         Memory.write_i32(self.arena_free_frames + i * 4, self.frame_serial)
         self.arena_free_count = i + 1
 
+    fun _arena_push_free(self, page: i32, first_vertex: i32, first_index: i32, vcap: i64, icap: i64, frame: i32):
+        if self.arena_free_count >= self.arena_free_capacity:
+            if self._grow_arena_free() == 0:
+                return
+        i: i32 = self.arena_free_count
+        Memory.write_i32(self.arena_free_pages + i * 4, page)
+        Memory.write_i32(self.arena_free_first_vertices + i * 4, first_vertex)
+        Memory.write_i32(self.arena_free_first_indices + i * 4, first_index)
+        Memory.write_i64(self.arena_free_vcaps + i * 8, vcap)
+        Memory.write_i64(self.arena_free_icaps + i * 8, icap)
+        Memory.write_i32(self.arena_free_frames + i * 4, frame)
+        self.arena_free_count = i + 1
+
     fun _arena_alloc_slice(self, vbytes: i64, ibytes: i64, preferred_page: i32) -> GpuArenaSlice:
         # Reuse only after all frames that could reference the old slice have
         # retired. Eight frames is deliberately above the renderer's 2 FIF.
+        # Best fit + split: first-fit handed whole (often far larger) slices to
+        # small meshes and kept that capacity forever, so streaming terrain grew
+        # the arena to ~5x its live geometry, one 160 MB page allocation (and a
+        # visible hitch) at a time. The remainder keeps the original retire
+        # stamp: that memory has been unused for the same >= 8 frames.
+        min_split_vbytes: i64 = 256 * (FROG_GPU_VERTEX_STRIDE as i64)
+        min_split_ibytes: i64 = 384 * 4
         reuse_pass: i32 = 0
         while reuse_pass < 2:
+            best: i32 = 0 - 1
+            best_waste: i64 = 0
             i: i32 = 0
             while i < self.arena_free_count:
                 free_page: i32 = Memory.read_i32(self.arena_free_pages + i * 4)
@@ -3006,18 +3028,35 @@ attach GpuRendererCore:
                 vcap: i64 = Memory.read_i64(self.arena_free_vcaps + i * 8)
                 icap: i64 = Memory.read_i64(self.arena_free_icaps + i * 8)
                 if page_ok == 1 and age >= 8 and vcap >= vbytes and icap >= ibytes:
-                    result: GpuArenaSlice = GpuArenaSlice(page=free_page, first_vertex=Memory.read_i32(self.arena_free_first_vertices + i * 4), first_index=Memory.read_i32(self.arena_free_first_indices + i * 4), vertex_capacity=vcap, index_capacity=icap, ok=1)
-                    last: i32 = self.arena_free_count - 1
-                    if i != last:
-                        Memory.write_i32(self.arena_free_pages + i * 4, Memory.read_i32(self.arena_free_pages + last * 4))
-                        Memory.write_i32(self.arena_free_first_vertices + i * 4, Memory.read_i32(self.arena_free_first_vertices + last * 4))
-                        Memory.write_i32(self.arena_free_first_indices + i * 4, Memory.read_i32(self.arena_free_first_indices + last * 4))
-                        Memory.write_i64(self.arena_free_vcaps + i * 8, Memory.read_i64(self.arena_free_vcaps + last * 8))
-                        Memory.write_i64(self.arena_free_icaps + i * 8, Memory.read_i64(self.arena_free_icaps + last * 8))
-                        Memory.write_i32(self.arena_free_frames + i * 4, Memory.read_i32(self.arena_free_frames + last * 4))
-                    self.arena_free_count = last
-                    return result
+                    waste: i64 = (vcap - vbytes) + (icap - ibytes)
+                    if best < 0 or waste < best_waste:
+                        best = i
+                        best_waste = waste
+                        if waste == 0:
+                            break
                 i = i + 1
+            if best >= 0:
+                b_page: i32 = Memory.read_i32(self.arena_free_pages + best * 4)
+                b_fv: i32 = Memory.read_i32(self.arena_free_first_vertices + best * 4)
+                b_fi: i32 = Memory.read_i32(self.arena_free_first_indices + best * 4)
+                b_vcap: i64 = Memory.read_i64(self.arena_free_vcaps + best * 8)
+                b_icap: i64 = Memory.read_i64(self.arena_free_icaps + best * 8)
+                b_frame: i32 = Memory.read_i32(self.arena_free_frames + best * 4)
+                last: i32 = self.arena_free_count - 1
+                if best != last:
+                    Memory.write_i32(self.arena_free_pages + best * 4, Memory.read_i32(self.arena_free_pages + last * 4))
+                    Memory.write_i32(self.arena_free_first_vertices + best * 4, Memory.read_i32(self.arena_free_first_vertices + last * 4))
+                    Memory.write_i32(self.arena_free_first_indices + best * 4, Memory.read_i32(self.arena_free_first_indices + last * 4))
+                    Memory.write_i64(self.arena_free_vcaps + best * 8, Memory.read_i64(self.arena_free_vcaps + last * 8))
+                    Memory.write_i64(self.arena_free_icaps + best * 8, Memory.read_i64(self.arena_free_icaps + last * 8))
+                    Memory.write_i32(self.arena_free_frames + best * 4, Memory.read_i32(self.arena_free_frames + last * 4))
+                self.arena_free_count = last
+                rest_v: i64 = b_vcap - vbytes
+                rest_i: i64 = b_icap - ibytes
+                if rest_v >= min_split_vbytes and rest_i >= min_split_ibytes:
+                    self._arena_push_free(b_page, b_fv + (vbytes / (FROG_GPU_VERTEX_STRIDE as i64)) as i32, b_fi + (ibytes / 4) as i32, rest_v, rest_i, b_frame)
+                    return GpuArenaSlice(page=b_page, first_vertex=b_fv, first_index=b_fi, vertex_capacity=vbytes, index_capacity=ibytes, ok=1)
+                return GpuArenaSlice(page=b_page, first_vertex=b_fv, first_index=b_fi, vertex_capacity=b_vcap, index_capacity=b_icap, ok=1)
             if preferred_page < 0:
                 reuse_pass = 2
             else:
