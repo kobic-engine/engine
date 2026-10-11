@@ -189,27 +189,34 @@ fun _frog_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, boun
     if max_scale < 0.001:
         max_scale = 1.0
     # gpu_compute_mesh_bounds already stores the enclosing AABB sphere plus
-    # one world-unit of padding. A second 2.25x expansion kept many whole
-    # chunks outside the frustum alive. Retain a small numerical/motion margin
-    # while using the mathematically valid transformed sphere.
+    # one world-unit of padding. Retain a small numerical/motion margin.
     bounds: f32 = bound_radius * max_scale * 1.05 + 0.5
-    limit: f32 = _frog_abs_f32(cw) * 1.08 + bounds
-
-    if cw < 0.0 - bounds:
+    # Exact sphere-vs-frustum test with normalized planes (the same planes as
+    # the GPU cull). Comparing the world radius against unnormalized clip
+    # coordinates is not conservative once the projection scale exceeds 1
+    # (any vertical FOV below 90 degrees) and dropped visible meshes.
+    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 0), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 16), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 32), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 48), x, y, z, bounds) == 1:
         return 0
-    if cx < 0.0 - limit:
+    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 0), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 16), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 32), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 48), x, y, z, bounds) == 1:
         return 0
-    if cx > limit:
+    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
         return 0
-    if cy < 0.0 - limit:
+    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
         return 0
-    if cy > limit:
+    # Near (z >= -w, conservative for 0..1 depth) and far planes.
+    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
         return 0
-    if cz < 0.0 - bounds:
-        return 0
-    if cz > _frog_abs_f32(cw) + bounds:
+    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
         return 0
     return 1
+
+fun _frog_sphere_outside_plane(a: f32, b: f32, c: f32, d: f32, x: f32, y: f32, z: f32, radius: f32) -> i32:
+    length: f32 = @sqrt(a * a + b * b + c * c)
+    if length < 0.000001:
+        return 0
+    if (a * x + b * y + c * z + d) / length < 0.0 - radius:
+        return 1
+    return 0
 
 fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32, cam_x: f32, cam_y: f32, cam_z: f32, max_distance: f32) -> i32:
     if vp == 0:
@@ -646,6 +653,15 @@ struct GpuRendererCore:
     gpu_static_page_cmds: i64 = 0   # i32[] page counter/header command offset
     gpu_static_page_capacity: i32 = 0
     gpu_static_slot_dirty: i64 = 0  # i32[FROG_CULL_SLOTS]
+    # Static candidates carry their mesh's real model matrix (a rotating
+    # planet moves every terrain page). Candidate -> mesh map and per-slot
+    # bookkeeping so transform-only changes refresh matrices without a
+    # full regroup.
+    gpu_static_cand_meshes: i64 = 0      # i32[cull capacity], absolute index
+    gpu_static_cand_capacity: i32 = 0
+    gpu_static_slot_counts: i64 = 0      # i32[FROG_CULL_SLOTS]
+    gpu_static_slot_xform: i64 = 0       # i32[FROG_CULL_SLOTS] serial seen
+    gpu_static_xform_serial: i32 = 0
     debug_render_stats_enabled: i32 = 0
     debug_frame_count: i32 = 0
     debug_draw_calls: i32 = 0
@@ -1560,9 +1576,46 @@ attach GpuRendererCore:
     # the model matrices in place — cheap. Used by set_transform / set_model_
     # matrix_raw on the movement hot path. No-op when no cull pipeline.
     fun _mark_cull_dirty(self):
+        self.gpu_static_xform_serial = self.gpu_static_xform_serial + 1
         if self.gpu_cull_ptr != 0:
             cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
             cull.mark_xform_dirty()
+
+    fun _ensure_gpu_static_cand_capacity(self, capacity: i32) -> i32:
+        if self.gpu_static_slot_counts == 0:
+            self.gpu_static_slot_counts = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
+            self.gpu_static_slot_xform = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
+            if self.gpu_static_slot_counts == 0 or self.gpu_static_slot_xform == 0:
+                return 0
+        if capacity <= self.gpu_static_cand_capacity and self.gpu_static_cand_meshes != 0:
+            return 1
+        next_meshes: i64 = Memory.malloc_zeroed((capacity as i64) * 4)
+        if next_meshes == 0:
+            return 0
+        if self.gpu_static_cand_meshes != 0:
+            Memory.free(self.gpu_static_cand_meshes)
+        self.gpu_static_cand_meshes = next_meshes
+        self.gpu_static_cand_capacity = capacity
+        return 1
+
+    # Copy each static candidate's current model matrix into this slot's
+    # compute input. The cull shader places the bounding sphere with it, so
+    # culling and HZB tests use the position the page is actually drawn at.
+    fun _gpu_static_refresh_models(self, cull: GpuCullPipeline, slot: i32):
+        count: i32 = Memory.read_i32(self.gpu_static_slot_counts + slot * 4)
+        base: i32 = slot * cull.slot_cap
+        k: i32 = 0
+        while k < count:
+            absolute: i32 = base + k
+            if absolute < self.gpu_static_cand_capacity:
+                mesh: i32 = Memory.read_i32(self.gpu_static_cand_meshes + (absolute as i64) * 4)
+                if mesh >= 0 and mesh < self.vb_count:
+                    model: i64 = Memory.read_ptr(self.model_matrices + mesh * 8)
+                    dst: i64 = cull.in_slot_addr(absolute)
+                    if model != 0 and dst != 0:
+                        Memory.copy(dst, model, 64)
+            k = k + 1
+        Memory.write_i32(self.gpu_static_slot_xform + slot * 4, self.gpu_static_xform_serial)
 
     # Mark the persistent GPU cull input as needing a FULL rebuild (scene
     # STRUCTURE changed: instance added/removed, visibility/material change),
@@ -1622,6 +1675,8 @@ attach GpuRendererCore:
     fun _gpu_static_rebuild(self, cull: GpuCullPipeline, slot: i32) -> i32:
         if self._ensure_gpu_static_page_capacity(self.arena_page_count) == 0:
             return 0
+        if self._ensure_gpu_static_cand_capacity(cull.capacity) == 0:
+            return 0
         cursor: i32 = 0
         command_cursor: i32 = 0
         page: i32 = 0
@@ -1649,6 +1704,7 @@ attach GpuRendererCore:
                                 first_index: i32 = Memory.read_i32(self.ib_first_indices + mi * 4)
                                 vertex_offset: i32 = Memory.read_i32(self.vb_first_vertices + mi * 4)
                                 cull.write_static_draw(slot, cursor, index_count, first_index, vertex_offset, cx, cy, cz, radius)
+                                Memory.write_i32(self.gpu_static_cand_meshes + ((slot * cull.slot_cap + cursor) as i64) * 4, mi)
                                 cursor = cursor + 1
                 mi = mi + 1
             Memory.write_i32(self.gpu_static_page_bases + page * 4, page_base)
@@ -1662,6 +1718,8 @@ attach GpuRendererCore:
             command_cursor = command_cursor + page_count + 1
             page = page + 1
         self.gpu_static_candidate_count = cursor
+        Memory.write_i32(self.gpu_static_slot_counts + slot * 4, cursor)
+        self._gpu_static_refresh_models(cull, slot)
         if self.gpu_static_slot_dirty != 0:
             Memory.write_i32(self.gpu_static_slot_dirty + slot * 4, 0)
             other_dirty: i32 = 0
@@ -1705,6 +1763,8 @@ attach GpuRendererCore:
         if slot_dirty == 1:
             if self._gpu_static_rebuild(cull, slot) == 0:
                 return 0
+        elif self.gpu_static_slot_xform != 0 and Memory.read_i32(self.gpu_static_slot_xform + slot * 4) != self.gpu_static_xform_serial:
+            self._gpu_static_refresh_models(cull, slot)
         if self.gpu_static_candidate_count <= 0:
             return 0
 
