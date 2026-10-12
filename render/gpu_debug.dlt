@@ -362,6 +362,8 @@ attach GpuRendererCore:
         return 1
 
     fun set_collision_debug(self, enabled: i32):
+        self.debug_manual_box_count = 0
+        self.debug_manual_line_count = 0
         if enabled == 0:
             self.debug_collisions_enabled = 0
         else:
@@ -374,6 +376,33 @@ attach GpuRendererCore:
         if self.debug_collisions_enabled == 0:
             return
         self.debug_manual_box_count = 0
+        self.debug_manual_line_count = 0
+
+    fun add_collision_debug_line(self, a: Vec3, b: Vec3, color: Color):
+        if self.debug_collisions_enabled == 0:
+            return
+        # Debug geometry must be bounded even if a caller submits a whole world.
+        if self.debug_manual_line_count >= 4096:
+            return
+        if b.sub(a).length_sq() < 0.00000001:
+            return
+        if self.debug_manual_line_capacity == 0:
+            self.debug_manual_lines = Memory.malloc(4096*40)
+            if self.debug_manual_lines == 0:
+                return
+            self.debug_manual_line_capacity = 4096
+        dst: i64 = self.debug_manual_lines+(self.debug_manual_line_count as i64)*40
+        Memory.write_f32(dst,a.x)
+        Memory.write_f32(dst+4,a.y)
+        Memory.write_f32(dst+8,a.z)
+        Memory.write_f32(dst+12,b.x)
+        Memory.write_f32(dst+16,b.y)
+        Memory.write_f32(dst+20,b.z)
+        Memory.write_f32(dst+24,color.r)
+        Memory.write_f32(dst+28,color.g)
+        Memory.write_f32(dst+32,color.b)
+        Memory.write_f32(dst+36,color.a)
+        self.debug_manual_line_count += 1
 
     fun add_collision_debug_box(self, center: Vec3, size: Vec3, color: Color):
         if self.debug_collisions_enabled == 0:
@@ -422,6 +451,11 @@ attach GpuRendererCore:
         self.debug_manual_boxes = 0
         self.debug_manual_box_count = 0
         self.debug_manual_box_capacity = 0
+        if self.debug_manual_lines != 0:
+            Memory.free(self.debug_manual_lines)
+        self.debug_manual_lines = 0
+        self.debug_manual_line_count = 0
+        self.debug_manual_line_capacity = 0
 
 fun frog_debug_collision_count_nodes(node_ptr: i64) -> i32:
     if node_ptr == 0:
@@ -581,7 +615,7 @@ attach GpuRendererCore:
             return
 
         automatic_count: i32 = frog_debug_collision_count_nodes(self.debug_collision_root_ptr)
-        total_count: i32 = automatic_count + self.debug_manual_box_count
+        total_count: i32 = automatic_count + self.debug_manual_box_count + self.debug_manual_line_count
         if total_count <= 0:
             return
         if frog_debug_collision_ensure_pipeline(self.device, rp.vk_render_pass) == 0:
@@ -625,6 +659,16 @@ attach GpuRendererCore:
             box_count = box_count + 1
             manual_index = manual_index + 1
         written: i32 = frog_debug_collision_fill_rays(self.debug_collision_root_ptr, mapped, box_count)
+        manual_index = 0
+        while manual_index < self.debug_manual_line_count:
+            src: i64 = self.debug_manual_lines+(manual_index as i64)*40
+            a: Vec3 = Vec3.make(Memory.read_f32(src),Memory.read_f32(src+4),Memory.read_f32(src+8))
+            b: Vec3 = Vec3.make(Memory.read_f32(src+12),Memory.read_f32(src+16),Memory.read_f32(src+20))
+            color: Color = Color.rgba(Memory.read_f32(src+24),Memory.read_f32(src+28),Memory.read_f32(src+32),Memory.read_f32(src+36))
+            delta: Vec3 = b.sub(a)
+            frog_debug_collision_write_ray_instance(mapped+(written as i64)*80,a,delta,delta.length(),color)
+            written += 1
+            manual_index += 1
         ray_count: i32 = written - box_count
         if box_count <= 0 and ray_count <= 0:
             return

@@ -1,0 +1,307 @@
+Target: windows/x86_64
+Platform manifest: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\targets\x86_64\platform.toml
+Compiling: tests/world_pixel_scale_checks.dlt
+Prelude: 1647 chars
+Runtime: 288015 chars
+[import] frog -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\frog\mod.dlt
+[import] window -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\window\mod.dlt
+[import] json -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\json\mod.dlt
+[import] image -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\image\mod.dlt
+[import] sys.windows.win32.user32 -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\user32.dlt
+[import] sys.windows.win32.vulkan_surface -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\vulkan_surface.dlt
+[import] sys.windows.win32.types -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\types.dlt
+[import] sys.windows.win32.gdi32 -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\gdi32.dlt
+[import] sys.windows.win32.constants -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\constants.dlt
+Source: 3802434 chars (total)
+  Load/resolve: 496 ms
+[1/4] Tokenizing...
+  Tokens: 886336
+  Buffer: 1048576 tokens
+  Time: 1287 ms
+[2/4] Parsing...
+  AST nodes: 1844
+  Time: 402 ms
+[3/4] Generating MLIR...
+[gen] init: 3 ms
+[gen] declarations: 11 ms
+[gen] validate/mono/tree: 48 ms
+[gen] collect strings: 40 ms
+[gen] module prelude: 4 ms
+  [method] Memory.read_i8
+  [method] Memory.read_i16
+  [method] Memory.read_i32
+  [method] Memory.read_i64
+  [method] Memory.read_f32
+  [method] Memory.read_f64
+  [method] Memory.read_ptr
+  [method] Memory.write_i8
+  [method] Memory.write_i16
+  [method] Memory.write_i32
+  [method] Memory.write_i64
+  [method] Memory.write_f32
+  [method] Memory.write_f64
+  [method] Memory.write_ptr
+  [method] Memory.strlen
+  [method] Memory.set
+  [method] Memory.copy
+  [method] Memory.zero
+  [method] Memory.compare
+  [method] Str.to_upper
+  [method] Str.to_lower
+  [method] Str.equals
+  [method] Str.contains
+  [method] Str.starts_with
+  [method] Str.ends_with
+  [method] Str.substring
+  [method] Str.index_of
+  [method] Str.replace
+  [method] Str.parse_i64
+  [method] Str.is_int
+  [method] Str.parse_i32
+  [method] Str.parse_f64
+  [method] Str.repeat
+  [method] Str.is_whitespace
+  [method] Str.find_trim_start
+  [method] Str.find_trim_end
+  [method] Str.trim
+  [method] Str.strcpy
+  [method] Str.concat
+  [method] Str.concat3
+  [method] Secure.next_i64
+  [method] Secure.next_i32
+  [method] Secure.range
+  [method] Secure.next_f64
+  [method] Secure.seed
+  [method] Secure.bool
+  [method] Random.next_i32
+  [method] Random.range
+  [method] Random.next_f64
+  [method] Random.seed
+  [method] Random.bool
+  [method] Math.PI
+  [method] Math.PI_F32
+  [method] Math.TAU
+  [method] Math.E
+  [method] Math.radians
+  [method] Math.degrees
+  [method] Math.abs_i32
+  [method] Math.abs_i64
+  [method] Math.min_i32
+  [method] Math.max_i32
+  [method] Math.min_i64
+  [method] Math.max_i64
+  [method] Math.clamp_i32
+  [method] Math.clamp_i64
+  [method] Math.sign_i32
+  [method] Math.min_f32
+  [method] Math.max_f32
+  [method] Math.clamp_f32
+  [method] Math.sign_f32
+  [method] Math.lerp_f32
+  [method] Math.smoothstep_f32
+  [method] Math.pow_i32
+  [method] Math.fmod_f32
+  [method] Math.map_f32
+  [method] Math.approx_equal_f32
+  [method] Math.wrap_f32
+  [method] Math.wrap_angle
+  [method] Convert.i32_to_str
+  [method] Convert.i64_to_str
+  [method] Convert.f64_to_str
+  [method] Convert.f32_to_str
+  [method] Convert.bool_to_str
+  [method] Convert.i64_to_hex
+  [method] Convert.i32_to_hex
+  [method] IOOps.io_println
+  [method] IOOps.io_print
+  [method] FileOps.file_delete
+  [method] FileOps.file_open_read
+  [method] FileOps.file_open_write
+  [method] FileOps.file_open_append
+  [method] FileOps.file_open_rw
+  [method] FileOps.file_close
+  [method] FileOps.file_read
+  [method] FileOps.file_write
+  [method] FileOps.file_write_str
+  [method] FileOps.file_seek_begin
+  [method] FileOps.file_seek_current
+  [method] FileOps.file_seek_end
+  [method] FileOps.file_tell
+  [method] FileOps.file_size
+  [method] FileOps.file_read_all
+  [method] FileOps.file_is_valid
+  [method] PathOps.get_exe_path
+  [method] PathOps.get_exe_directory
+  [method] PathOps.resolve_from_exe
+  [method] PathOps.get_cwd
+  [method] PathOps.exists
+  [method] PathOps.resolve_path
+  [method] PathOps.normalize
+  [method] PathOps.is_absolute
+  [method] PathOps.join_path
+  [method] PathOps.find_last_separator
+  [method] PathOps.get_filename
+  [method] PathOps.get_extension
+  [method] PathOps.get_directory
+  [method] Args.get_raw
+  [method] Args.count
+  [method] Args.get
+  [method] Process.exit
+  [method] Process.run
+  [method] Process.run_capture
+  [method] Process.run_output
+  [method] PlatformInfo.name
+  [method] PlatformInfo.host_id
+  [method] PlatformInfo.default_target
+  [method] PlatformInfo.path_separator
+  [method] PlatformHost.executable_suffix
+  [method] PlatformHost.path_list_separator
+  [method] PlatformHost.paths_are_case_sensitive
+  [method] PlatformHost.get_environment
+  [method] PlatformHost.is_directory
+  [method] PlatformHost.is_link
+  [method] PlatformHost.is_executable
+  [method] PlatformHost.file_stamp
+  [method] PlatformHost.create_directory
+  [method] PlatformHost.remove_directory
+  [method] PlatformHost.remove_file
+  [method] PlatformHost.remove_link
+  [method] PlatformHost.copy_file
+  [method] PlatformHost.move_path
+  [method] PlatformHost.acquire_process_lock
+  [method] PlatformHost.release_process_lock
+  [method] PlatformHost.change_directory
+  [method] CpuInfo.cpu_count
+  [method] Dir.list
+  [method] FileTime.get_ptr
+  [method] FileTime.fetch
+  [method] FileTime.unix_seconds
+  [method] FileTime.unix_ms
+  [method] FileTime.unix_ns
+  [method] TimeOps.time_sleep
+  [method] TimeOps.time_sleep_ms
+  [method] TimeOps.time_now
+  [method] TimeOps.time_now_ms
+  [method] TimeOps.time_now_ns
+  [method] NetOps.net_init
+  [method] NetOps.net_socket_create
+  [method] NetOps.net_socket_bind
+  [method] NetOps.net_socket_listen
+  [method] NetOps.net_socket_accept
+  [method] NetOps.net_socket_send
+  [method] NetOps.net_socket_recv
+  [method] NetOps.net_socket_close
+  [method] File.open
+  [method] File.open_cwd
+  [method] File.get_size
+  [method] File.read
+  [method] File.read_text
+  [method] File.read_bytes
+  [method] File.write
+  [method] File.write_bytes
+  [method] File.seek
+  [method] File.seek_end
+  [method] File.tell
+  [method] File.close
+  [method] File.is_valid
+  [method] Command.run
+  [method] Command.capture
+  [method] Command.exit
+  [method] Command.output
+  [method] Argv.raw
+  [method] Argv.count
+  [method] Argv.get
+  [method] System.cwd
+  [method] System.exists
+  [method] System.platform
+  [method] Time.now
+  [method] Time.now_ms
+  [method] Time.now_ns
+  [method] Time.sleep
+  [method] Time.sleep_ms
+  [method] Time.elapsed
+  [method] Time.elapsed_ms
+  [method] Time.elapsed_ns
+  [method] Image.empty
+  [method] Image.create
+  [method] Image.wrap_rgba
+  [method] Image.is_valid
+  [method] Image.byte_size
+  [method] Image.free
+  [method] Image.in_bounds
+  [method] Image.pixel_offset
+  [method] Image.clear
+  [method] Image.set_pixel
+  [method] Image.get_pixel
+  [method] Image.copy_from
+  [method] PPM.save
+  [method] PPM.load
+  [method] PngHuffman.create
+  [method] PngHuffman.free
+  [method] PngHuffman.get_count
+  [method] PngHuffman.set_count
+  [method] PngHuffman.get_symbol
+  [method] PngHuffman.set_symbol
+  [method] PngInflate.bits
+  [method] PngInflate.ensure
+  [method] PngInflate.put_byte
+  [method] PngInflate.stored
+  [method] PngInflate.decode
+  [method] PNG.save
+  [method] PNG.load
+  [method] JpegBitWriter.create
+  [method] JpegBitWriter.free
+  [method] JpegBitWriter.write_byte
+  [method] JpegBitWriter.write_bits
+  [method] JpegBitWriter.flush
+  [method] JPEG.save
+  [method] JPEG.load
+  [method] JsonValue.invalid
+  [method] JsonValue.exists
+  [method] JsonValue.is_null
+  [method] JsonValue.is_bool
+  [method] JsonValue.is_number
+  [method] JsonValue.is_string
+  [method] JsonValue.is_array
+  [method] JsonValue.is_object
+  [method] JsonValue.get
+  [method] JsonValue.at
+  [method] JsonValue.size
+  [method] JsonValue.as_str
+  [method] JsonValue.as_i64
+  [method] JsonValue.as_i32
+  [method] JsonValue.as_f64
+  [method] JsonValue.as_bool
+  [method] JsonValue.get_str
+  [method] JsonValue.get_i32
+  [method] JsonValue.get_i64
+  [method] JsonValue.get_f64
+  [method] JsonValue.get_bool
+  [method] JsonDocument.valid
+  [method] JsonDocument.get
+  [method] JsonDocument.at
+  [method] JsonDocument.close
+  [method] CookedTexture.level_offset
+  [method] CookedTexture.level_size
+  [method] CookedTexture.level_width
+  [method] CookedTexture.level_height
+  [method] CookedTexture.vk_format
+  [method] CookedTexture.free
+[gen] functions: 11817 ms
+[gen] main/global init: 149 ms
+[gen] join output: 318 ms
+[gen] total: 12390 ms
+  MLIR: 45379592 chars
+  MLIR lines: 618282 / 1048576
+  Strings: 261 / 16384
+  Emitted functions: 1917 / 4096
+  Time: 12390 ms
+  Write MLIR: 140 ms
+[4/4] Building exe
+Backend adapter: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\toolchains\llvm\1\targets\x86_64-win64-coff.toml
+Host toolchain: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\toolchains\llvm\1\hosts\windows-x86_64\host.toml
+  MLIR -> LLVM IR OK: 3509 ms
+  LLVM IR -> Object OK: 999 ms
+  Object -> Executable OK: 57 ms
+  Total: 19369 ms
+[SUCCESS] tests/world_pixel_scale_checks.exe

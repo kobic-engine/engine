@@ -383,6 +383,9 @@ attach EngineRuntime:
     fun add_collision_debug_box(self, center: Vec3, size: Vec3, color: Color):
         self.renderer.add_collision_debug_box(center, size, color)
 
+    fun add_collision_debug_line(self, a: Vec3, b: Vec3, color: Color):
+        self.renderer.add_collision_debug_line(a,b,color)
+
     fun set_instance_culling(self, enabled: i32):
         self.renderer.set_instance_culling(enabled)
 

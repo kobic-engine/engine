@@ -1,0 +1,212 @@
+Target: windows/x86_64
+Platform manifest: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\targets\x86_64\platform.toml
+Compiling: tests/mesh_particles_checks.dlt
+Prelude: 1647 chars
+Runtime: 288015 chars
+[import] frog -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\frog\mod.dlt
+[import] window -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\window\mod.dlt
+[import] json -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\json\mod.dlt
+[import] image -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\image\mod.dlt
+[import] sys.windows.win32.user32 -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\user32.dlt
+[import] sys.windows.win32.vulkan_surface -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\vulkan_surface.dlt
+[import] sys.windows.win32.types -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\types.dlt
+[import] sys.windows.win32.gdi32 -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\gdi32.dlt
+[import] sys.windows.win32.constants -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\platform\windows\win32\constants.dlt
+Source: 3816089 chars (total)
+  Load/resolve: 494 ms
+[1/4] Tokenizing...
+  Tokens: 889176
+  Buffer: 1048576 tokens
+  Time: 1303 ms
+[2/4] Parsing...
+  AST nodes: 1856
+  Time: 397 ms
+[3/4] Generating MLIR...
+[gen] init: 2 ms
+[gen] declarations: 12 ms
+[tree-shake] reachable: 1037
+[gen] validate/mono/tree: 564 ms
+[gen] collect strings: 32 ms
+[gen] module prelude: 3 ms
+  [method] Memory.read_i8
+  [method] Memory.read_i16
+  [method] Memory.read_i32
+  [method] Memory.read_i64
+  [method] Memory.read_f32
+  [method] Memory.read_f64
+  [method] Memory.read_ptr
+  [method] Memory.write_i8
+  [method] Memory.write_i16
+  [method] Memory.write_i32
+  [method] Memory.write_i64
+  [method] Memory.write_f32
+  [method] Memory.write_f64
+  [method] Memory.write_ptr
+  [method] Memory.strlen
+  [method] Memory.set
+  [method] Memory.copy
+  [method] Memory.zero
+  [method] Memory.compare
+  [method] Str.to_upper
+  [method] Str.to_lower
+  [method] Str.equals
+  [method] Str.contains
+  [method] Str.starts_with
+  [method] Str.ends_with
+  [method] Str.substring
+  [method] Str.index_of
+  [method] Str.replace
+  [method] Str.parse_i64
+  [method] Str.is_int
+  [method] Str.parse_i32
+  [method] Str.parse_f64
+  [method] Str.repeat
+  [method] Str.is_whitespace
+  [method] Str.find_trim_start
+  [method] Str.find_trim_end
+  [method] Str.trim
+  [method] Str.strcpy
+  [method] Str.concat
+  [method] Str.concat3
+  [method] Secure.next_i64
+  [method] Secure.next_i32
+  [method] Secure.range
+  [method] Secure.next_f64
+  [method] Secure.seed
+  [method] Secure.bool
+  [method] Random.next_i32
+  [method] Random.range
+  [method] Random.next_f64
+  [method] Random.seed
+  [method] Random.bool
+  [method] Convert.i32_to_str
+  [method] Convert.i64_to_str
+  [method] Convert.f64_to_str
+  [method] Convert.f32_to_str
+  [method] Convert.bool_to_str
+  [method] Convert.i64_to_hex
+  [method] Convert.i32_to_hex
+  [method] IOOps.io_println
+  [method] IOOps.io_print
+  [method] PathOps.get_exe_path
+  [method] PathOps.get_exe_directory
+  [method] PathOps.resolve_from_exe
+  [method] PathOps.get_cwd
+  [method] PathOps.exists
+  [method] PathOps.resolve_path
+  [method] PathOps.normalize
+  [method] PathOps.is_absolute
+  [method] PathOps.join_path
+  [method] PathOps.find_last_separator
+  [method] PathOps.get_filename
+  [method] PathOps.get_extension
+  [method] PathOps.get_directory
+  [method] Args.get_raw
+  [method] Args.count
+  [method] Args.get
+  [method] CpuInfo.cpu_count
+  [method] TimeOps.time_sleep
+  [method] TimeOps.time_sleep_ms
+  [method] TimeOps.time_now
+  [method] TimeOps.time_now_ms
+  [method] TimeOps.time_now_ns
+  [method] File.open
+  [method] File.open_cwd
+  [method] File.get_size
+  [method] File.read
+  [method] File.read_text
+  [method] File.read_bytes
+  [method] File.write
+  [method] File.write_bytes
+  [method] File.seek
+  [method] File.seek_end
+  [method] File.tell
+  [method] File.close
+  [method] File.is_valid
+  [method] Command.run
+  [method] Command.capture
+  [method] Command.exit
+  [method] Command.output
+  [method] Argv.raw
+  [method] Argv.count
+  [method] Argv.get
+  [method] System.cwd
+  [method] System.exists
+  [method] System.platform
+  [method] Image.empty
+  [method] Image.create
+  [method] Image.wrap_rgba
+  [method] Image.is_valid
+  [method] Image.byte_size
+  [method] Image.free
+  [method] Image.in_bounds
+  [method] Image.pixel_offset
+  [method] Image.clear
+  [method] Image.set_pixel
+  [method] Image.get_pixel
+  [method] Image.copy_from
+  [method] PPM.save
+  [method] PPM.load
+  [method] PngHuffman.create
+  [method] PngHuffman.free
+  [method] PngHuffman.get_count
+  [method] PngHuffman.set_count
+  [method] PngHuffman.get_symbol
+  [method] PngHuffman.set_symbol
+  [method] PNG.save
+  [method] PNG.load
+  [method] JpegBitWriter.create
+  [method] JpegBitWriter.free
+  [method] JpegBitWriter.write_byte
+  [method] JpegBitWriter.write_bits
+  [method] JpegBitWriter.flush
+  [method] JPEG.save
+  [method] JPEG.load
+  [method] JsonValue.invalid
+  [method] JsonValue.exists
+  [method] JsonValue.is_null
+  [method] JsonValue.is_bool
+  [method] JsonValue.is_number
+  [method] JsonValue.is_string
+  [method] JsonValue.is_array
+  [method] JsonValue.is_object
+  [method] JsonValue.get
+  [method] JsonValue.at
+  [method] JsonValue.size
+  [method] JsonValue.as_str
+  [method] JsonValue.as_i64
+  [method] JsonValue.as_i32
+  [method] JsonValue.as_f64
+  [method] JsonValue.as_bool
+  [method] JsonValue.get_str
+  [method] JsonValue.get_i32
+  [method] JsonValue.get_i64
+  [method] JsonValue.get_f64
+  [method] JsonValue.get_bool
+  [method] JsonDocument.valid
+  [method] JsonDocument.get
+  [method] JsonDocument.at
+  [method] JsonDocument.close
+  [method] CookedTexture.level_offset
+  [method] CookedTexture.level_size
+  [method] CookedTexture.level_width
+  [method] CookedTexture.level_height
+  [method] CookedTexture.vk_format
+  [method] CookedTexture.free
+[gen] functions: 11089 ms
+[gen] main/global init: 146 ms
+[gen] join output: 294 ms
+[gen] total: 12143 ms
+  MLIR: 44096956 chars
+  MLIR lines: 592409 / 1048576
+  Strings: 253 / 16384
+  Emitted functions: 1662 / 4096
+  Time: 12143 ms
+  Write MLIR: 79 ms
+[4/4] Building exe
+Backend adapter: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\toolchains\llvm\1\targets\x86_64-win64-coff.toml
+Host toolchain: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\toolchains\llvm\1\hosts\windows-x86_64\host.toml
+tests/mesh_particles_checks.exe.dolet.mlir:15203:32: error: @ identifier expected to start with letter or '_'
+    %42 = llvm.mlir.addressof @32 : !llvm.ptr
+                               ^
+Error: MLIR translation failed

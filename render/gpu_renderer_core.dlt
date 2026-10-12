@@ -676,6 +676,9 @@ struct GpuRendererCore:
     debug_manual_boxes: i64 = 0
     debug_manual_box_count: i32 = 0
     debug_manual_box_capacity: i32 = 0
+    debug_manual_lines: i64 = 0
+    debug_manual_line_count: i32 = 0
+    debug_manual_line_capacity: i32 = 0
     # Texture registry
     tex_views:      i64 = 0    # VkImageView[]
     tex_samplers:   i64 = 0    # VkSampler[]

@@ -362,6 +362,14 @@ attach Debug:
             return
         g_engine_runtime.add_collision_debug_box(center, size, color)
 
+    # Frame-local world-space lines, using the existing collision debug pass.
+    static fun line(a: Vec3, b: Vec3, color: Color):
+        if g_engine_collision_debug_enabled == 0:
+            return
+        if g_engine_runtime.ready() == 0:
+            return
+        g_engine_runtime.add_collision_debug_line(a,b,color)
+
     static fun frame_pacing(enabled: i32):
         if enabled == 0:
             g_engine_frame_pacing_enabled = 0

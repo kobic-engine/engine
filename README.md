@@ -55,6 +55,10 @@ runtime/backend types remain internal package plumbing.
 
 ## Opt-in dynamic mesh services
 
+`Debug.line(a, b, color)` adds bounded frame-local, depth-tested world-space
+lines to the existing collision debug pass (`Debug.collisions(1)`). It reuses
+the ray-line pipeline, allocates lazily, and does no work while disabled.
+
 `MeshParticles3D` provides reusable shared-mesh debris pools with fixed-step
 ballistics, external collision results, sleeping and render interpolation.
 It does not add an ECS or a global physics loop. See
