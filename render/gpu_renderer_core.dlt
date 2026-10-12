@@ -665,6 +665,12 @@ struct GpuRendererCore:
     debug_render_stats_enabled: i32 = 0
     debug_frame_count: i32 = 0
     debug_draw_calls: i32 = 0
+    # Last completed 120-frame render-stats window (sums), for tools.
+    debug_window_serial: i32 = 0
+    debug_window_triangles: i64 = 0
+    debug_window_vertices: i64 = 0
+    debug_window_draws: i64 = 0
+    debug_window_instances: i64 = 0
     debug_indexed_draw_calls: i32 = 0
     debug_visible_instances: i32 = 0
     debug_visible_indices: i64 = 0
@@ -2315,6 +2321,26 @@ attach GpuRendererCore:
     fun set_gpu_timing(self, enabled: i32):
         self.profiler.set_enabled(enabled)
 
+    fun gpu_last_segment_ms(self, segment: i32) -> f32:
+        return self.profiler.last_segment_ms(segment)
+
+    fun gpu_last_serial(self) -> i32:
+        return self.profiler.last_serial
+
+    # 0 serial, 1 triangles, 2 vertices, 3 draws, 4 instances (per 120 frames).
+    fun render_window_stat(self, stat: i32) -> i64:
+        if stat == 0:
+            return self.debug_window_serial as i64
+        if stat == 1:
+            return self.debug_window_triangles
+        if stat == 2:
+            return self.debug_window_vertices
+        if stat == 3:
+            return self.debug_window_draws
+        if stat == 4:
+            return self.debug_window_instances
+        return 0
+
     # Shadow caster size-cull threshold (shadow LOD). Casters whose angular
     # size (worldRadius / |clipW|) falls below this are skipped in the shadow
     # pass. 0.0 disables (default). Cheap win for dense scenes.
@@ -2367,6 +2393,11 @@ attach GpuRendererCore:
             visible_vertex_count: i64 = self.debug_visible_vertices
             registered_vertex_count: i64 = self.debug_registered_vertices
             print(@"[frog.render] frames=120 meshes={mesh_count} instances={instance_count} vertices={visible_vertex_count} registeredVertices={registered_vertex_count} triangles={triangle_count} registeredTriangles={registered_triangle_count} draws={draw_count} indexed={indexed_count}")
+            self.debug_window_triangles = triangle_count
+            self.debug_window_vertices = visible_vertex_count
+            self.debug_window_draws = draw_count as i64
+            self.debug_window_instances = instance_count as i64
+            self.debug_window_serial = self.debug_window_serial + 1
             self.debug_frame_count = 0
             self.debug_draw_calls = 0
             self.debug_indexed_draw_calls = 0

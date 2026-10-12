@@ -568,6 +568,15 @@ attach Renderer:
     fun set_gpu_timing(self, enabled: i32):
         self.core.set_gpu_timing(enabled)
 
+    fun gpu_last_segment_ms(self, segment: i32) -> f32:
+        return self.core.gpu_last_segment_ms(segment)
+
+    fun gpu_last_serial(self) -> i32:
+        return self.core.gpu_last_serial()
+
+    fun render_window_stat(self, stat: i32) -> i64:
+        return self.core.render_window_stat(stat)
+
     fun set_shadow_min_size(self, threshold: f32):
         self.core.set_shadow_min_size(threshold)
 

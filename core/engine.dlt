@@ -290,6 +290,27 @@ attach Debug:
     static fun gpu_timing_enabled() -> i32:
         return g_engine_gpu_timing_enabled
 
+    # Latest completed GPU frame, ms (needs gpu_timing(1)). Segments: 0 total,
+    # 1 shadow, 2 main, 3 post, 4 sky, 5 static batches, 6 per-group draws,
+    # 7 end of pass. -1 before the first readback.
+    static fun gpu_last_ms(segment: i32) -> f32:
+        if g_engine_runtime.ready() == 0:
+            return 0.0 - 1.0
+        return g_engine_runtime.gpu_last_segment_ms(segment)
+
+    # Increments once per GPU readback; lets tools sample each frame once.
+    static fun gpu_last_serial() -> i32:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.gpu_last_serial()
+
+    # Sums over the last completed 120-frame window (needs render_stats(1)):
+    # 0 window serial, 1 triangles, 2 vertices, 3 draws, 4 instances.
+    static fun render_window_stat(stat: i32) -> i64:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.render_window_stat(stat)
+
     # Shadow caster size-cull (shadow LOD). Skips casters whose projected
     # shadow footprint is below `threshold` (angular size). 0.0 disables.
     # Bigger value culls more aggressively -> cheaper shadow pass.

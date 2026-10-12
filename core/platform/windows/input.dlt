@@ -29,6 +29,12 @@ KEY_CTRL: i32 = 17
 MOUSE_LEFT: i32 = 1
 MOUSE_RIGHT: i32 = 2
 
+# Scripted input state (see Input.script_enable).
+static g_input_script_enabled: i32 = 0
+static g_input_script_keys: i64 = 0
+static g_input_script_mouse_dx: f32 = 0.0
+static g_input_script_mouse_dy: f32 = 0.0
+
 struct Input:
     _placeholder: i32 = 0
 
@@ -37,6 +43,8 @@ attach Input:
     static fun key_down(key: i32) -> i32:
         if key < 0 or key > 255:
             return 0
+        if g_input_script_enabled == 1:
+            return Memory.read_i8(g_input_script_keys + (key as i64)) as i32
         state: i16 = GetAsyncKeyState(key)
         if state < 0:
             return 1
@@ -67,7 +75,46 @@ attach Input:
         window_clear_mouse_delta()
 
     static fun mouse_delta_x() -> f32:
-        return window_consume_mouse_delta_x() as f32
+        real: f32 = window_consume_mouse_delta_x() as f32
+        if g_input_script_enabled == 1:
+            injected: f32 = g_input_script_mouse_dx
+            g_input_script_mouse_dx = 0.0
+            return injected
+        return real
 
     static fun mouse_delta_y() -> f32:
-        return window_consume_mouse_delta_y() as f32
+        real: f32 = window_consume_mouse_delta_y() as f32
+        if g_input_script_enabled == 1:
+            injected: f32 = g_input_script_mouse_dy
+            g_input_script_mouse_dy = 0.0
+            return injected
+        return real
+
+    # Scripted input for benchmarks and replays. While enabled, every key and
+    # mouse query reads ONLY the injected state; real OS input is still
+    # drained (so nothing piles up) but ignored.
+    static fun script_enable(enabled: i32):
+        if enabled == 0:
+            g_input_script_enabled = 0
+            return
+        if g_input_script_keys == 0:
+            g_input_script_keys = Memory.malloc_zeroed(256)
+        Memory.set(g_input_script_keys, 0, 256)
+        g_input_script_mouse_dx = 0.0
+        g_input_script_mouse_dy = 0.0
+        g_input_script_enabled = 1
+
+    static fun script_enabled() -> i32:
+        return g_input_script_enabled
+
+    static fun script_set_key(key: i32, down: i32):
+        if g_input_script_keys == 0 or key < 0 or key > 255:
+            return
+        value: i32 = 0
+        if down != 0:
+            value = 1
+        Memory.write_i8(g_input_script_keys + (key as i64), value as i8)
+
+    static fun script_add_mouse(dx: f32, dy: f32):
+        g_input_script_mouse_dx = g_input_script_mouse_dx + dx
+        g_input_script_mouse_dy = g_input_script_mouse_dy + dy

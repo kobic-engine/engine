@@ -41,6 +41,10 @@ struct GpuProfiler:
     acc_inst_ms:   f32 = 0.0
     acc_tail_ms:   f32 = 0.0
     acc_groups:    i64 = 0
+    # Latest completed frame (ms): 0 total, 1 shadow, 2 main, 3 post, 4 sky,
+    # 5 static batches, 6 per-group draws, 7 end of pass. -1 before any.
+    last_ms: i64 = 0
+    last_serial: i32 = 0
     # Bit i set once timestamp i was written this frame. Every query of the
     # slot must be written before readback (WAIT would otherwise block), so
     # missing sub-marks are filled at the main-pass boundary.
@@ -182,6 +186,18 @@ attach GpuProfiler:
                 self.acc_post_ms = self.acc_post_ms + self._ticks_to_ms(t3 - t2)
                 self.acc_total_ms = self.acc_total_ms + self._ticks_to_ms(t3 - t0)
                 self.acc_count = self.acc_count + 1
+                if self.last_ms == 0:
+                    self.last_ms = Memory.malloc_zeroed(8 * 4)
+                if self.last_ms != 0:
+                    Memory.write_f32(self.last_ms + 0, self._ticks_to_ms(t3 - t0))
+                    Memory.write_f32(self.last_ms + 4, self._ticks_to_ms(t1 - t0))
+                    Memory.write_f32(self.last_ms + 8, self._ticks_to_ms(t2 - t1))
+                    Memory.write_f32(self.last_ms + 12, self._ticks_to_ms(t3 - t2))
+                    Memory.write_f32(self.last_ms + 16, self._ticks_to_ms(t4 - t1))
+                    Memory.write_f32(self.last_ms + 20, self._ticks_to_ms(t5 - t4))
+                    Memory.write_f32(self.last_ms + 24, self._ticks_to_ms(t6 - t5))
+                    Memory.write_f32(self.last_ms + 28, self._ticks_to_ms(t2 - t7))
+                    self.last_serial = self.last_serial + 1
                 if self.acc_count >= 120:
                     n: f32 = self.acc_count as f32
                     sh: f32 = self.acc_shadow_ms / n
@@ -210,6 +226,11 @@ attach GpuProfiler:
 
         self.have_prev = 1
         self.frame = self.frame + 1
+
+    fun last_segment_ms(self, segment: i32) -> f32:
+        if self.last_ms == 0 or segment < 0 or segment > 7:
+            return 0.0 - 1.0
+        return Memory.read_f32(self.last_ms + (segment as i64) * 4)
 
     fun _ticks_to_ms(self, ticks: i64) -> f32:
         ns: f32 = (ticks as f32) * self.ts_period_ns
