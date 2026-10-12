@@ -1,0 +1,96 @@
+import std
+import frog
+
+static g_particle_floor: i32 = 1
+
+fun particle_require(ok: bool, label: str):
+    if ok==false:
+        print("FAIL mesh particles: "+label)
+        Command.exit(1)
+
+fun particle_test_floor(a: Vec3,b: Vec3,radius: f32) -> ParticleContact3D:
+    if g_particle_floor!=0 and b.y<=radius:
+        return ParticleContact3D(status=1,position=Vec3.make(b.x,radius,b.z),normal=Vec3.up())
+    return ParticleContact3D()
+
+fun particle_test_missing(a: Vec3,b: Vec3,radius: f32) -> ParticleContact3D:
+    return ParticleContact3D(status=2)
+
+fun particle_test_advance(pool: MeshParticles3D, dt: f32, gravity: Vec3, missing: i32):
+    pool.begin_frame(dt)
+    while pool.advance_step(gravity)!=0:
+        i: i32 = 0
+        while i<pool.capacity:
+            slot: MeshParticleSlot3D = pool.slot(i)
+            if slot.active!=0 and slot.contact_due!=0:
+                target: Vec3 = slot.body.position
+                if slot.body.sleeping!=0:
+                    target = target.add(Vec3.make(0.0,-0.035,0.0))
+                contact: ParticleContact3D = particle_test_floor(slot.previous,target,slot.body.radius)
+                if missing!=0:
+                    contact = particle_test_missing(slot.previous,target,slot.body.radius)
+                pool.resolve_contact(i,contact)
+            i += 1
+
+pool: MeshParticles3D = MeshParticles3D.create(3)
+initial_particle: ParticleBody3D = ParticleBody3D(position=Vec3.make(0.0,1.5,0.0),velocity=Vec3.make(0.2,1.0,0.0),radius=0.1)
+a: i32 = pool.emit(initial_particle,0.2,0.0)
+b: i32 = pool.emit(initial_particle,0.2,0.25)
+c: i32 = pool.emit(initial_particle,0.2,0.25)
+particle_require(a>=0 and b>=0 and c>=0 and pool.emit(initial_particle,0.2,0.0)== -1,"fixed capacity refuses overflow")
+particle_require(pool.available()==0,"persistent slots are never overwritten")
+before: Vec3 = pool.slot(a).body.position
+particle_test_advance(pool,0.03,Vec3.make(0.0,-9.81,0.0),1)
+particle_require(pool.slot(a).body.position.y==before.y,"unloaded collision freezes motion")
+i: i32 = 0
+while i<600:
+    particle_test_advance(pool,1.0/120.0,Vec3.make(0.0,-9.81,0.0),0)
+    particle_require(pool.slot(a).body.position.y>=0.099,"cannot tunnel through plane")
+    i += 1
+particle_require(pool.count==1 and pool.available()==2,"visual particles expire; persistent resource does not")
+particle_require(pool.slot(a).body.sleeping==1,"resting debris sleeps")
+g_particle_floor = 0
+i = 0
+while i<60:
+    particle_test_advance(pool,1.0/120.0,Vec3.make(0.0,-9.81,0.0),0)
+    i += 1
+particle_require(pool.slot(a).body.sleeping==0 and pool.slot(a).body.position.y<0.0,"removed support wakes resting piece")
+pool.release(a)
+pool.release(a)
+particle_require(pool.count==0,"release is idempotent")
+pool.destroy()
+Memory.free(pool as i64)
+hz: i32 = 30
+while hz<=240:
+    pool = MeshParticles3D.create(1)
+    a = pool.emit(initial_particle,0.2,0.0)
+    i = 0
+    while i<hz:
+        particle_test_advance(pool,1.0/(hz as f32),Vec3.zero(),0)
+        i += 1
+    particle_require(pool.slot(a).body.position.x>0.198 and pool.slot(a).body.position.x<0.202,"fixed-step travel independent of render rate")
+    pool.destroy()
+    Memory.free(pool as i64)
+    hz *= 2
+print("PASS mesh particles: bounded reuse, lifetime/persistence, swept contact, sleep/wake, missing-world freeze, frame-rate independent travel")
+pool = MeshParticles3D.create(1)
+a = pool.emit(initial_particle,0.2,0.0)
+pool.slot(a).render_tag = 28
+pool.release(a)
+a = pool.emit(initial_particle,0.2,0.0)
+particle_require(pool.slot(a).render_tag== -1,"reused instance forces fresh application material revision")
+pool.begin_frame(0.0)
+particle_require(pool.advance_step(Vec3.zero())==0,"zero frame time cannot advance simulation")
+pool.begin_frame(-1.0)
+particle_require(pool.advance_step(Vec3.zero())==0,"negative frame time cannot advance simulation")
+i = 0
+while i<120:
+    pool.begin_frame(1.0/120.0)
+    while pool.advance_step(Vec3.make(0.0,-9.81,0.0))!=0:
+        slot: MeshParticleSlot3D = pool.slot(a)
+        pool.resolve_contact(a,ParticleContact3D(status=1,position=slot.previous,normal=Vec3.make(1.0,0.05,0.0)))
+    i += 1
+particle_require(pool.slot(a).body.sleeping==1,"constrained multi-face support sleeps despite residual contact velocity")
+pool.destroy()
+Memory.free(pool as i64)
+print("PASS mesh particles: material revision reuse, invalid time rejection, constrained support stabilization")

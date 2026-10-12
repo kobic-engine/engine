@@ -71,6 +71,7 @@ load frog/core/runtime
 load frog/core/engine
 load frog/scene/skeleton3d
 load frog/scene/spring_arm3d
+load frog/scene/mesh_particles3d
 
 # Benchmarks
 load frog/core/benchmark
@@ -104,3 +105,4 @@ export engine_parallel_for
 export MeshUpdateBudget, MeshTransformGroup
 export Skeleton3D, SkinnedMesh3D
 export SpringArm3D
+export ParticleBody3D, ParticleContact3D, MeshParticleSlot3D, MeshParticles3D

@@ -55,6 +55,11 @@ runtime/backend types remain internal package plumbing.
 
 ## Opt-in dynamic mesh services
 
+`MeshParticles3D` provides reusable shared-mesh debris pools with fixed-step
+ballistics, external collision results, sleeping and render interpolation.
+It does not add an ECS or a global physics loop. See
+[mesh particles](docs/MESH_PARTICLES.md) for ownership and limits.
+
 `Skeleton3D` and `SkinnedMesh3D` provide frame-isolated GPU skeletal deformation;
 `SpringArm3D` provides a collision-clearance-driven camera boom. See
 [skeletal animation](docs/SKELETAL_ANIMATION.md) for the offline cooker, API,
