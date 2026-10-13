@@ -1,5 +1,5 @@
 ##############################
-# Frog - GPU Mesh Helpers
+# Kobic - GPU Mesh Helpers
 # CPU-side vertex generation for the independent Vulkan backend.
 ##############################
 
@@ -24,18 +24,18 @@ fun gpu_wv(buf: i64, off: i64, px: f32, py: f32, pz: f32, cr: f32, cg: f32, cb: 
     Memory.write_f32(buf + off, px)
     Memory.write_f32(buf + off + 4, py)
     Memory.write_f32(buf + off + 8, pz)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_NORMAL_OFFSET, 0.0)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_NORMAL_OFFSET + 4, 0.0)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_NORMAL_OFFSET + 8, 0.0)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET, cr)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET + 4, cg)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET + 8, cb)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_UV_OFFSET, u)
-    Memory.write_f32(buf + off + FROG_GPU_VERTEX_UV_OFFSET + 4, v)
-    return off + FROG_GPU_VERTEX_STRIDE
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_NORMAL_OFFSET, 0.0)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_NORMAL_OFFSET + 4, 0.0)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_NORMAL_OFFSET + 8, 0.0)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET, cr)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET + 4, cg)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET + 8, cb)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_UV_OFFSET, u)
+    Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_UV_OFFSET + 4, v)
+    return off + KOBIC_GPU_VERTEX_STRIDE
 
 fun gpu_write_vertex_uv(buf: i64, vertex_index: i32, u: f32, v: f32):
-    off: i64 = (vertex_index as i64) * (FROG_GPU_VERTEX_STRIDE as i64) + FROG_GPU_VERTEX_UV_OFFSET
+    off: i64 = (vertex_index as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64) + KOBIC_GPU_VERTEX_UV_OFFSET
     Memory.write_f32(buf + off, u)
     Memory.write_f32(buf + off + 4, v)
 
@@ -54,7 +54,7 @@ fun gpu_assign_cube_uvs(buf: i64):
         face = face + 1
 
 fun gpu_write_vertex_normal(buf: i64, vertex_index: i32, nx: f32, ny: f32, nz: f32):
-    off: i64 = (vertex_index as i64) * (FROG_GPU_VERTEX_STRIDE as i64) + FROG_GPU_VERTEX_NORMAL_OFFSET
+    off: i64 = (vertex_index as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64) + KOBIC_GPU_VERTEX_NORMAL_OFFSET
     Memory.write_f32(buf + off, nx)
     Memory.write_f32(buf + off + 4, ny)
     Memory.write_f32(buf + off + 8, nz)
@@ -62,9 +62,9 @@ fun gpu_write_vertex_normal(buf: i64, vertex_index: i32, nx: f32, ny: f32, nz: f
 fun gpu_assign_flat_normals(buf: i64, vertex_count: i32):
     i: i32 = 0
     while i + 2 < vertex_count:
-        off0: i64 = (i as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
-        off1: i64 = ((i + 1) as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
-        off2: i64 = ((i + 2) as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        off0: i64 = (i as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
+        off1: i64 = ((i + 1) as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
+        off2: i64 = ((i + 2) as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         ax: f32 = Memory.read_f32(buf + off0)
         ay: f32 = Memory.read_f32(buf + off0 + 4)
         az: f32 = Memory.read_f32(buf + off0 + 8)
@@ -160,7 +160,7 @@ fun gltf_write_position_vertex(out: i64, out_off: i64, bin: i64, pos_addr: i64, 
     raw_x: f32 = Memory.read_f32(bin + pos_addr)
     raw_y: f32 = Memory.read_f32(bin + pos_addr + 4)
     raw_z: f32 = Memory.read_f32(bin + pos_addr + 8)
-    # glTF 2.0 is right-handed and Y-up, matching Frog model space.
+    # glTF 2.0 is right-handed and Y-up, matching Kobic model space.
     # Asset-specific conversion belongs in the node hierarchy and v2 cooker.
     px: f32 = raw_x
     py: f32 = raw_y
@@ -178,9 +178,9 @@ fun gltf_write_position_vertex(out: i64, out_off: i64, bin: i64, pos_addr: i64, 
             nx = nx / n_len
             ny = ny / n_len
             nz = nz / n_len
-            Memory.write_f32(out + out_off + FROG_GPU_VERTEX_NORMAL_OFFSET, nx)
-            Memory.write_f32(out + out_off + FROG_GPU_VERTEX_NORMAL_OFFSET + 4, ny)
-            Memory.write_f32(out + out_off + FROG_GPU_VERTEX_NORMAL_OFFSET + 8, nz)
+            Memory.write_f32(out + out_off + KOBIC_GPU_VERTEX_NORMAL_OFFSET, nx)
+            Memory.write_f32(out + out_off + KOBIC_GPU_VERTEX_NORMAL_OFFSET + 4, ny)
+            Memory.write_f32(out + out_off + KOBIC_GPU_VERTEX_NORMAL_OFFSET + 8, nz)
     return next_off
 
 # Single-entry cache for the glTF binary (.bin) buffer. A model with N
@@ -239,28 +239,28 @@ fun gltf_load_binary_buffer(gltf_path: str, root: JsonValue) -> i64:
     g_gltf_bin_cache_path = bin_path
     return data
 
-fun frogmodel_part_entry(model: Model3D, primitive_index: i32) -> i64:
-    if Str.equals(model.format, "frogmodel") == false:
+fun kobicmodel_part_entry(model: Model3D, primitive_index: i32) -> i64:
+    if Str.equals(model.format, "kobicmodel") == false:
         return 0
     if primitive_index < 0:
         return 0
-    if primitive_index >= model.frog_part_count:
+    if primitive_index >= model.kobic_part_count:
         return 0
-    return model.frog_part_table + ((primitive_index as i64) * 32)
+    return model.kobic_part_table + ((primitive_index as i64) * 32)
 
-fun gpu_make_frogmodel_primitive_vertices(model: Model3D, mesh_index: i32, primitive_index: i32) -> GpuMeshData:
+fun gpu_make_kobicmodel_primitive_vertices(model: Model3D, mesh_index: i32, primitive_index: i32) -> GpuMeshData:
     if mesh_index != 0:
         return GpuMeshData()
-    entry: i64 = frogmodel_part_entry(model, primitive_index)
+    entry: i64 = kobicmodel_part_entry(model, primitive_index)
     if entry == 0:
         return GpuMeshData()
-    vertex_count: i32 = Memory.read_i32(model.frog_data + entry)
-    index_count: i32 = Memory.read_i32(model.frog_data + entry + 4)
-    vertex_offset: i64 = Memory.read_i32(model.frog_data + entry + 16) as i64
-    index_offset: i64 = Memory.read_i32(model.frog_data + entry + 20) as i64
-    vertex_bytes: i64 = Memory.read_i32(model.frog_data + entry + 24) as i64
-    index_bytes: i64 = Memory.read_i32(model.frog_data + entry + 28) as i64
-    expected_vertex_bytes: i64 = (vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+    vertex_count: i32 = Memory.read_i32(model.kobic_data + entry)
+    index_count: i32 = Memory.read_i32(model.kobic_data + entry + 4)
+    vertex_offset: i64 = Memory.read_i32(model.kobic_data + entry + 16) as i64
+    index_offset: i64 = Memory.read_i32(model.kobic_data + entry + 20) as i64
+    vertex_bytes: i64 = Memory.read_i32(model.kobic_data + entry + 24) as i64
+    index_bytes: i64 = Memory.read_i32(model.kobic_data + entry + 28) as i64
+    expected_vertex_bytes: i64 = (vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
     expected_index_bytes: i64 = (index_count as i64) * 4
     if vertex_count <= 0:
         return GpuMeshData()
@@ -270,9 +270,9 @@ fun gpu_make_frogmodel_primitive_vertices(model: Model3D, mesh_index: i32, primi
         return GpuMeshData()
     if index_bytes != expected_index_bytes:
         return GpuMeshData()
-    if vertex_offset + vertex_bytes > model.frog_size:
+    if vertex_offset + vertex_bytes > model.kobic_size:
         return GpuMeshData()
-    if index_offset + index_bytes > model.frog_size:
+    if index_offset + index_bytes > model.kobic_size:
         return GpuMeshData()
     vertices: i64 = Memory.malloc(vertex_bytes) as i64
     if vertices == 0:
@@ -281,28 +281,28 @@ fun gpu_make_frogmodel_primitive_vertices(model: Model3D, mesh_index: i32, primi
     if indices == 0:
         Memory.free(vertices)
         return GpuMeshData()
-    gpu_copy_bytes_fast(vertices, model.frog_data + vertex_offset, vertex_bytes)
-    gpu_copy_bytes_fast(indices, model.frog_data + index_offset, index_bytes)
+    gpu_copy_bytes_fast(vertices, model.kobic_data + vertex_offset, vertex_bytes)
+    gpu_copy_bytes_fast(indices, model.kobic_data + index_offset, index_bytes)
     return GpuMeshData(vertices=vertices, vertex_count=vertex_count, indices=indices, index_count=index_count)
 
-fun gpu_make_frogmodel_model_vertices(model: Model3D) -> GpuMeshData:
-    if Str.equals(model.format, "frogmodel") == false:
+fun gpu_make_kobicmodel_model_vertices(model: Model3D) -> GpuMeshData:
+    if Str.equals(model.format, "kobicmodel") == false:
         return GpuMeshData()
     total_vertices: i32 = 0
     total_indices: i32 = 0
     part_index: i32 = 0
-    while part_index < model.frog_part_count:
-        entry: i64 = frogmodel_part_entry(model, part_index)
+    while part_index < model.kobic_part_count:
+        entry: i64 = kobicmodel_part_entry(model, part_index)
         if entry == 0:
             return GpuMeshData()
-        total_vertices = total_vertices + Memory.read_i32(model.frog_data + entry)
-        total_indices = total_indices + Memory.read_i32(model.frog_data + entry + 4)
+        total_vertices = total_vertices + Memory.read_i32(model.kobic_data + entry)
+        total_indices = total_indices + Memory.read_i32(model.kobic_data + entry + 4)
         part_index = part_index + 1
     if total_vertices <= 0:
         return GpuMeshData()
     if total_indices <= 0:
         return GpuMeshData()
-    vertices: i64 = Memory.malloc((total_vertices as i64) * (FROG_GPU_VERTEX_STRIDE as i64)) as i64
+    vertices: i64 = Memory.malloc((total_vertices as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)) as i64
     if vertices == 0:
         return GpuMeshData()
     indices: i64 = Memory.malloc((total_indices as i64) * 4) as i64
@@ -313,17 +313,17 @@ fun gpu_make_frogmodel_model_vertices(model: Model3D) -> GpuMeshData:
     index_offset: i64 = 0
     vertex_base: i32 = 0
     part_index = 0
-    while part_index < model.frog_part_count:
-        entry: i64 = frogmodel_part_entry(model, part_index)
-        vertex_count: i32 = Memory.read_i32(model.frog_data + entry)
-        index_count: i32 = Memory.read_i32(model.frog_data + entry + 4)
-        data_vertex_offset: i64 = Memory.read_i32(model.frog_data + entry + 16) as i64
-        data_index_offset: i64 = Memory.read_i32(model.frog_data + entry + 20) as i64
-        vertex_bytes: i64 = (vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
-        gpu_copy_bytes_fast(vertices + vertex_offset, model.frog_data + data_vertex_offset, vertex_bytes)
+    while part_index < model.kobic_part_count:
+        entry: i64 = kobicmodel_part_entry(model, part_index)
+        vertex_count: i32 = Memory.read_i32(model.kobic_data + entry)
+        index_count: i32 = Memory.read_i32(model.kobic_data + entry + 4)
+        data_vertex_offset: i64 = Memory.read_i32(model.kobic_data + entry + 16) as i64
+        data_index_offset: i64 = Memory.read_i32(model.kobic_data + entry + 20) as i64
+        vertex_bytes: i64 = (vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
+        gpu_copy_bytes_fast(vertices + vertex_offset, model.kobic_data + data_vertex_offset, vertex_bytes)
         index_i: i32 = 0
         while index_i < index_count:
-            source_index: i32 = Memory.read_i32(model.frog_data + data_index_offset + ((index_i as i64) * 4))
+            source_index: i32 = Memory.read_i32(model.kobic_data + data_index_offset + ((index_i as i64) * 4))
             Memory.write_i32(indices + index_offset, source_index + vertex_base)
             index_offset = index_offset + 4
             index_i = index_i + 1
@@ -381,7 +381,7 @@ fun gpu_make_gltf_primitive_vertices(model: Model3D, mesh_index: i32, primitive_
     if bin == 0:
         return GpuMeshData()
 
-    out: i64 = Memory.malloc_zeroed((total_vertices as i64) * (FROG_GPU_VERTEX_STRIDE as i64))
+    out: i64 = Memory.malloc_zeroed((total_vertices as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64))
     if out == 0:
         return GpuMeshData()
     out_indices: i64 = Memory.malloc_zeroed((total_indices as i64) * 4)
@@ -493,7 +493,7 @@ fun gpu_make_gltf_model_vertices(model: Model3D) -> GpuMeshData:
     if total_indices <= 0:
         return GpuMeshData()
 
-    out: i64 = Memory.malloc_zeroed((total_vertices as i64) * (FROG_GPU_VERTEX_STRIDE as i64))
+    out: i64 = Memory.malloc_zeroed((total_vertices as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64))
     if out == 0:
         return GpuMeshData()
     out_indices: i64 = Memory.malloc_zeroed((total_indices as i64) * 4)
@@ -583,7 +583,7 @@ fun gpu_make_gltf_model_vertices(model: Model3D) -> GpuMeshData:
     return GpuMeshData(vertices=out, vertex_count=total_vertices, indices=out_indices, index_count=total_indices)
 
 fun gpu_make_cube_vertices() -> i64:
-    buf: i64 = Memory.malloc_zeroed(36 * FROG_GPU_VERTEX_STRIDE)
+    buf: i64 = Memory.malloc_zeroed(36 * KOBIC_GPU_VERTEX_STRIDE)
     if buf == 0:
         return 0
     hx: f32 = 0.5
@@ -642,10 +642,10 @@ fun gpu_make_colored_cube_vertices(color: Color) -> i64:
     i: i32 = 0
     off: i64 = 0
     while i < 36:
-        Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET, color.r)
-        Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET + 4, color.g)
-        Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET + 8, color.b)
-        off = off + FROG_GPU_VERTEX_STRIDE
+        Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET, color.r)
+        Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET + 4, color.g)
+        Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET + 8, color.b)
+        off = off + KOBIC_GPU_VERTEX_STRIDE
         i = i + 1
     return buf
 fun gpu_make_colored_plane_vertices(color: Color) -> i64:
@@ -655,14 +655,14 @@ fun gpu_make_colored_plane_vertices(color: Color) -> i64:
     i: i32 = 0
     off: i64 = 0
     while i < 6:
-        Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET, color.r)
-        Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET + 4, color.g)
-        Memory.write_f32(buf + off + FROG_GPU_VERTEX_COLOR_OFFSET + 8, color.b)
-        off = off + FROG_GPU_VERTEX_STRIDE
+        Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET, color.r)
+        Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET + 4, color.g)
+        Memory.write_f32(buf + off + KOBIC_GPU_VERTEX_COLOR_OFFSET + 8, color.b)
+        off = off + KOBIC_GPU_VERTEX_STRIDE
         i = i + 1
     return buf
 fun gpu_make_plane_vertices() -> i64:
-    buf: i64 = Memory.malloc_zeroed(6 * FROG_GPU_VERTEX_STRIDE)
+    buf: i64 = Memory.malloc_zeroed(6 * KOBIC_GPU_VERTEX_STRIDE)
     if buf == 0:
         return 0
     hx: f32 = 0.5
@@ -685,7 +685,7 @@ fun gpu_make_plane_vertices() -> i64:
 # screen-space right (+X) / up (+Y). UVs: top-left origin (v flipped) so image
 # rows map naturally. Winding matches the plane quad (same front-face state).
 fun gpu_make_sprite_quad_vertices() -> i64:
-    buf: i64 = Memory.malloc_zeroed(6 * FROG_GPU_VERTEX_STRIDE)
+    buf: i64 = Memory.malloc_zeroed(6 * KOBIC_GPU_VERTEX_STRIDE)
     if buf == 0:
         return 0
     h: f32 = 0.5

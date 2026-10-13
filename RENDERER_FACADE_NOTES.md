@@ -1,14 +1,14 @@
-# Frog Renderer Facade Notes
+# Kobic Renderer Facade Notes
 
 This file tracks the renderer API problems that blocked hiding the low-level
-Vulkan objects behind a clean high-level Frog API.
+Vulkan objects behind a clean high-level Kobic API.
 
 ## Current Stable Shape
 
 The public game-facing API is now `Engine`:
 
 ```dolet
-Engine.window.create("Frog Game", 1280, 720)
+Engine.window.create("Kobic Game", 1280, 720)
 Engine.properties.set_vsync(1)
 Engine.scene.set(scene)
 if Engine.start() == 1:
@@ -31,7 +31,7 @@ The framework runtime owns these lower-level Vulkan objects directly:
 - `Swapchain`
 - `RenderPass`
 
-They should stay in Frog package runtime / renderer plumbing only. Regular
+They should stay in Kobic package runtime / renderer plumbing only. Regular
 gameplay code should not call lower-level types or raw helpers such as
 `gpu_set_transform`.
 
@@ -52,7 +52,7 @@ Result:
 - Originally crashed after Vulkan initialization or during swapchain setup.
 - Fixed after compiler changes for nested struct copy/access.
 - Current narrow facade wraps `GpuRendererCore` only. It is stable in the
-  Frog sample smoke test.
+  Kobic sample smoke test.
 
 ### 2. Package-level `Graphics3D` globals
 
@@ -132,7 +132,7 @@ These were fixed before enabling the facade:
 Longer term, the renderer API should become:
 
 ```dolet
-Engine.window.create("Frog Game", 1280, 720)
+Engine.window.create("Kobic Game", 1280, 720)
 scene: Scene = Scene.create()
 camera: Camera3D = Camera3D.create("camera")
 
@@ -152,5 +152,5 @@ renderer.destroy()
 Engine.shutdown()
 ```
 
-Until then, keep the Vulkan context/swapchain/render pass in the Frog package
+Until then, keep the Vulkan context/swapchain/render pass in the Kobic package
 runtime only and expose small safe methods on `Engine` as needed.

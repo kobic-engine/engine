@@ -3,7 +3,7 @@ Platform manifest: C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler
 Compiling: tests/mesh_particles_checks.dlt
 Prelude: 1647 chars
 Runtime: 288015 chars
-[import] frog -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\frog\mod.dlt
+[import] kobic -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\kobic\mod.dlt
 [import] window -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\window\mod.dlt
 [import] json -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\json\mod.dlt
 [import] image -> C:\Users\xRo0t\Desktop\xMine\dolet work spaces\dolet-compiler\bin\\..\library\..\packages\image\mod.dlt

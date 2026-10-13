@@ -1,72 +1,72 @@
 # Generic GPU linear-blend skinning. Geometry/weights are immutable. Only pose
 # palettes change; each fence-owned frame slot has its own coherent buffer.
-imm FROG_SKIN_BYTES: i64 = 4194304
-imm FROG_SKIN_MESH_LIMIT: i32 = 65536
-static g_frog_skin_cpu: i64 = 0
-static g_frog_skin_offsets: i64 = 0
-static g_frog_skin_used: i64 = 16
-static g_frog_skin_palettes: i64 = 0
-static g_frog_skin_pose_count: i32 = 0
+imm KOBIC_SKIN_BYTES: i64 = 4194304
+imm KOBIC_SKIN_MESH_LIMIT: i32 = 65536
+static g_kobic_skin_cpu: i64 = 0
+static g_kobic_skin_offsets: i64 = 0
+static g_kobic_skin_used: i64 = 16
+static g_kobic_skin_palettes: i64 = 0
+static g_kobic_skin_pose_count: i32 = 0
 
-fun frog_skin_offset(mesh: i32) -> i32:
-    if mesh < 0 or mesh >= FROG_SKIN_MESH_LIMIT or g_frog_skin_offsets == 0:
+fun kobic_skin_offset(mesh: i32) -> i32:
+    if mesh < 0 or mesh >= KOBIC_SKIN_MESH_LIMIT or g_kobic_skin_offsets == 0:
         return 0
-    return Memory.read_i32(g_frog_skin_offsets + mesh * 4)
+    return Memory.read_i32(g_kobic_skin_offsets + mesh * 4)
 
-fun frog_skin_reserve(mesh: i32, weights: i64, vertices: i32, joints: i32) -> i64:
-    if mesh < 0 or mesh >= FROG_SKIN_MESH_LIMIT or vertices <= 0 or vertices > 32768 or joints <= 0 or joints > 128 or weights == 0:
+fun kobic_skin_reserve(mesh: i32, weights: i64, vertices: i32, joints: i32) -> i64:
+    if mesh < 0 or mesh >= KOBIC_SKIN_MESH_LIMIT or vertices <= 0 or vertices > 32768 or joints <= 0 or joints > 128 or weights == 0:
         return 0
-    if frog_skin_offset(mesh) != 0:
+    if kobic_skin_offset(mesh) != 0:
         return 0
     size: i64 = 16 + (vertices as i64) * 32 + (joints as i64) * 64
-    if g_frog_skin_cpu == 0:
-        g_frog_skin_cpu = Memory.malloc_zeroed(FROG_SKIN_BYTES)
-        g_frog_skin_offsets = Memory.malloc_zeroed((FROG_SKIN_MESH_LIMIT as i64) * 4)
-        g_frog_skin_palettes = Memory.malloc_zeroed(256 * 40)
-        if g_frog_skin_cpu == 0 or g_frog_skin_offsets == 0 or g_frog_skin_palettes == 0:
-            frog_skin_reset()
+    if g_kobic_skin_cpu == 0:
+        g_kobic_skin_cpu = Memory.malloc_zeroed(KOBIC_SKIN_BYTES)
+        g_kobic_skin_offsets = Memory.malloc_zeroed((KOBIC_SKIN_MESH_LIMIT as i64) * 4)
+        g_kobic_skin_palettes = Memory.malloc_zeroed(256 * 40)
+        if g_kobic_skin_cpu == 0 or g_kobic_skin_offsets == 0 or g_kobic_skin_palettes == 0:
+            kobic_skin_reset()
             return 0
-    offset: i64 = g_frog_skin_used
+    offset: i64 = g_kobic_skin_used
     entry: i32 = 0
     reused: i32 = 0
-    while entry < g_frog_skin_pose_count:
-        rec: i64 = g_frog_skin_palettes + entry * 40
+    while entry < g_kobic_skin_pose_count:
+        rec: i64 = g_kobic_skin_palettes + entry * 40
         if Memory.read_i64(rec) == 0 and Memory.read_i64(rec + 24) >= size:
             offset = Memory.read_i64(rec + 16)
             reused = 1
             break
         entry = entry + 1
     if reused == 0:
-        if g_frog_skin_used + size > FROG_SKIN_BYTES or g_frog_skin_pose_count >= 256:
+        if g_kobic_skin_used + size > KOBIC_SKIN_BYTES or g_kobic_skin_pose_count >= 256:
             return 0
-        Memory.write_i64(g_frog_skin_palettes + entry * 40 + 16, offset)
-        Memory.write_i64(g_frog_skin_palettes + entry * 40 + 24, size)
-        g_frog_skin_pose_count = g_frog_skin_pose_count + 1
-        g_frog_skin_used = offset + size
+        Memory.write_i64(g_kobic_skin_palettes + entry * 40 + 16, offset)
+        Memory.write_i64(g_kobic_skin_palettes + entry * 40 + 24, size)
+        g_kobic_skin_pose_count = g_kobic_skin_pose_count + 1
+        g_kobic_skin_used = offset + size
     bones: i64 = offset + 16 + (vertices as i64) * 32
     # Header and joint indices are exactly representable float integers. The
     # shader sees one vec4 stream, independent of the static 44-byte mesh ABI.
-    Memory.write_f32(g_frog_skin_cpu + offset, ((offset + 16) / 16) as f32)
-    Memory.write_f32(g_frog_skin_cpu + offset + 4, (bones / 16) as f32)
-    Memory.write_f32(g_frog_skin_cpu + offset + 8, vertices as f32)
-    Memory.write_f32(g_frog_skin_cpu + offset + 12, joints as f32)
-    gpu_copy_bytes_fast(g_frog_skin_cpu + offset + 16, weights, (vertices as i64) * 32)
+    Memory.write_f32(g_kobic_skin_cpu + offset, ((offset + 16) / 16) as f32)
+    Memory.write_f32(g_kobic_skin_cpu + offset + 4, (bones / 16) as f32)
+    Memory.write_f32(g_kobic_skin_cpu + offset + 8, vertices as f32)
+    Memory.write_f32(g_kobic_skin_cpu + offset + 12, joints as f32)
+    gpu_copy_bytes_fast(g_kobic_skin_cpu + offset + 16, weights, (vertices as i64) * 32)
     i: i32 = 0
     while i < joints:
-        Mat4.identity().write_to_ptr(g_frog_skin_cpu + bones + i * 64)
+        Mat4.identity().write_to_ptr(g_kobic_skin_cpu + bones + i * 64)
         i = i + 1
-    Memory.write_i64(g_frog_skin_palettes + entry * 40, bones)
-    Memory.write_i64(g_frog_skin_palettes + entry * 40 + 8, (joints as i64) * 64)
-    Memory.write_i32(g_frog_skin_palettes + entry * 40 + 32, 3)
-    Memory.write_i32(g_frog_skin_offsets + mesh * 4, (offset / 16 + 1) as i32)
+    Memory.write_i64(g_kobic_skin_palettes + entry * 40, bones)
+    Memory.write_i64(g_kobic_skin_palettes + entry * 40 + 8, (joints as i64) * 64)
+    Memory.write_i32(g_kobic_skin_palettes + entry * 40 + 32, 3)
+    Memory.write_i32(g_kobic_skin_offsets + mesh * 4, (offset / 16 + 1) as i32)
     return bones
 
-fun frog_skin_publish_slot(mapped: i64, slot: i32):
-    if mapped == 0 or g_frog_skin_cpu == 0:
+fun kobic_skin_publish_slot(mapped: i64, slot: i32):
+    if mapped == 0 or g_kobic_skin_cpu == 0:
         return
     i: i32 = 0
-    while i < g_frog_skin_pose_count:
-        rec: i64 = g_frog_skin_palettes + i * 40
+    while i < g_kobic_skin_pose_count:
+        rec: i64 = g_kobic_skin_palettes + i * 40
         offset: i64 = Memory.read_i64(rec)
         size: i64 = Memory.read_i64(rec + 8)
         if offset != 0:
@@ -76,32 +76,32 @@ fun frog_skin_publish_slot(mapped: i64, slot: i32):
                 bit = 2
             if (dirty & bit) != 0:
                 start: i64 = Memory.read_i64(rec + 16)
-                gpu_copy_bytes_fast(mapped + start, g_frog_skin_cpu + start, offset + size - start)
+                gpu_copy_bytes_fast(mapped + start, g_kobic_skin_cpu + start, offset + size - start)
                 Memory.write_i32(rec + 32, dirty - bit)
             else:
-                gpu_copy_bytes_fast(mapped + offset, g_frog_skin_cpu + offset, size)
+                gpu_copy_bytes_fast(mapped + offset, g_kobic_skin_cpu + offset, size)
         i = i + 1
 
-fun frog_skin_release(mesh: i32):
-    record: i32 = frog_skin_offset(mesh)
+fun kobic_skin_release(mesh: i32):
+    record: i32 = kobic_skin_offset(mesh)
     if record == 0:
         return
     start: i64 = ((record - 1) as i64) * 16
-    bones: i64 = (Memory.read_f32(g_frog_skin_cpu + start + 4) as i64) * 16
+    bones: i64 = (Memory.read_f32(g_kobic_skin_cpu + start + 4) as i64) * 16
     i: i32 = 0
-    while i < g_frog_skin_pose_count:
-        if Memory.read_i64(g_frog_skin_palettes + i * 40) == bones:
-            Memory.write_i64(g_frog_skin_palettes + i * 40, 0)
+    while i < g_kobic_skin_pose_count:
+        if Memory.read_i64(g_kobic_skin_palettes + i * 40) == bones:
+            Memory.write_i64(g_kobic_skin_palettes + i * 40, 0)
             break
         i = i + 1
-    Memory.write_i32(g_frog_skin_offsets + mesh * 4, 0)
+    Memory.write_i32(g_kobic_skin_offsets + mesh * 4, 0)
 
-fun frog_skin_reset():
-    Memory.free(g_frog_skin_cpu)
-    Memory.free(g_frog_skin_offsets)
-    Memory.free(g_frog_skin_palettes)
-    g_frog_skin_cpu = 0
-    g_frog_skin_offsets = 0
-    g_frog_skin_palettes = 0
-    g_frog_skin_used = 16
-    g_frog_skin_pose_count = 0
+fun kobic_skin_reset():
+    Memory.free(g_kobic_skin_cpu)
+    Memory.free(g_kobic_skin_offsets)
+    Memory.free(g_kobic_skin_palettes)
+    g_kobic_skin_cpu = 0
+    g_kobic_skin_offsets = 0
+    g_kobic_skin_palettes = 0
+    g_kobic_skin_used = 16
+    g_kobic_skin_pose_count = 0

@@ -1,6 +1,6 @@
-# Frog Engine - Roadmap
+# Kobic Engine - Roadmap
 
-Frog is a 100% OOP game engine written in Dolet. It shares NO code with Kobic.
+Kobic is a 100% OOP game engine written in Dolet. It shares NO code with Kobic.
 Only common low-level dependencies (Vulkan bindings, Win32 window bindings)
 are reused via their standalone packages, the same way any independent engine
 would depend on them.
@@ -27,7 +27,7 @@ No dependency on `kobic/*`.
 - [x] Directory structure
 - [x] Roadmap document
 - [x] mod.dlt manifest
-- [x] frog.dlt hub
+- [x] kobic.dlt hub
 - [x] module.meta
 
 ### Phase 1  - Math library                             [DONE]
@@ -50,7 +50,7 @@ No dependency on `kobic/*`.
 - [x] GameObject OOP handle API
 - [x] ObjectBench update throughput test
 - [x] Tiny software-rendered player demo
-- [ ] Kobic-vs-Frog benchmark notes
+- [ ] Kobic-vs-Kobic benchmark notes
 
 ### Phase 3  - Vulkan layer                             [PLANNED]
 Low-level Vulkan wrappers written from scratch:
@@ -101,9 +101,9 @@ Bring the rest of the game to feature parity with the Kobic version.
 ## File Layout (planned)
 
 ```
-packages/frog/
+packages/kobic/
   mod.dlt            # module manifest + exports
-  frog.dlt           # umbrella import hub
+  kobic.dlt           # umbrella import hub
   module.meta
   README.md
   ROADMAP.md         # <-- you are here

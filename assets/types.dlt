@@ -1,5 +1,5 @@
 ##############################
-# Frog - Asset Types
+# Kobic - Asset Types
 ##############################
 
 struct AssetModels:
@@ -34,12 +34,12 @@ struct Model3D:
     parsed: i32 = 0
     ready: i32 = 0
     error: str = ""
-    frog_data: i64 = 0
-    frog_size: i64 = 0
-    frog_lod: i32 = 0
-    frog_lod_count: i32 = 0
-    frog_part_count: i32 = 0
-    frog_part_table: i64 = 0
+    kobic_data: i64 = 0
+    kobic_size: i64 = 0
+    kobic_lod: i32 = 0
+    kobic_lod_count: i32 = 0
+    kobic_part_count: i32 = 0
+    kobic_part_table: i64 = 0
 
 struct ModelLods:
     lod1_distance: f32 = 32.0

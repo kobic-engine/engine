@@ -1,5 +1,5 @@
 ##############################
-# Frog - Mat4 (column-major, 4x4 f32)
+# Kobic - Mat4 (column-major, 4x4 f32)
 # Vulkan/OpenGL compatible layout (64 bytes)
 ##############################
 

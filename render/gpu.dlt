@@ -1,5 +1,5 @@
 ##############################
-# Frog - Independent Vulkan GPU Renderer
+# Kobic - Independent Vulkan GPU Renderer
 # No Kobic dependency. Uses only window + vulkan bindings.
 ##############################
 
@@ -486,11 +486,11 @@ attach Renderer:
             return -1
         if model.parsed == 0:
             return -1
-        cached: i32 = self._find_model_cache(model.resolved_path, model.frog_lod)
+        cached: i32 = self._find_model_cache(model.resolved_path, model.kobic_lod)
         if cached >= 0:
             return cached
         mesh_id: i32 = self.upload_model_mesh(model)
-        self._remember_model_cache(model.resolved_path, model.frog_lod, mesh_id)
+        self._remember_model_cache(model.resolved_path, model.kobic_lod, mesh_id)
         return mesh_id
 
     fun upload_model_part(self, model: Model3D, mesh_index: i32, primitive_index: i32) -> i32:
@@ -498,11 +498,11 @@ attach Renderer:
             return -1
         if model.parsed == 0:
             return -1
-        cached: i32 = self._find_model_part_cache(model.resolved_path, model.frog_lod, mesh_index, primitive_index)
+        cached: i32 = self._find_model_part_cache(model.resolved_path, model.kobic_lod, mesh_index, primitive_index)
         if cached >= 0:
             return cached
         mesh_id: i32 = self.upload_model_part_mesh(model, mesh_index, primitive_index)
-        self._remember_model_part_cache(model.resolved_path, model.frog_lod, mesh_index, primitive_index, mesh_id)
+        self._remember_model_part_cache(model.resolved_path, model.kobic_lod, mesh_index, primitive_index, mesh_id)
         return mesh_id
 
     fun register_instance(self, source_mesh: i32) -> i32:
@@ -616,7 +616,7 @@ attach Renderer:
     fun set_instance_culling(self, enabled: i32):
         self.core.set_instance_culling(enabled)
 
-    # Select the culling strategy: FROG_CULL_MODE_CPU / _GPU / _AUTO.
+    # Select the culling strategy: KOBIC_CULL_MODE_CPU / _GPU / _AUTO.
     fun set_culling_mode(self, mode: i32):
         self.core.set_culling_mode(mode)
 
@@ -752,8 +752,8 @@ attach GpuRendererCore:
 
     fun upload_model_mesh(self, model: Model3D) -> i32:
         mesh: GpuMeshData = GpuMeshData()
-        if Str.equals(model.format, "frogmodel"):
-            mesh = gpu_make_frogmodel_model_vertices(model)
+        if Str.equals(model.format, "kobicmodel"):
+            mesh = gpu_make_kobicmodel_model_vertices(model)
         else:
             mesh = gpu_make_gltf_model_vertices(model)
         if mesh.vertices == 0:
@@ -776,8 +776,8 @@ attach GpuRendererCore:
 
     fun upload_model_part_mesh(self, model: Model3D, mesh_index: i32, primitive_index: i32) -> i32:
         mesh: GpuMeshData = GpuMeshData()
-        if Str.equals(model.format, "frogmodel"):
-            mesh = gpu_make_frogmodel_primitive_vertices(model, mesh_index, primitive_index)
+        if Str.equals(model.format, "kobicmodel"):
+            mesh = gpu_make_kobicmodel_primitive_vertices(model, mesh_index, primitive_index)
         else:
             mesh = gpu_make_gltf_primitive_vertices(model, mesh_index, primitive_index)
         if mesh.vertices == 0:

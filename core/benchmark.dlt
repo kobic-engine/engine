@@ -1,6 +1,6 @@
 ##############################
-# Frog - Object Benchmark
-# Measures update cost through Frog's OOP scene API.
+# Kobic - Object Benchmark
+# Measures update cost through Kobic's OOP scene API.
 ##############################
 
 struct ObjectBench:

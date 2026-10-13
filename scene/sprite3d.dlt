@@ -1,5 +1,5 @@
 ##############################
-# Frog - Sprite3D
+# Kobic - Sprite3D
 # A textured billboard quad placed in world space. Faces the camera every
 # frame (full or Y-axis/cylindrical billboarding), or stays fixed. Reuses the
 # engine's GPU-driven instanced draw path (bindless texture + model matrix)

@@ -1,29 +1,29 @@
 ##############################
-# Frog - Windows Time Backend
+# Kobic - Windows Time Backend
 ##############################
 
-static g_frog_time_frequency_value: i64 = 0
-static g_frog_time_frequency_buf: i64 = 0
-static g_frog_time_counter_buf: i64 = 0
+static g_kobic_time_frequency_value: i64 = 0
+static g_kobic_time_frequency_buf: i64 = 0
+static g_kobic_time_counter_buf: i64 = 0
 
-fun frog_time_frequency() -> i64:
-    if g_frog_time_frequency_value > 0:
-        return g_frog_time_frequency_value
-    if g_frog_time_frequency_buf == 0:
-        g_frog_time_frequency_buf = Memory.malloc_zeroed(8)
-    if g_frog_time_frequency_buf == 0:
+fun kobic_time_frequency() -> i64:
+    if g_kobic_time_frequency_value > 0:
+        return g_kobic_time_frequency_value
+    if g_kobic_time_frequency_buf == 0:
+        g_kobic_time_frequency_buf = Memory.malloc_zeroed(8)
+    if g_kobic_time_frequency_buf == 0:
         return 1000000000
-    QueryPerformanceFrequency(g_frog_time_frequency_buf)
-    freq: i64 = Memory.read_i64(g_frog_time_frequency_buf)
+    QueryPerformanceFrequency(g_kobic_time_frequency_buf)
+    freq: i64 = Memory.read_i64(g_kobic_time_frequency_buf)
     if freq <= 0:
         return 1000000000
-    g_frog_time_frequency_value = freq
+    g_kobic_time_frequency_value = freq
     return freq
 
-fun frog_time_now_ticks() -> i64:
-    if g_frog_time_counter_buf == 0:
-        g_frog_time_counter_buf = Memory.malloc_zeroed(8)
-    if g_frog_time_counter_buf == 0:
+fun kobic_time_now_ticks() -> i64:
+    if g_kobic_time_counter_buf == 0:
+        g_kobic_time_counter_buf = Memory.malloc_zeroed(8)
+    if g_kobic_time_counter_buf == 0:
         return TimeOps.time_now_ns()
-    QueryPerformanceCounter(g_frog_time_counter_buf)
-    return Memory.read_i64(g_frog_time_counter_buf)
+    QueryPerformanceCounter(g_kobic_time_counter_buf)
+    return Memory.read_i64(g_kobic_time_counter_buf)

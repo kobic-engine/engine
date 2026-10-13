@@ -1,5 +1,5 @@
 ##############################
-# Frog - glTF Loader
+# Kobic - glTF Loader
 # Uses the general json package. This file owns glTF-specific rules.
 ##############################
 
@@ -30,7 +30,7 @@ attach GltfLoader:
     # The lightweight raw glTF path uploads meshes directly and intentionally
     # has no runtime scene graph. Only accept files for which that flattening is
     # exact. General hierarchy, transforms, instancing, skins, and morphs must
-    # use the offline .frogmodel cooker, which bakes static node transforms.
+    # use the offline .kobicmodel cooker, which bakes static node transforms.
     static fun raw_scene_is_flat_safe(root: JsonValue) -> i32:
         nodes: JsonValue = root.get("nodes")
         meshes: JsonValue = root.get("meshes")
@@ -116,8 +116,8 @@ attach GltfLoader:
 attach Model3D:
 
     fun primitive_count(self) -> i32:
-        if Str.equals(self.format, "frogmodel"):
-            return self.frog_part_count
+        if Str.equals(self.format, "kobicmodel"):
+            return self.kobic_part_count
         if self.parsed == 0:
             return 0
         if self.doc.valid() == 0:
@@ -135,10 +135,10 @@ attach Model3D:
         return total
 
     fun mesh_primitive_count(self, mesh_index: i32) -> i32:
-        if Str.equals(self.format, "frogmodel"):
+        if Str.equals(self.format, "kobicmodel"):
             if mesh_index != 0:
                 return 0
-            return self.frog_part_count
+            return self.kobic_part_count
         if self.parsed == 0:
             return 0
         if self.doc.valid() == 0:
@@ -154,12 +154,12 @@ attach Model3D:
         return prims.size()
 
     fun primitive_material_index(self, mesh_index: i32, primitive_index: i32) -> i32:
-        if Str.equals(self.format, "frogmodel"):
+        if Str.equals(self.format, "kobicmodel"):
             if mesh_index != 0:
                 return -1
             if primitive_index < 0:
                 return -1
-            if primitive_index >= self.frog_part_count:
+            if primitive_index >= self.kobic_part_count:
                 return -1
             return primitive_index
         if self.parsed == 0:
@@ -182,21 +182,21 @@ attach Model3D:
         return prim.get_i32("material")
 
     fun material_name(self, material_index: i32) -> str:
-        if Str.equals(self.format, "frogmodel"):
+        if Str.equals(self.format, "kobicmodel"):
             if material_index < 0:
                 return ""
-            if material_index >= self.frog_part_count:
+            if material_index >= self.kobic_part_count:
                 return ""
-            part_entry: i64 = self.frog_part_table + ((material_index as i64) * 32)
-            name_offset: i64 = Memory.read_i32(self.frog_data + part_entry + 8) as i64
-            name_size: i64 = Memory.read_i32(self.frog_data + part_entry + 12) as i64
+            part_entry: i64 = self.kobic_part_table + ((material_index as i64) * 32)
+            name_offset: i64 = Memory.read_i32(self.kobic_data + part_entry + 8) as i64
+            name_size: i64 = Memory.read_i32(self.kobic_data + part_entry + 12) as i64
             if name_offset <= 0:
                 return ""
             if name_size <= 0:
                 return ""
-            if name_offset + name_size > self.frog_size:
+            if name_offset + name_size > self.kobic_size:
                 return ""
-            return (self.frog_data + name_offset) as str
+            return (self.kobic_data + name_offset) as str
         if self.parsed == 0:
             return ""
         if self.doc.valid() == 0:
@@ -234,7 +234,7 @@ attach GltfLoader:
             return Model3D(path=path, resolved_path=resolved_path, format=format, mesh_id=-1, found=1, parsed=0, ready=0, error="unsupported glTF version")
 
         if GltfLoader.raw_scene_is_flat_safe(root) == 0:
-            return Model3D(path=path, resolved_path=resolved_path, format=format, mesh_id=-1, found=1, parsed=0, ready=0, error="glTF scene hierarchy requires a v2 .frogmodel; cook it with Frog Cooker")
+            return Model3D(path=path, resolved_path=resolved_path, format=format, mesh_id=-1, found=1, parsed=0, ready=0, error="glTF scene hierarchy requires a v2 .kobicmodel; cook it with Kobic Cooker")
 
         meshes: JsonValue = root.get("meshes")
         nodes: JsonValue = root.get("nodes")

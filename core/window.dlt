@@ -1,10 +1,10 @@
 ##############################
-# Frog - Window
+# Kobic - Window
 # OOP shell over the unified window package.
 ##############################
 
 struct AppWindow:
-    title: str = "Frog Engine"
+    title: str = "Kobic Engine"
     width: i32 = 1280
     height: i32 = 720
     handle: i64 = 0

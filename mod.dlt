@@ -1,8 +1,8 @@
 ##############################
-# Frog Engine - Module Manifest
+# Kobic Engine - Module Manifest
 # Grows as phases land (see ROADMAP.md).
 ##############################
-module frog
+module kobic
 
 import window
 import json
@@ -10,74 +10,74 @@ import image
 requires vulkan
 
 # Phase 1: Math
-load frog/math/math_utils
-load frog/math/vec3
-load frog/math/mat4
-load frog/math/quat
-load frog/math/color
+load kobic/math/math_utils
+load kobic/math/vec3
+load kobic/math/mat4
+load kobic/math/quat
+load kobic/math/color
 
 # Phase 2: Core OOP shell
-load frog/core/platform/{os}/time
-load frog/core/time
-load frog/core/window
-load frog/core/app
-load frog/core/platform/{os}/input
+load kobic/core/platform/{os}/time
+load kobic/core/time
+load kobic/core/window
+load kobic/core/app
+load kobic/core/platform/{os}/input
 
 # Assets
-load frog/assets/types
-load frog/assets/gltf_loader
-load frog/assets/frog_model_loader
-load frog/assets/frog_texture_loader
-load frog/assets/assets
-load frog/assets/tiled_atlas
+load kobic/assets/types
+load kobic/assets/gltf_loader
+load kobic/assets/kobic_model_loader
+load kobic/assets/kobic_texture_loader
+load kobic/assets/assets
+load kobic/assets/tiled_atlas
 
 # Phase 3: Scene objects
-load frog/scene/environment
-load frog/scene/node
-load frog/scene/mesh_transform_group
-load frog/scene/game_object
-load frog/scene/material3d
-load frog/scene/mesh3d
-load frog/scene/sprite3d
-load frog/scene/light3d
-load frog/scene/day_cycle
-load frog/scene/physics
+load kobic/scene/environment
+load kobic/scene/node
+load kobic/scene/mesh_transform_group
+load kobic/scene/game_object
+load kobic/scene/material3d
+load kobic/scene/mesh3d
+load kobic/scene/sprite3d
+load kobic/scene/light3d
+load kobic/scene/day_cycle
+load kobic/scene/physics
 
 # Phase 3.5: Early software rendering
-load frog/render/software_renderer
+load kobic/render/software_renderer
 
 # Phase 4: Independent Vulkan GPU rendering
-load frog/render/gpu_shaders
-load frog/render/gpu_culling
-load frog/render/platform/{os}/gpu_vulkan_context
-load frog/render/gpu_swapchain
-load frog/render/gpu_texture
-load frog/render/gpu_hzb
-load frog/render/gpu_shadow
-load frog/render/gpu_sky
-load frog/render/gpu_bloom
-load frog/render/gpu_vertex_layout
-load frog/render/gpu_foliage
-load frog/render/gpu_profiler
-load frog/render/gpu_render_pass
-load frog/render/gpu_temporal
-load frog/render/gpu_renderer_core
-load frog/render/gpu_debug
-load frog/render/gpu_mesh
-load frog/render/gpu_skinning
-load frog/render/mesh_update_budget
-load frog/render/gpu
-load frog/core/runtime
-load frog/core/engine
-load frog/scene/skeleton3d
-load frog/scene/spring_arm3d
-load frog/scene/mesh_particles3d
+load kobic/render/gpu_shaders
+load kobic/render/gpu_culling
+load kobic/render/platform/{os}/gpu_vulkan_context
+load kobic/render/gpu_swapchain
+load kobic/render/gpu_texture
+load kobic/render/gpu_hzb
+load kobic/render/gpu_shadow
+load kobic/render/gpu_sky
+load kobic/render/gpu_bloom
+load kobic/render/gpu_vertex_layout
+load kobic/render/gpu_foliage
+load kobic/render/gpu_profiler
+load kobic/render/gpu_render_pass
+load kobic/render/gpu_temporal
+load kobic/render/gpu_renderer_core
+load kobic/render/gpu_debug
+load kobic/render/gpu_mesh
+load kobic/render/gpu_skinning
+load kobic/render/mesh_update_budget
+load kobic/render/gpu
+load kobic/core/runtime
+load kobic/core/engine
+load kobic/scene/skeleton3d
+load kobic/scene/spring_arm3d
+load kobic/scene/mesh_particles3d
 
 # Benchmarks
-load frog/core/benchmark
+load kobic/core/benchmark
 
 # Umbrella hub
-load frog/frog
+load kobic/kobic
 
 # Exports
 export Vec3, Mat4, Quat, Color, Spring

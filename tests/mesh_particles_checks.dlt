@@ -1,5 +1,5 @@
 import std
-import frog
+import kobic
 
 static g_particle_floor: i32 = 1
 

@@ -1,5 +1,5 @@
 ##############################
-# Frog - GPU-Driven Culling
+# Kobic - GPU-Driven Culling
 # Compute-shader frustum culling that compacts visible instances into a
 # GPU buffer the graphics pass draws via a single instanced draw.
 #
@@ -20,26 +20,26 @@
 #   [80..95]  uv transform (vec4)
 #   [96..127] texture-index block (8 i32: 5 bindless slots + 3 spare)
 #   [128..143] bounds sphere (center.xyz, radius)
-FROG_CULL_INSTANCE_STRIDE: i32 = 144
+KOBIC_CULL_INSTANCE_STRIDE: i32 = 144
 # A compacted output instance: the full 128-byte graphics instance record
-# (model + material + uv + texture indices), matching FROG_GPU_INSTANCE_STRIDE
+# (model + material + uv + texture indices), matching KOBIC_GPU_INSTANCE_STRIDE
 # so the graphics pass binds it directly as the per-instance vertex buffer.
-FROG_CULL_OUT_STRIDE: i32 = 128
+KOBIC_CULL_OUT_STRIDE: i32 = 128
 # Push-constant block: 6 planes (vec4) + 4 u32 + camDistance vec4
 # = 96 + 16 + 16 = 128 bytes. camDistance = cull origin (xyz) + max distance
 # (w); w <= 0 disables the optional distance cull (main camera pass).
-FROG_CULL_PUSH_SIZE: i32 = 128
+KOBIC_CULL_PUSH_SIZE: i32 = 128
 # Max indirect commands per frame. This also covers world-space static-arena
 # slices, where every independently culled terrain cluster owns one command.
 # 65K keeps very large streamed worlds GPU-driven without a CPU fallback while
 # costing only a few MiB across the double-buffered main/shadow command arrays.
-FROG_CULL_MAX_GROUPS: i32 = 65536
+KOBIC_CULL_MAX_GROUPS: i32 = 65536
 # Frames-in-flight slots the cull buffers are partitioned into, so the
 # compute pass for frame N never writes memory frame N-1 is still reading.
-FROG_CULL_SLOTS: i32 = 2
+KOBIC_CULL_SLOTS: i32 = 2
 # GPU-driven shadow culling (S6): number of shadow cascades the shadow
 # output/command regions are partitioned for (matches the renderer's max).
-FROG_CULL_SHADOW_CASCADES: i32 = 2
+KOBIC_CULL_SHADOW_CASCADES: i32 = 2
 
 # Culling mode selectors (Engine.set_culling_mode).
 #   CPU  = CPU-side per-instance culling + draw (default, safe, best for
@@ -47,9 +47,9 @@ FROG_CULL_SHADOW_CASCADES: i32 = 2
 #   GPU  = GPU-driven compute cull + indirect draw (best for heavy
 #          instancing: thousands of identical instances).
 #   AUTO = pick GPU when the instance count >= the auto threshold.
-FROG_CULL_MODE_CPU: i32 = 0
-FROG_CULL_MODE_GPU: i32 = 1
-FROG_CULL_MODE_AUTO: i32 = 2
+KOBIC_CULL_MODE_CPU: i32 = 0
+KOBIC_CULL_MODE_GPU: i32 = 1
+KOBIC_CULL_MODE_AUTO: i32 = 2
 
 # @heap: this pipeline holds OS/GPU state (buffers, descriptor sets, slot
 # capacity) that is mutated through a borrowed pointer (gpu_cull_ptr) stored
@@ -100,7 +100,7 @@ FROG_CULL_MODE_AUTO: i32 = 2
     hzb_sampler: i64 = 0
     hzb_state_buffer: i64 = 0
     capacity: i32 = 0
-    # Per-slot partition sizes (capacity instances / FROG_CULL_MAX_GROUPS cmds
+    # Per-slot partition sizes (capacity instances / KOBIC_CULL_MAX_GROUPS cmds
     # per slot). The compute pass for frame `slot` writes only its partition.
     slot_cap: i32 = 0
     # Persistent-input bookkeeping: the candidate buffer is uploaded once and
@@ -118,7 +118,7 @@ FROG_CULL_MODE_AUTO: i32 = 2
 # Find a host-visible + host-coherent memory type index for the given
 # memory-requirement bits. Returns -1 on failure. Mirrors the search in
 # gpu_renderer_core's buffer upload.
-fun _frog_cull_find_host_mem(phys_device: i64, req_bits: i32) -> i32:
+fun _kobic_cull_find_host_mem(phys_device: i64, req_bits: i32) -> i32:
     mem_props: i64 = Memory.malloc_zeroed(520)
     if mem_props == 0:
         return 0 - 1
@@ -147,7 +147,7 @@ fun _frog_cull_find_host_mem(phys_device: i64, req_bits: i32) -> i32:
 # usage flags. Writes handle->out_buf_pp and memory->out_mem_pp (each an
 # 8-byte slot). Returns 1 on success, 0 on failure. If map_pp != 0, the
 # buffer is persistently mapped and the pointer written there.
-fun _frog_cull_make_buffer(device: i64, phys_device: i64, size: i64, usage: i32, out_buf_pp: i64, out_mem_pp: i64, map_pp: i64) -> i32:
+fun _kobic_cull_make_buffer(device: i64, phys_device: i64, size: i64, usage: i32, out_buf_pp: i64, out_mem_pp: i64, map_pp: i64) -> i32:
     buf_ci: i64 = Memory.malloc_zeroed(56)
     if buf_ci == 0:
         return 0
@@ -169,7 +169,7 @@ fun _frog_cull_make_buffer(device: i64, phys_device: i64, size: i64, usage: i32,
     req_bits: i32 = Memory.read_i32(mem_req + 16)
     Memory.free(mem_req)
 
-    mt: i32 = _frog_cull_find_host_mem(phys_device, req_bits)
+    mt: i32 = _kobic_cull_find_host_mem(phys_device, req_bits)
     if mt < 0:
         vkDestroyBuffer(device, buf, 0)
         return 0
@@ -244,7 +244,7 @@ attach GpuCullPipeline:
         Memory.free(dsl_ci2)
         Memory.free(bindings)
         if r1 != 0:
-            print(@"[frog.cull] FAIL descriptor_set_layout r={r1}")
+            print(@"[kobic.cull] FAIL descriptor_set_layout r={r1}")
             return 0
 
         # --- Pipeline layout: 1 set + push-constant range ---
@@ -252,7 +252,7 @@ attach GpuCullPipeline:
         pcr: i64 = Memory.malloc_zeroed(12)
         Memory.write_i32(pcr, 32)                         # COMPUTE stage
         Memory.write_i32(pcr + 4, 0)                      # offset
-        Memory.write_i32(pcr + 8, FROG_CULL_PUSH_SIZE)    # size
+        Memory.write_i32(pcr + 8, KOBIC_CULL_PUSH_SIZE)    # size
         setp: i64 = Memory.malloc_zeroed(8)
         Memory.write_ptr(setp, self.desc_set_layout)
         # VkPipelineLayoutCreateInfo:
@@ -272,13 +272,13 @@ attach GpuCullPipeline:
         Memory.free(pcr)
         Memory.free(setp)
         if r2 != 0:
-            print(@"[frog.cull] FAIL pipeline_layout r={r2}")
+            print(@"[kobic.cull] FAIL pipeline_layout r={r2}")
             return 0
 
         # --- Shader module from embedded SPIR-V ---
         sh: EmbeddedShader = get_cull_compute_shader()
         if sh.data == 0:
-            print("[frog.cull] FAIL shader data null")
+            print("[kobic.cull] FAIL shader data null")
             return 0
         sm_ci: i64 = Memory.malloc_zeroed(40)
         Memory.write_i32(sm_ci, 12)                       # sType — match engine's working shader-module path
@@ -291,7 +291,7 @@ attach GpuCullPipeline:
         Memory.free(sm_ci)
         sh.release()
         if r3 != 0:
-            print(@"[frog.cull] FAIL shader_module r={r3}")
+            print(@"[kobic.cull] FAIL shader_module r={r3}")
             return 0
 
         # --- Compute pipeline ---
@@ -320,7 +320,7 @@ attach GpuCullPipeline:
         Memory.free(cp_ci)
         Memory.free(stage)
         if r4 != 0:
-            print(@"[frog.cull] FAIL compute_pipeline r={r4}")
+            print(@"[kobic.cull] FAIL compute_pipeline r={r4}")
             return 0
 
         # --- Descriptor pool (main + shadow sets) ---
@@ -345,7 +345,7 @@ attach GpuCullPipeline:
         Memory.free(dp_ci)
         Memory.free(ps)
         if r5 != 0:
-            print(@"[frog.cull] FAIL descriptor_pool r={r5}")
+            print(@"[kobic.cull] FAIL descriptor_pool r={r5}")
             return 0
 
         self.ready = 1
@@ -353,7 +353,7 @@ attach GpuCullPipeline:
 
     # Phase 1: ensure the three buffers can hold `count` instances.
     # Reallocates (grows) when needed. `count` is the PER-FRAME instance
-    # budget; the buffers hold FROG_CULL_SLOTS partitions of that size so
+    # budget; the buffers hold KOBIC_CULL_SLOTS partitions of that size so
     # frames in flight never clobber each other. Returns 1 on success.
     fun ensure_capacity(self, count: i32) -> i32:
         if self.ready == 0:
@@ -369,22 +369,22 @@ attach GpuCullPipeline:
         # Free old buffers if any.
         self._free_buffers()
 
-        slots: i64 = FROG_CULL_SLOTS as i64
+        slots: i64 = KOBIC_CULL_SLOTS as i64
         # Input is also slot-partitioned. Regular instance culling keeps using
         # slot 0 as persistent read-only data, while dynamic static-arena
         # rebuilds use the current frame slot so host writes cannot race a
         # previous frame's compute dispatch.
-        in_size: i64 = (new_cap as i64) * (FROG_CULL_INSTANCE_STRIDE as i64) * slots
+        in_size: i64 = (new_cap as i64) * (KOBIC_CULL_INSTANCE_STRIDE as i64) * slots
         # Output + indirect commands ARE written per frame by compute and
         # read by the draw, so they stay slot-partitioned for frames-in-flight.
-        out_size: i64 = (new_cap as i64) * (FROG_CULL_OUT_STRIDE as i64) * slots
+        out_size: i64 = (new_cap as i64) * (KOBIC_CULL_OUT_STRIDE as i64) * slots
         # usage: STORAGE_BUFFER(0x20) | VERTEX_BUFFER(0x80) for out so the
         # graphics pass can bind it as an instance vertex buffer.
         bp: i64 = Memory.malloc_zeroed(8)
         mp: i64 = Memory.malloc_zeroed(8)
         map_pp: i64 = Memory.malloc_zeroed(8)
 
-        if _frog_cull_make_buffer(self.device, self.phys_device, in_size, 32, bp, mp, map_pp) == 0:
+        if _kobic_cull_make_buffer(self.device, self.phys_device, in_size, 32, bp, mp, map_pp) == 0:
             Memory.free(bp)
             Memory.free(mp)
             Memory.free(map_pp)
@@ -393,7 +393,7 @@ attach GpuCullPipeline:
         self.in_memory = Memory.read_ptr(mp)
         self.in_mapped = Memory.read_ptr(map_pp)
 
-        if _frog_cull_make_buffer(self.device, self.phys_device, out_size, 160, bp, mp, 0) == 0:
+        if _kobic_cull_make_buffer(self.device, self.phys_device, out_size, 160, bp, mp, 0) == 0:
             Memory.free(bp)
             Memory.free(mp)
             Memory.free(map_pp)
@@ -406,8 +406,8 @@ attach GpuCullPipeline:
         # mesh group PER SLOT. usage INDIRECT(0x100) | STORAGE(0x20) = 288.
         # Host-mapped so the CPU pre-fills indexCount/firstInstance and zeroes
         # instanceCount per group each frame.
-        indirect_size: i64 = (FROG_CULL_MAX_GROUPS as i64) * 20 * slots
-        if _frog_cull_make_buffer(self.device, self.phys_device, indirect_size, 288, bp, mp, map_pp) == 0:
+        indirect_size: i64 = (KOBIC_CULL_MAX_GROUPS as i64) * 20 * slots
+        if _kobic_cull_make_buffer(self.device, self.phys_device, indirect_size, 288, bp, mp, map_pp) == 0:
             Memory.free(bp)
             Memory.free(mp)
             Memory.free(map_pp)
@@ -418,8 +418,8 @@ attach GpuCullPipeline:
 
         # R2 draw-count buffer: one u32 per group slot (host-mapped). usage
         # INDIRECT(0x100) so vkCmdDrawIndexedIndirectCountKHR can read it.
-        draw_count_size: i64 = (FROG_CULL_MAX_GROUPS as i64) * 4 * slots
-        if _frog_cull_make_buffer(self.device, self.phys_device, draw_count_size, 256, bp, mp, map_pp) == 0:
+        draw_count_size: i64 = (KOBIC_CULL_MAX_GROUPS as i64) * 4 * slots
+        if _kobic_cull_make_buffer(self.device, self.phys_device, draw_count_size, 256, bp, mp, map_pp) == 0:
             Memory.free(bp)
             Memory.free(mp)
             Memory.free(map_pp)
@@ -431,9 +431,9 @@ attach GpuCullPipeline:
         # S6: shadow output region — compacted shadow instances, partitioned
         # per cascade × per slot. usage STORAGE(0x20)|VERTEX(0x80)=160 so the
         # shadow pass binds it as the per-instance vertex buffer.
-        cascades: i64 = FROG_CULL_SHADOW_CASCADES as i64
-        shadow_out_size: i64 = (new_cap as i64) * (FROG_CULL_OUT_STRIDE as i64) * cascades * slots
-        if _frog_cull_make_buffer(self.device, self.phys_device, shadow_out_size, 160, bp, mp, 0) == 0:
+        cascades: i64 = KOBIC_CULL_SHADOW_CASCADES as i64
+        shadow_out_size: i64 = (new_cap as i64) * (KOBIC_CULL_OUT_STRIDE as i64) * cascades * slots
+        if _kobic_cull_make_buffer(self.device, self.phys_device, shadow_out_size, 160, bp, mp, 0) == 0:
             Memory.free(bp)
             Memory.free(mp)
             Memory.free(map_pp)
@@ -443,8 +443,8 @@ attach GpuCullPipeline:
 
         # S6: shadow indirect commands — one VkDrawIndexedIndirectCommand (20B)
         # per group, per cascade, per slot. usage INDIRECT(0x100)|STORAGE(0x20).
-        shadow_cmd_size: i64 = (FROG_CULL_MAX_GROUPS as i64) * 20 * cascades * slots
-        if _frog_cull_make_buffer(self.device, self.phys_device, shadow_cmd_size, 288, bp, mp, map_pp) == 0:
+        shadow_cmd_size: i64 = (KOBIC_CULL_MAX_GROUPS as i64) * 20 * cascades * slots
+        if _kobic_cull_make_buffer(self.device, self.phys_device, shadow_cmd_size, 288, bp, mp, map_pp) == 0:
             Memory.free(bp)
             Memory.free(mp)
             Memory.free(map_pp)
@@ -458,7 +458,7 @@ attach GpuCullPipeline:
         Memory.free(map_pp)
 
         self.slot_cap = new_cap
-        self.capacity = new_cap * FROG_CULL_SLOTS
+        self.capacity = new_cap * KOBIC_CULL_SLOTS
         self.in_dirty = 1
         self._update_descriptors()
         self._update_shadow_descriptors()
@@ -475,23 +475,23 @@ attach GpuCullPipeline:
 
     # First indirect-command index for frame `slot`.
     fun slot_cmd_base(self, slot: i32) -> i32:
-        return slot * FROG_CULL_MAX_GROUPS
+        return slot * KOBIC_CULL_MAX_GROUPS
 
     # First OUTPUT-instance slot for frame `slot` (output stays partitioned).
     fun slot_out_base(self, slot: i32) -> i32:
         return slot * self.slot_cap
 
     # S6 shadow region bases. Shadow output is partitioned per (slot, cascade):
-    #   region index = slot * FROG_CULL_SHADOW_CASCADES + cascade
-    # Each region holds slot_cap instances / FROG_CULL_MAX_GROUPS commands.
+    #   region index = slot * KOBIC_CULL_SHADOW_CASCADES + cascade
+    # Each region holds slot_cap instances / KOBIC_CULL_MAX_GROUPS commands.
     fun shadow_region(self, slot: i32, cascade: i32) -> i32:
-        return slot * FROG_CULL_SHADOW_CASCADES + cascade
+        return slot * KOBIC_CULL_SHADOW_CASCADES + cascade
 
     fun shadow_out_base(self, slot: i32, cascade: i32) -> i32:
         return self.shadow_region(slot, cascade) * self.slot_cap
 
     fun shadow_cmd_base(self, slot: i32, cascade: i32) -> i32:
-        return self.shadow_region(slot, cascade) * FROG_CULL_MAX_GROUPS
+        return self.shadow_region(slot, cascade) * KOBIC_CULL_MAX_GROUPS
 
     fun shadow_out_handle(self) -> i64:
         return self.shadow_out_buffer
@@ -511,7 +511,7 @@ attach GpuCullPipeline:
             return
         if g < 0:
             return
-        if g >= FROG_CULL_MAX_GROUPS * FROG_CULL_SHADOW_CASCADES * FROG_CULL_SLOTS:
+        if g >= KOBIC_CULL_MAX_GROUPS * KOBIC_CULL_SHADOW_CASCADES * KOBIC_CULL_SLOTS:
             return
         base: i64 = self.shadow_cmd_mapped + (g as i64) * 20
         Memory.write_i32(base + 0, count)         # indexCount
@@ -543,7 +543,7 @@ attach GpuCullPipeline:
         Memory.write_ptr(dsp, self.shadow_desc_set)
         vkCmdBindDescriptorSets(cmd, 1, self.pipeline_layout, 0, 1, dsp, 0, 0)
         Memory.free(dsp)
-        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, FROG_CULL_PUSH_SIZE, push_ptr)
+        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, KOBIC_CULL_PUSH_SIZE, push_ptr)
         groups: i32 = (candidate_count + 63) / 64
         vkCmdDispatch(cmd, groups, 1, 1)
 
@@ -866,7 +866,7 @@ attach GpuCullPipeline:
             return
         if b < 0:
             return
-        if b >= FROG_CULL_MAX_GROUPS * FROG_CULL_SLOTS:
+        if b >= KOBIC_CULL_MAX_GROUPS * KOBIC_CULL_SLOTS:
             return
         Memory.write_i32(self.draw_count_mapped + (b as i64) * 4, count)
 
@@ -883,7 +883,7 @@ attach GpuCullPipeline:
             return
         if g < 0:
             return
-        if g >= FROG_CULL_MAX_GROUPS * FROG_CULL_SLOTS:
+        if g >= KOBIC_CULL_MAX_GROUPS * KOBIC_CULL_SLOTS:
             return
         base: i64 = self.count_mapped + self.group_cmd_offset(g)
         Memory.write_i32(base + 0, count)         # indexCount / vertexCount
@@ -901,7 +901,7 @@ attach GpuCullPipeline:
             return
         if g < 0:
             return
-        if g >= FROG_CULL_MAX_GROUPS * FROG_CULL_SLOTS:
+        if g >= KOBIC_CULL_MAX_GROUPS * KOBIC_CULL_SLOTS:
             return
         Memory.write_i32(self.count_mapped + self.group_cmd_offset(g) + 16, first_instance)
 
@@ -910,7 +910,7 @@ attach GpuCullPipeline:
             return
         if g < 0:
             return
-        if g >= FROG_CULL_MAX_GROUPS * FROG_CULL_SLOTS:
+        if g >= KOBIC_CULL_MAX_GROUPS * KOBIC_CULL_SLOTS:
             return
         Memory.write_i32(self.count_mapped + self.group_cmd_offset(g) + 4, instance_count)
 
@@ -921,7 +921,7 @@ attach GpuCullPipeline:
         return Memory.read_i32(self.count_mapped + self.group_cmd_offset(g) + 4)
 
     # Record a cull dispatch for one group into `cmd`. push_ptr is a filled
-    # FROG_CULL_PUSH_SIZE block where the 6 planes are already written; this
+    # KOBIC_CULL_PUSH_SIZE block where the 6 planes are already written; this
     # fills candidateCount/inBase/outBase/cmdIndex (offsets 96/100/104/108).
     fun dispatch_group(self, cmd: i64, candidate_count: i32, in_base: i32, out_base: i32, cmd_index: i32, push_ptr: i64):
         if self.ready == 0:
@@ -937,7 +937,7 @@ attach GpuCullPipeline:
         Memory.write_ptr(dsp, self.desc_set)
         vkCmdBindDescriptorSets(cmd, 1, self.pipeline_layout, 0, 1, dsp, 0, 0)
         Memory.free(dsp)
-        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, FROG_CULL_PUSH_SIZE, push_ptr)
+        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, KOBIC_CULL_PUSH_SIZE, push_ptr)
         groups: i32 = (candidate_count + 63) / 64
         vkCmdDispatch(cmd, groups, 1, 1)
 
@@ -996,7 +996,7 @@ attach GpuCullPipeline:
             return
         if idx >= self.capacity:
             return
-        dst: i64 = self.in_mapped + (idx as i64) * (FROG_CULL_INSTANCE_STRIDE as i64)
+        dst: i64 = self.in_mapped + (idx as i64) * (KOBIC_CULL_INSTANCE_STRIDE as i64)
         Memory.copy(dst, model_ptr, 64)
         Memory.set(dst + 64, 0, 64)         # zero material + uv + texidx block
         Memory.write_f32(dst + 128, cx)
@@ -1014,7 +1014,7 @@ attach GpuCullPipeline:
             return
         if idx >= self.capacity:
             return
-        dst: i64 = self.in_mapped + (idx as i64) * (FROG_CULL_INSTANCE_STRIDE as i64)
+        dst: i64 = self.in_mapped + (idx as i64) * (KOBIC_CULL_INSTANCE_STRIDE as i64)
         Memory.copy(dst, inst_ptr, 128)
         Memory.write_f32(dst + 128, cx)
         Memory.write_f32(dst + 132, cy)
@@ -1036,11 +1036,11 @@ attach GpuCullPipeline:
         s: i32 = slot
         if s < 0:
             s = 0
-        if s >= FROG_CULL_SLOTS:
-            s = FROG_CULL_SLOTS - 1
+        if s >= KOBIC_CULL_SLOTS:
+            s = KOBIC_CULL_SLOTS - 1
         absolute_idx: i32 = s * self.slot_cap + idx
-        dst: i64 = self.in_mapped + (absolute_idx as i64) * (FROG_CULL_INSTANCE_STRIDE as i64)
-        Memory.set(dst, 0, FROG_CULL_INSTANCE_STRIDE)
+        dst: i64 = self.in_mapped + (absolute_idx as i64) * (KOBIC_CULL_INSTANCE_STRIDE as i64)
+        Memory.set(dst, 0, KOBIC_CULL_INSTANCE_STRIDE)
         Memory.write_f32(dst + 0, 1.0)
         Memory.write_f32(dst + 20, 1.0)
         Memory.write_f32(dst + 40, 1.0)
@@ -1066,7 +1066,7 @@ attach GpuCullPipeline:
             return
         if idx >= self.slot_cap:
             return
-        dst: i64 = self.in_mapped + (idx as i64) * (FROG_CULL_INSTANCE_STRIDE as i64)
+        dst: i64 = self.in_mapped + (idx as i64) * (KOBIC_CULL_INSTANCE_STRIDE as i64)
         Memory.copy(dst, model_ptr, 64)
 
     # Base address of candidate slot `idx` in the mapped input buffer (0 if
@@ -1079,7 +1079,7 @@ attach GpuCullPipeline:
             return 0
         if idx >= self.capacity:
             return 0
-        return self.in_mapped + (idx as i64) * (FROG_CULL_INSTANCE_STRIDE as i64)
+        return self.in_mapped + (idx as i64) * (KOBIC_CULL_INSTANCE_STRIDE as i64)
 
     # Zero a group's slice of the out_buffer (count records of 96B each,
     # starting at out_base) plus its indirect command before the dispatch.
@@ -1093,8 +1093,8 @@ attach GpuCullPipeline:
             return
         if self.out_buffer == 0:
             return
-        out_off: i64 = (out_base as i64) * (FROG_CULL_OUT_STRIDE as i64)
-        out_size: i64 = (count as i64) * (FROG_CULL_OUT_STRIDE as i64)
+        out_off: i64 = (out_base as i64) * (KOBIC_CULL_OUT_STRIDE as i64)
+        out_size: i64 = (count as i64) * (KOBIC_CULL_OUT_STRIDE as i64)
         vkCmdFillBuffer(cmd, self.out_buffer, out_off, out_size, 0)
 
         # Two transfer->compute VkBufferMemoryBarrier (each 56 bytes):
@@ -1115,7 +1115,7 @@ attach GpuCullPipeline:
         Memory.free(bb)
 
     # Record the culling dispatch into `cmd`. push_ptr points at a filled
-    # FROG_CULL_PUSH_SIZE block (6 planes + instanceCount + pad). After this
+    # KOBIC_CULL_PUSH_SIZE block (6 planes + instanceCount + pad). After this
     # the out_buffer holds compacted visible instance columns and the count
     # buffer holds how many. A compute->vertex barrier is inserted so the
     # graphics pass sees the writes.
@@ -1129,7 +1129,7 @@ attach GpuCullPipeline:
         Memory.write_ptr(dsp, self.desc_set)
         vkCmdBindDescriptorSets(cmd, 1, self.pipeline_layout, 0, 1, dsp, 0, 0)
         Memory.free(dsp)
-        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, FROG_CULL_PUSH_SIZE, push_ptr)
+        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, KOBIC_CULL_PUSH_SIZE, push_ptr)
         groups: i32 = (instance_count + 63) / 64
         vkCmdDispatch(cmd, groups, 1, 1)
 
@@ -1180,10 +1180,10 @@ attach GpuCullPipeline:
     # touching the render loop. cmd_pool/gfx_queue from the render pass.
     fun self_test(self, cmd_pool: i64, gfx_queue: i64):
         if self.ready == 0:
-            print("[frog.cull] self_test skipped (not ready)")
+            print("[kobic.cull] self_test skipped (not ready)")
             return
         if self.ensure_capacity(8) == 0:
-            print("[frog.cull] self_test FAILED ensure_capacity")
+            print("[kobic.cull] self_test FAILED ensure_capacity")
             return
 
         # Build 4 identity-positioned instances at different world X.
@@ -1199,7 +1199,7 @@ attach GpuCullPipeline:
             i = i + 1
         Memory.free(m)
 
-        push: i64 = Memory.malloc_zeroed(FROG_CULL_PUSH_SIZE)
+        push: i64 = Memory.malloc_zeroed(KOBIC_CULL_PUSH_SIZE)
         Memory.write_f32(push + 0, 1.0)
         Memory.write_f32(push + 12, 1000.0)
         Memory.write_f32(push + 16 + 0, 0.0 - 1.0)
@@ -1218,7 +1218,7 @@ attach GpuCullPipeline:
         cmd: i64 = gpu_tex_begin_oneshot(self.device, cmd_pool)
         if cmd == 0:
             Memory.free(push)
-            print("[frog.cull] self_test FAILED begin cmd")
+            print("[kobic.cull] self_test FAILED begin cmd")
             return
         self.dispatch_group(cmd, 4, 0, 0, 0, push)
         self.barrier_after_dispatches(cmd)
@@ -1226,12 +1226,12 @@ attach GpuCullPipeline:
         Memory.free(push)
 
         visible: i32 = self.group_visible_count(0)
-        print(@"[frog.cull] self_test visible={visible} (expected 2)")
+        print(@"[kobic.cull] self_test visible={visible} (expected 2)")
 
 # Extract 6 frustum planes from a column-major view*projection matrix into
 # `out` (6 x vec4 = 96 bytes). Gribb/Hartmann method. Planes are normalized.
 # Matrix layout: m[col*4 + row], i.e. element(row,col) = read_f32(vp + (col*4+row)*4).
-fun frog_cull_extract_planes(vp: i64, out: i64):
+fun kobic_cull_extract_planes(vp: i64, out: i64):
     # rows of the matrix: r[row][col] = m[col*4+row]
     # We need rows 0..3. Build plane = row3 +/- row{0,1,2}.
     ri: i32 = 0
@@ -1256,19 +1256,19 @@ fun frog_cull_extract_planes(vp: i64, out: i64):
     # row0 = (m00,m01,m02,m03), row1=(m10..), row2=(m20..), row3=(m30..)
     # Note: with column-major storage, row R component C = m[C][R] = element above.
     # left = row3 + row0
-    frog_cull_write_plane(out, 0, m30 + m00, m31 + m01, m32 + m02, m33 + m03)
+    kobic_cull_write_plane(out, 0, m30 + m00, m31 + m01, m32 + m02, m33 + m03)
     # right = row3 - row0
-    frog_cull_write_plane(out, 1, m30 - m00, m31 - m01, m32 - m02, m33 - m03)
+    kobic_cull_write_plane(out, 1, m30 - m00, m31 - m01, m32 - m02, m33 - m03)
     # bottom = row3 + row1
-    frog_cull_write_plane(out, 2, m30 + m10, m31 + m11, m32 + m12, m33 + m13)
+    kobic_cull_write_plane(out, 2, m30 + m10, m31 + m11, m32 + m12, m33 + m13)
     # top = row3 - row1
-    frog_cull_write_plane(out, 3, m30 - m10, m31 - m11, m32 - m12, m33 - m13)
+    kobic_cull_write_plane(out, 3, m30 - m10, m31 - m11, m32 - m12, m33 - m13)
     # near = row3 + row2
-    frog_cull_write_plane(out, 4, m30 + m20, m31 + m21, m32 + m22, m33 + m23)
+    kobic_cull_write_plane(out, 4, m30 + m20, m31 + m21, m32 + m22, m33 + m23)
     # far = row3 - row2
-    frog_cull_write_plane(out, 5, m30 - m20, m31 - m21, m32 - m22, m33 - m23)
+    kobic_cull_write_plane(out, 5, m30 - m20, m31 - m21, m32 - m22, m33 - m23)
 
-fun frog_cull_write_plane(out: i64, idx: i32, a: f32, b: f32, c: f32, d: f32):
+fun kobic_cull_write_plane(out: i64, idx: i32, a: f32, b: f32, c: f32, d: f32):
     len: f32 = @sqrt(a * a + b * b + c * c)
     if len < 0.000001:
         len = 1.0

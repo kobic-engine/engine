@@ -1,5 +1,5 @@
 ##############################
-# Frog - Material3D
+# Kobic - Material3D
 # High-level material descriptor for renderable 3D nodes.
 ##############################
 
@@ -30,7 +30,7 @@ struct Material3D:
     # Camera-attached arms/weapons: independent 2cm near clip + foreground
     # depth band. Keep the scene camera's planetary depth range unchanged.
     viewmodel: i32 = 0
-    # Preserve Frog's historical two-sided rendering by default. Materials
+    # Preserve Kobic's historical two-sided rendering by default. Materials
     # that explicitly opt out can reject back-facing fragments without
     # changing the global pipeline used by legacy meshes.
     double_sided: i32 = 1

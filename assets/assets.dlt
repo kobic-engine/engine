@@ -1,5 +1,5 @@
 ##############################
-# Frog - Assets
+# Kobic - Assets
 # Public resource loading facade.
 ##############################
 
@@ -30,6 +30,25 @@ attach Assets:
         joined: str = PathOps.join_path(g_assets_root, path)
         return PathOps.resolve_path(joined)
 
+# Asset files cooked while the engine was still called Frog keep loading:
+# when `x.kobicmodel` / `x.kobictex` / `x.kobicskin` is absent and
+# `x.frogmodel` / `x.frogtex` / `x.frogskin` exists, the old file is used.
+# The formats themselves (magic numbers, layout) did not change.
+fun kobic_cooked_or_legacy(path: str, new_ext: str, old_ext: str) -> str:
+    if Str.ends_with(path, new_ext) == false:
+        return path
+    resolved: str = Assets.resolve(path)
+    if Str.equals(resolved, "") == false:
+        if PathOps.exists(resolved):
+            return path
+    base_len: i64 = Memory.strlen(path) - Memory.strlen(new_ext)
+    legacy: str = Str.substring(path, 0, base_len) + old_ext
+    legacy_resolved: str = Assets.resolve(legacy)
+    if Str.equals(legacy_resolved, "") == false:
+        if PathOps.exists(legacy_resolved):
+            return legacy
+    return path
+
 attach ModelLods:
 
     static fun auto(lod1_distance: f32, lod2_distance: f32) -> ModelLods:
@@ -44,6 +63,8 @@ attach ModelLods:
 attach AssetModels:
 
     static fun runtime_cooked_path(path: str) -> str:
+        if Str.ends_with(path, ".kobicmodel"):
+            return kobic_cooked_or_legacy(path, ".kobicmodel", ".frogmodel")
         if Str.ends_with(path, ".frogmodel"):
             return path
         path_len: i64 = Memory.strlen(path)
@@ -57,7 +78,7 @@ attach AssetModels:
         if path_len <= extension_length:
             return ""
         base: str = Str.substring(path, 0, path_len - extension_length)
-        return base + ".frogmodel"
+        return kobic_cooked_or_legacy(base + ".kobicmodel", ".kobicmodel", ".frogmodel")
 
     static fun runtime_cache_path(path: str) -> str:
         if Str.ends_with(path, ".gltf") == false:
@@ -66,10 +87,10 @@ attach AssetModels:
         if path_len <= 5:
             return ""
         base: str = Str.substring(path, 0, path_len - 5)
-        return base + ".frog.gltf"
+        return base + ".kobic.gltf"
 
     static fun runtime_lod1_path(path: str) -> str:
-        if Str.ends_with(path, ".frog.gltf") == false:
+        if Str.ends_with(path, ".kobic.gltf") == false:
             return ""
         path_len: i64 = Memory.strlen(path)
         if path_len <= 10:
@@ -78,7 +99,7 @@ attach AssetModels:
         return base + ".lod1.gltf"
 
     static fun runtime_lod2_path(path: str) -> str:
-        if Str.ends_with(path, ".frog.gltf") == false:
+        if Str.ends_with(path, ".kobic.gltf") == false:
             return ""
         path_len: i64 = Memory.strlen(path)
         if path_len <= 10:
@@ -91,8 +112,9 @@ attach AssetModels:
         if Str.equals(resolved, ""):
             return Model3D(path=path, resolved_path="", format="unknown", mesh_id=-1, found=0, parsed=0, ready=0, error="asset root is not mounted; call Assets.mount before loading assets")
         format: str = "gltf"
-        if Str.ends_with(path, ".frogmodel"):
-            return FrogModelLoader.load(path, resolved)
+        if Str.ends_with(path, ".kobicmodel") or Str.ends_with(path, ".frogmodel"):
+            direct: str = kobic_cooked_or_legacy(path, ".kobicmodel", ".frogmodel")
+            return KobicModelLoader.load(direct, Assets.resolve(direct))
         if Str.ends_with(path, ".glb"):
             format = "glb"
         if Str.ends_with(path, ".gltf") == false:
@@ -109,7 +131,7 @@ attach AssetModels:
                 cooked_resolved: str = Assets.resolve(cooked_path)
                 if Str.equals(cooked_resolved, "") == false:
                     if PathOps.exists(cooked_resolved):
-                        cooked_model: Model3D = FrogModelLoader.load(cooked_path, cooked_resolved)
+                        cooked_model: Model3D = KobicModelLoader.load(cooked_path, cooked_resolved)
                         if cooked_model.parsed == 1:
                             return cooked_model
                         # Never silently draw an incompatible cooked model via
@@ -140,6 +162,8 @@ attach AssetTextures:
         return Texture2D(path=path, resolved_path=resolved, texture_id=tid, found=1, ready=1)
 
     static fun runtime_cooked_path(path: str) -> str:
+        if Str.ends_with(path, ".kobictex"):
+            return kobic_cooked_or_legacy(path, ".kobictex", ".frogtex")
         if Str.ends_with(path, ".frogtex"):
             return path
         path_len: i64 = Memory.strlen(path)
@@ -149,7 +173,7 @@ attach AssetTextures:
         if extension_length == 0 or path_len <= extension_length:
             return ""
         base: str = Str.substring(path, 0, path_len - extension_length)
-        return base + ".frogtex"
+        return kobic_cooked_or_legacy(base + ".kobictex", ".kobictex", ".frogtex")
 
     # Read a PNG, upload it to the GPU with the default (smooth) spec, and
     # return a ready-to-use Texture2D whose texture_id is bound-able.

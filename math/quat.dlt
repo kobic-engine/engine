@@ -1,5 +1,5 @@
 ##############################
-# Frog - Quaternion (x, y, z, w)
+# Kobic - Quaternion (x, y, z, w)
 ##############################
 
 struct Quat:
@@ -80,7 +80,7 @@ attach Quat:
 
     # Build a column-major rigid world transform from this orientation.
     # Keeping this next to Quat makes quaternion camera/viewmodel transforms
-    # use exactly one convention throughout Frog.
+    # use exactly one convention throughout Kobic.
     fun to_mat4(self, tx: f32, ty: f32, tz: f32) -> Mat4:
         q: Quat = self.normalize()
         xx: f32 = q.x * q.x

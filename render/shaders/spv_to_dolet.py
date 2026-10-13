@@ -3,7 +3,7 @@
 buffer with Memory.write_i32 calls, matching the embedding style used by
 gpu_shaders.dlt. Prints the Dolet source to stdout.
 
-Usage: python spv_to_dolet.py cull.comp.spv _frog_init_cull_shader
+Usage: python spv_to_dolet.py cull.comp.spv _kobic_init_cull_shader
 """
 import sys, struct
 

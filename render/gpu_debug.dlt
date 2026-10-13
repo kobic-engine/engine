@@ -1,5 +1,5 @@
 ##############################
-# Frog - GPU Debug Drawing
+# Kobic - GPU Debug Drawing
 # Lazy collision wireframes. No scene traversal or GPU work while disabled.
 ##############################
 
@@ -15,7 +15,7 @@ static g_debug_collision_instance_memories: i64 = 0
 static g_debug_collision_instance_mapped: i64 = 0
 static g_debug_collision_instance_capacity: i32 = 0
 
-fun frog_debug_collision_shader_module(device: i64, code: i64, size: i64) -> i64:
+fun kobic_debug_collision_shader_module(device: i64, code: i64, size: i64) -> i64:
     if code == 0 or size <= 0:
         return 0
     ci: i64 = Memory.malloc_zeroed(40)
@@ -37,7 +37,7 @@ fun frog_debug_collision_shader_module(device: i64, code: i64, size: i64) -> i64
         return 0
     return handle
 
-fun frog_debug_collision_destroy_pipeline(device: i64):
+fun kobic_debug_collision_destroy_pipeline(device: i64):
     if g_debug_collision_pipeline != 0:
         vkDestroyPipeline(device, g_debug_collision_pipeline, 0)
     if g_debug_collision_pipeline_layout != 0:
@@ -52,7 +52,7 @@ fun frog_debug_collision_destroy_pipeline(device: i64):
     g_debug_collision_frag_module = 0
     g_debug_collision_render_pass = 0
 
-fun frog_debug_collision_create_layout(device: i64) -> i32:
+fun kobic_debug_collision_create_layout(device: i64) -> i32:
     push_range: i64 = Memory.malloc_zeroed(12)
     ci: i64 = Memory.malloc_zeroed(48)
     out: i64 = Memory.malloc_zeroed(8)
@@ -73,7 +73,7 @@ fun frog_debug_collision_create_layout(device: i64) -> i32:
         return 0
     return 1
 
-fun frog_debug_collision_create_pipeline(device: i64, render_pass: i64) -> i32:
+fun kobic_debug_collision_create_pipeline(device: i64, render_pass: i64) -> i32:
     entry: str = "main"
     stages: i64 = Memory.malloc_zeroed(96)
     bindings: i64 = Memory.malloc_zeroed(24)
@@ -211,31 +211,31 @@ fun frog_debug_collision_create_pipeline(device: i64, render_pass: i64) -> i32:
         return 0
     return 1
 
-fun frog_debug_collision_ensure_pipeline(device: i64, render_pass: i64) -> i32:
+fun kobic_debug_collision_ensure_pipeline(device: i64, render_pass: i64) -> i32:
     if g_debug_collision_pipeline != 0:
         if g_debug_collision_render_pass == render_pass:
             return 1
-        frog_debug_collision_destroy_pipeline(device)
+        kobic_debug_collision_destroy_pipeline(device)
 
     vert: EmbeddedShader = get_debug_collision_vert_shader()
     frag: EmbeddedShader = get_debug_collision_frag_shader()
-    g_debug_collision_vert_module = frog_debug_collision_shader_module(device, vert.data, vert.size)
-    g_debug_collision_frag_module = frog_debug_collision_shader_module(device, frag.data, frag.size)
+    g_debug_collision_vert_module = kobic_debug_collision_shader_module(device, vert.data, vert.size)
+    g_debug_collision_frag_module = kobic_debug_collision_shader_module(device, frag.data, frag.size)
     vert.release()
     frag.release()
     if g_debug_collision_vert_module == 0 or g_debug_collision_frag_module == 0:
-        frog_debug_collision_destroy_pipeline(device)
+        kobic_debug_collision_destroy_pipeline(device)
         return 0
-    if frog_debug_collision_create_layout(device) == 0:
-        frog_debug_collision_destroy_pipeline(device)
+    if kobic_debug_collision_create_layout(device) == 0:
+        kobic_debug_collision_destroy_pipeline(device)
         return 0
-    if frog_debug_collision_create_pipeline(device, render_pass) == 0:
-        frog_debug_collision_destroy_pipeline(device)
+    if kobic_debug_collision_create_pipeline(device, render_pass) == 0:
+        kobic_debug_collision_destroy_pipeline(device)
         return 0
     g_debug_collision_render_pass = render_pass
     return 1
 
-fun frog_debug_collision_write_vertex(vertices: i64, index: i32, x: f32, y: f32, z: f32):
+fun kobic_debug_collision_write_vertex(vertices: i64, index: i32, x: f32, y: f32, z: f32):
     off: i64 = (index as i64) * 12
     Memory.write_f32(vertices + off, x)
     Memory.write_f32(vertices + off + 4, y)
@@ -249,32 +249,32 @@ attach GpuRendererCore:
         vertices: i64 = Memory.malloc_zeroed(312)
         if vertices == 0:
             return 0
-        frog_debug_collision_write_vertex(vertices, 0, -0.5, -0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 1, 0.5, -0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 2, 0.5, -0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 3, 0.5, -0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 4, 0.5, -0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 5, -0.5, -0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 6, -0.5, -0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 7, -0.5, -0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 8, -0.5, 0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 9, 0.5, 0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 10, 0.5, 0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 11, 0.5, 0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 12, 0.5, 0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 13, -0.5, 0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 14, -0.5, 0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 15, -0.5, 0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 16, -0.5, -0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 17, -0.5, 0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 18, 0.5, -0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 19, 0.5, 0.5, -0.5)
-        frog_debug_collision_write_vertex(vertices, 20, 0.5, -0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 21, 0.5, 0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 22, -0.5, -0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 23, -0.5, 0.5, 0.5)
-        frog_debug_collision_write_vertex(vertices, 24, 0.0, 0.0, 0.0)
-        frog_debug_collision_write_vertex(vertices, 25, 0.0, 0.0, 1.0)
+        kobic_debug_collision_write_vertex(vertices, 0, -0.5, -0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 1, 0.5, -0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 2, 0.5, -0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 3, 0.5, -0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 4, 0.5, -0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 5, -0.5, -0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 6, -0.5, -0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 7, -0.5, -0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 8, -0.5, 0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 9, 0.5, 0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 10, 0.5, 0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 11, 0.5, 0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 12, 0.5, 0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 13, -0.5, 0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 14, -0.5, 0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 15, -0.5, 0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 16, -0.5, -0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 17, -0.5, 0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 18, 0.5, -0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 19, 0.5, 0.5, -0.5)
+        kobic_debug_collision_write_vertex(vertices, 20, 0.5, -0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 21, 0.5, 0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 22, -0.5, -0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 23, -0.5, 0.5, 0.5)
+        kobic_debug_collision_write_vertex(vertices, 24, 0.0, 0.0, 0.0)
+        kobic_debug_collision_write_vertex(vertices, 25, 0.0, 0.0, 1.0)
         uploaded: GpuBufferUpload = self._upload_buffer(vertices, 312, 128)
         Memory.free(vertices)
         if uploaded.ok == 0:
@@ -438,7 +438,7 @@ attach GpuRendererCore:
     fun cleanup_collision_debug(self):
         if self.device != 0:
             vkDeviceWaitIdle(self.device)
-            frog_debug_collision_destroy_pipeline(self.device)
+            kobic_debug_collision_destroy_pipeline(self.device)
             self._destroy_debug_collision_instances()
             if g_debug_collision_vertex_buffer != 0:
                 vkDestroyBuffer(self.device, g_debug_collision_vertex_buffer, 0)
@@ -457,7 +457,7 @@ attach GpuRendererCore:
         self.debug_manual_line_count = 0
         self.debug_manual_line_capacity = 0
 
-fun frog_debug_collision_count_nodes(node_ptr: i64) -> i32:
+fun kobic_debug_collision_count_nodes(node_ptr: i64) -> i32:
     if node_ptr == 0:
         return 0
     node: Node = node_ptr as Node
@@ -474,12 +474,12 @@ fun frog_debug_collision_count_nodes(node_ptr: i64) -> i32:
             count = count + 2
     child_ptr: i64 = node.first_child_ptr
     while child_ptr != 0:
-        count = count + frog_debug_collision_count_nodes(child_ptr)
+        count = count + kobic_debug_collision_count_nodes(child_ptr)
         child: Node = child_ptr as Node
         child_ptr = child.next_sibling_ptr
     return count
 
-fun frog_debug_collision_write_instance(dst: i64, cx: f32, cy: f32, cz: f32, sx: f32, sy: f32, sz: f32, color: Color):
+fun kobic_debug_collision_write_instance(dst: i64, cx: f32, cy: f32, cz: f32, sx: f32, sy: f32, sz: f32, color: Color):
     x_size: f32 = physics_abs_f32(sx) + 0.012
     y_size: f32 = physics_abs_f32(sy) + 0.012
     z_size: f32 = physics_abs_f32(sz) + 0.012
@@ -496,7 +496,7 @@ fun frog_debug_collision_write_instance(dst: i64, cx: f32, cy: f32, cz: f32, sx:
     Memory.write_f32(dst + 72, color.b)
     Memory.write_f32(dst + 76, color.a)
 
-fun frog_debug_collision_write_ray_instance(dst: i64, origin: Vec3, direction: Vec3, distance: f32, color: Color):
+fun kobic_debug_collision_write_ray_instance(dst: i64, origin: Vec3, direction: Vec3, distance: f32, color: Color):
     forward: Vec3 = direction.normalize()
     if forward.length_sq() < 0.000001:
         return
@@ -516,7 +516,7 @@ fun frog_debug_collision_write_ray_instance(dst: i64, origin: Vec3, direction: V
     Memory.write_f32(dst + 72, color.b)
     Memory.write_f32(dst + 76, color.a)
 
-fun frog_debug_collision_fill_nodes(node_ptr: i64, parent_x: f32, parent_y: f32, parent_z: f32, parent_sx: f32, parent_sy: f32, parent_sz: f32, mapped: i64, write_index: i32) -> i32:
+fun kobic_debug_collision_fill_nodes(node_ptr: i64, parent_x: f32, parent_y: f32, parent_z: f32, parent_sx: f32, parent_sy: f32, parent_sz: f32, mapped: i64, write_index: i32) -> i32:
     if node_ptr == 0:
         return write_index
     node: Node = node_ptr as Node
@@ -549,7 +549,7 @@ fun frog_debug_collision_fill_nodes(node_ptr: i64, parent_x: f32, parent_y: f32,
                 color = Color.rgb(0.18, 1.0, 0.95)
                 color.a = 0.92
             dst: i64 = mapped + (next_index as i64) * 80
-            frog_debug_collision_write_instance(dst, center_x, center_y, center_z, size_x, size_y, size_z, color)
+            kobic_debug_collision_write_instance(dst, center_x, center_y, center_z, size_x, size_y, size_z, color)
             next_index = next_index + 1
 
     if node.kind == 5:
@@ -559,7 +559,7 @@ fun frog_debug_collision_fill_nodes(node_ptr: i64, parent_x: f32, parent_y: f32,
             if raycast.last_hit.hit == 1:
                 hit_color: Color = Color.rgba(1.0, 0.18, 0.12, 0.98)
                 hit_dst: i64 = mapped + (next_index as i64) * 80
-                frog_debug_collision_write_instance(
+                kobic_debug_collision_write_instance(
                     hit_dst,
                     raycast.last_hit.point.x,
                     raycast.last_hit.point.y,
@@ -573,12 +573,12 @@ fun frog_debug_collision_fill_nodes(node_ptr: i64, parent_x: f32, parent_y: f32,
 
     child_ptr: i64 = node.first_child_ptr
     while child_ptr != 0:
-        next_index = frog_debug_collision_fill_nodes(child_ptr, world_x, world_y, world_z, world_sx, world_sy, world_sz, mapped, next_index)
+        next_index = kobic_debug_collision_fill_nodes(child_ptr, world_x, world_y, world_z, world_sx, world_sy, world_sz, mapped, next_index)
         child: Node = child_ptr as Node
         child_ptr = child.next_sibling_ptr
     return next_index
 
-fun frog_debug_collision_fill_rays(node_ptr: i64, mapped: i64, write_index: i32) -> i32:
+fun kobic_debug_collision_fill_rays(node_ptr: i64, mapped: i64, write_index: i32) -> i32:
     if node_ptr == 0:
         return write_index
     node: Node = node_ptr as Node
@@ -596,12 +596,12 @@ fun frog_debug_collision_fill_rays(node_ptr: i64, mapped: i64, write_index: i32)
                 distance = raycast.last_hit.distance
             ray_color: Color = Color.rgba(1.0, 0.78, 0.12, 0.96)
             ray_dst: i64 = mapped + (next_index as i64) * 80
-            frog_debug_collision_write_ray_instance(ray_dst, ray.origin, ray.direction, distance, ray_color)
+            kobic_debug_collision_write_ray_instance(ray_dst, ray.origin, ray.direction, distance, ray_color)
             next_index = next_index + 1
 
     child_ptr: i64 = node.first_child_ptr
     while child_ptr != 0:
-        next_index = frog_debug_collision_fill_rays(child_ptr, mapped, next_index)
+        next_index = kobic_debug_collision_fill_rays(child_ptr, mapped, next_index)
         child: Node = child_ptr as Node
         child_ptr = child.next_sibling_ptr
     return next_index
@@ -614,11 +614,11 @@ attach GpuRendererCore:
         if vp_matrix == 0:
             return
 
-        automatic_count: i32 = frog_debug_collision_count_nodes(self.debug_collision_root_ptr)
+        automatic_count: i32 = kobic_debug_collision_count_nodes(self.debug_collision_root_ptr)
         total_count: i32 = automatic_count + self.debug_manual_box_count + self.debug_manual_line_count
         if total_count <= 0:
             return
-        if frog_debug_collision_ensure_pipeline(self.device, rp.vk_render_pass) == 0:
+        if kobic_debug_collision_ensure_pipeline(self.device, rp.vk_render_pass) == 0:
             return
         if self._ensure_debug_collision_vertex_buffer() == 0:
             return
@@ -635,7 +635,7 @@ attach GpuRendererCore:
         if mapped == 0 or instance_buffer == 0:
             return
 
-        box_count: i32 = frog_debug_collision_fill_nodes(self.debug_collision_root_ptr, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, mapped, 0)
+        box_count: i32 = kobic_debug_collision_fill_nodes(self.debug_collision_root_ptr, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, mapped, 0)
         manual_index: i32 = 0
         while manual_index < self.debug_manual_box_count:
             src: i64 = self.debug_manual_boxes + (manual_index as i64) * 40
@@ -646,7 +646,7 @@ attach GpuRendererCore:
                 Memory.read_f32(src + 36)
             )
             dst: i64 = mapped + (box_count as i64) * 80
-            frog_debug_collision_write_instance(
+            kobic_debug_collision_write_instance(
                 dst,
                 Memory.read_f32(src),
                 Memory.read_f32(src + 4),
@@ -658,7 +658,7 @@ attach GpuRendererCore:
             )
             box_count = box_count + 1
             manual_index = manual_index + 1
-        written: i32 = frog_debug_collision_fill_rays(self.debug_collision_root_ptr, mapped, box_count)
+        written: i32 = kobic_debug_collision_fill_rays(self.debug_collision_root_ptr, mapped, box_count)
         manual_index = 0
         while manual_index < self.debug_manual_line_count:
             src: i64 = self.debug_manual_lines+(manual_index as i64)*40
@@ -666,7 +666,7 @@ attach GpuRendererCore:
             b: Vec3 = Vec3.make(Memory.read_f32(src+12),Memory.read_f32(src+16),Memory.read_f32(src+20))
             color: Color = Color.rgba(Memory.read_f32(src+24),Memory.read_f32(src+28),Memory.read_f32(src+32),Memory.read_f32(src+36))
             delta: Vec3 = b.sub(a)
-            frog_debug_collision_write_ray_instance(mapped+(written as i64)*80,a,delta,delta.length(),color)
+            kobic_debug_collision_write_ray_instance(mapped+(written as i64)*80,a,delta,delta.length(),color)
             written += 1
             manual_index += 1
         ray_count: i32 = written - box_count

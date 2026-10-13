@@ -1,5 +1,5 @@
 ##############################
-# Frog Engine — VulkanContext
+# Kobic Engine — VulkanContext
 # VkInstance, physical device, logical device, queues
 # Adapted from qubic/core/window.dlt
 ##############################
@@ -590,7 +590,7 @@ attach VulkanContext:
         ic: i32 = pcaps.draw_indirect_count
         dr: i32 = pcaps.dynamic_rendering
         md: i32 = pcaps.max_descriptor_array
-        print(@"[frog.caps] api={api_v} bindless={bl} indirect_count={ic} dynamic_rendering={dr} max_desc={md}")
+        print(@"[kobic.caps] api={api_v} bindless={bl} indirect_count={ic} dynamic_rendering={dr} max_desc={md}")
         return 1
 
     fun cleanup(self) -> void:

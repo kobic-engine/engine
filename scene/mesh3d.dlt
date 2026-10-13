@@ -1,5 +1,5 @@
 ##############################
-# Frog - Mesh3D
+# Kobic - Mesh3D
 # High-level renderable 3D node. Hides mesh ids and primitive uploads from
 # game code.
 ##############################
@@ -572,7 +572,7 @@ attach Mesh3D:
         self.lod_manual = 0
         if lods.enabled == 0:
             return self
-        if Str.equals(self.model_source.format, "frogmodel"):
+        if Str.equals(self.model_source.format, "kobicmodel"):
             lod1_model: Model3D = self.model_source.lod(1)
             if lod1_model.found == 1:
                 if lod1_model.parsed == 1:

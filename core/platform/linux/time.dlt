@@ -1,9 +1,9 @@
 ##############################
-# Frog - Linux Time Backend
+# Kobic - Linux Time Backend
 ##############################
 
-fun frog_time_frequency() -> i64:
+fun kobic_time_frequency() -> i64:
     return 1000000000
 
-fun frog_time_now_ticks() -> i64:
+fun kobic_time_now_ticks() -> i64:
     return TimeOps.time_now_ns()

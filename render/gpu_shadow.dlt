@@ -1,5 +1,5 @@
 ##############################
-# Frog - Directional Shadow Pass
+# Kobic - Directional Shadow Pass
 # Owns the depth-only Vulkan pass, pipeline, and sampled depth target.
 ##############################
 
@@ -186,14 +186,14 @@ attach ShadowPass:
         Memory.write_ptr(stage + 32, entry)
 
         Memory.write_i32(bindings, 0)
-        Memory.write_i32(bindings + 4, FROG_GPU_VERTEX_STRIDE)
+        Memory.write_i32(bindings + 4, KOBIC_GPU_VERTEX_STRIDE)
         Memory.write_i32(bindings + 8, 0)
         Memory.write_i32(bindings + 12, 1)
-        # Instance stride = FROG_GPU_INSTANCE_STRIDE (128). The shadow vertex
+        # Instance stride = KOBIC_GPU_INSTANCE_STRIDE (128). The shadow vertex
         # shader reads only the model matrix at offset 0..63, so a 128-byte
         # stride lets the SAME buffer feed both the CPU shadow path and the
         # GPU-culled shadow output (S6), which emits 128-byte records.
-        Memory.write_i32(bindings + 16, FROG_GPU_INSTANCE_STRIDE)
+        Memory.write_i32(bindings + 16, KOBIC_GPU_INSTANCE_STRIDE)
         Memory.write_i32(bindings + 20, 1)
 
         # Position and model matrix columns.

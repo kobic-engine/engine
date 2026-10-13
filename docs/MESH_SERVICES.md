@@ -71,7 +71,7 @@ Memory.free(group as i64)
 
 ## Verification
 
-From the Frog package directory on Windows:
+From the Kobic package directory on Windows:
 
 ```powershell
 ../../bin/doletc.exe tests/mesh_services_checks.dlt -o build/mesh-services-checks.exe
@@ -95,8 +95,8 @@ and `asteroid_rider_checks.dlt` for deferred worker-result retention.
 
 ## Optional spatial coordinates
 
-`import frog.spatial` loads only the CPU coordinate entry point and
-`frog.math.spatial`, not the renderer umbrella. The extracted `SpacePosition`
+`import kobic.spatial` loads only the CPU coordinate entry point and
+`kobic.math.spatial`, not the renderer umbrella. The extracted `SpacePosition`
 uses i64 sectors and f64 local metres with a 1,048,576m sector span. Relative
 coordinates subtract sectors before conversion, retaining nearby detail at
 large absolute addresses. The inherited helpers and SpatialFrame API are kept

@@ -1,6 +1,6 @@
 # Small native Engine example independent of Bitora/terrain. Auto-exits.
 import std
-import frog
+import kobic
 
 fun group_gpu_check(ok: bool, message: str):
     if ok == false:
@@ -8,7 +8,7 @@ fun group_gpu_check(ok: bool, message: str):
         Command.exit(1)
 
 fun run_group_gpu_checks():
-    Engine.window.create("Frog rigid group GPU checks", 320, 180)
+    Engine.window.create("Kobic rigid group GPU checks", 320, 180)
     Engine.properties.set_target_fps(120)
     Engine.properties.set_culling_mode(1)
     scene: Scene = Scene.create()

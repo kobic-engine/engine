@@ -1,10 +1,10 @@
 ##############################
-# Frog Engine — RenderPass
+# Kobic Engine — RenderPass
 # Render pass, graphics pipeline, sync objects
 # Framebuffers, command pool/buffers
 ##############################
 
-imm FROG_HDR_COLOR_FORMAT: i32 = 97
+imm KOBIC_HDR_COLOR_FORMAT: i32 = 97
 
 struct RenderPass:
     vk_render_pass:       i64 = 0
@@ -90,7 +90,7 @@ struct MaterialDescriptorImages:
     occlusion_view: i64 = 0
     occlusion_sampler: i64 = 0
 
-fun frog_material_descriptor_bucket(images: MaterialDescriptorImages) -> i32:
+fun kobic_material_descriptor_bucket(images: MaterialDescriptorImages) -> i32:
     key: i64 = images as i64
     hash: i64 = 0
     index: i32 = 0
@@ -99,7 +99,7 @@ fun frog_material_descriptor_bucket(images: MaterialDescriptorImages) -> i32:
         index = index + 1
     return (hash & 1023) as i32
 
-fun frog_create_color_depth_render_pass(device: i64, color_format: i32) -> i64:
+fun kobic_create_color_depth_render_pass(device: i64, color_format: i32) -> i64:
     att_descs: i64 = Memory.malloc_zeroed(72)
     color_ref: i64 = Memory.malloc_zeroed(8)
     depth_ref: i64 = Memory.malloc_zeroed(8)
@@ -305,7 +305,7 @@ attach RenderPass:
             return 0
         # Color attachment (index 0)
         Memory.write_i32(att_descs, 0)
-        Memory.write_i32(att_descs + 4, FROG_HDR_COLOR_FORMAT)
+        Memory.write_i32(att_descs + 4, KOBIC_HDR_COLOR_FORMAT)
         Memory.write_i32(att_descs + 8, 1)
         Memory.write_i32(att_descs + 12, 1)
         Memory.write_i32(att_descs + 16, 0)
@@ -413,7 +413,7 @@ attach RenderPass:
         Memory.free(rp_ci)
         if rp_result != 0:
             return 0
-        self.vk_present_render_pass = frog_create_color_depth_render_pass(device, swapchain_format)
+        self.vk_present_render_pass = kobic_create_color_depth_render_pass(device, swapchain_format)
         if self.vk_present_render_pass == 0:
             return 0
 
@@ -730,7 +730,7 @@ attach RenderPass:
             self.material_desc_cache = Memory.malloc_zeroed(8192)
         if self.material_desc_cache == 0:
             return 0
-        bucket: i32 = frog_material_descriptor_bucket(key)
+        bucket: i32 = kobic_material_descriptor_bucket(key)
         cached: i64 = self._find_material_descriptor(key, bucket)
         if cached != 0:
             return cached
@@ -855,7 +855,7 @@ attach RenderPass:
         Memory.write_ptr(write + 48, buffer_info)
         vkUpdateDescriptorSets(device, 1, write, 0, 0)
         Memory.write_ptr(buffer_info, skin_buffer)
-        Memory.write_i64(buffer_info + 16, FROG_SKIN_BYTES)
+        Memory.write_i64(buffer_info + 16, KOBIC_SKIN_BYTES)
         Memory.write_i32(write + 24, 1)
         Memory.write_i32(write + 36, 7)
         vkUpdateDescriptorSets(device, 1, write, 0, 0)
@@ -946,10 +946,10 @@ attach RenderPass:
             Memory.free(stages)
             return 0
         Memory.write_i32(bind, 0)
-        Memory.write_i32(bind + 4, FROG_GPU_VERTEX_STRIDE)
+        Memory.write_i32(bind + 4, KOBIC_GPU_VERTEX_STRIDE)
         Memory.write_i32(bind + 8, 0)
         Memory.write_i32(bind + 12, 1)
-        Memory.write_i32(bind + 16, FROG_GPU_INSTANCE_STRIDE)
+        Memory.write_i32(bind + 16, KOBIC_GPU_INSTANCE_STRIDE)
         Memory.write_i32(bind + 20, 1)
         Memory.write_i32(bind + 24, 2)
         Memory.write_i32(bind + 28, 0)
@@ -1001,12 +1001,12 @@ attach RenderPass:
         Memory.write_i32(attrs + 128, 8)
         Memory.write_i32(attrs + 132, 1)
         Memory.write_i32(attrs + 136, 109)
-        Memory.write_i32(attrs + 140, FROG_GPU_INSTANCE_MATERIAL_OFFSET)
+        Memory.write_i32(attrs + 140, KOBIC_GPU_INSTANCE_MATERIAL_OFFSET)
         # UV transform (loc=20, binding=1, R32G32B32A32=109, offset=80)
         Memory.write_i32(attrs + 144, 20)
         Memory.write_i32(attrs + 148, 1)
         Memory.write_i32(attrs + 152, 109)
-        Memory.write_i32(attrs + 156, FROG_GPU_INSTANCE_UV_OFFSET)
+        Memory.write_i32(attrs + 156, KOBIC_GPU_INSTANCE_UV_OFFSET)
         # Shadow cascade 0 columns (loc=9..12), cascade 1 columns
         # (loc=13..16), params (loc=17), splits (loc=18), and filter
         # controls (loc=19), binding 2. As before, loc 19 is not counted.
@@ -1023,7 +1023,7 @@ attach RenderPass:
         Memory.write_i32(attrs + 320, 21)
         Memory.write_i32(attrs + 324, 1)
         Memory.write_i32(attrs + 328, 98)
-        Memory.write_i32(attrs + 332, FROG_GPU_INSTANCE_ALPHA_OFFSET)
+        Memory.write_i32(attrs + 332, KOBIC_GPU_INSTANCE_ALPHA_OFFSET)
         Memory.write_i32(attrs + 336, 22)
         Memory.write_i32(attrs + 340, 1)
         Memory.write_i32(attrs + 344, 98)
@@ -1317,10 +1317,10 @@ attach RenderPass:
             Memory.free(stages)
             return 0
         Memory.write_i32(bind, 0)
-        Memory.write_i32(bind + 4, FROG_GPU_VERTEX_STRIDE)
+        Memory.write_i32(bind + 4, KOBIC_GPU_VERTEX_STRIDE)
         Memory.write_i32(bind + 8, 0)
         Memory.write_i32(bind + 12, 1)
-        Memory.write_i32(bind + 16, FROG_GPU_INSTANCE_STRIDE)
+        Memory.write_i32(bind + 16, KOBIC_GPU_INSTANCE_STRIDE)
         Memory.write_i32(bind + 20, 1)
         Memory.write_i32(bind + 24, 2)
         Memory.write_i32(bind + 28, 0)
@@ -1371,11 +1371,11 @@ attach RenderPass:
         Memory.write_i32(attrs + 128, 8)
         Memory.write_i32(attrs + 132, 1)
         Memory.write_i32(attrs + 136, 109)
-        Memory.write_i32(attrs + 140, FROG_GPU_INSTANCE_MATERIAL_OFFSET)
+        Memory.write_i32(attrs + 140, KOBIC_GPU_INSTANCE_MATERIAL_OFFSET)
         Memory.write_i32(attrs + 144, 20)
         Memory.write_i32(attrs + 148, 1)
         Memory.write_i32(attrs + 152, 109)
-        Memory.write_i32(attrs + 156, FROG_GPU_INSTANCE_UV_OFFSET)
+        Memory.write_i32(attrs + 156, KOBIC_GPU_INSTANCE_UV_OFFSET)
         # Shadow cascade columns + params + splits: locs 9..18 (10 entries),
         # at attrs offsets 160..304 (sai 0..9).
         sai: i32 = 0
@@ -1392,7 +1392,7 @@ attach RenderPass:
         Memory.write_i32(attrs + 320, 21)
         Memory.write_i32(attrs + 324, 1)
         Memory.write_i32(attrs + 328, 107)
-        Memory.write_i32(attrs + 332, FROG_GPU_INSTANCE_TEXIDX_OFFSET)
+        Memory.write_i32(attrs + 332, KOBIC_GPU_INSTANCE_TEXIDX_OFFSET)
         Memory.write_i32(attrs + 336, 22)
         Memory.write_i32(attrs + 340, 1)
         Memory.write_i32(attrs + 344, 107)
@@ -1710,7 +1710,7 @@ attach RenderPass:
             Memory.free(stages)
             return 0
         Memory.write_i32(bind, 0)
-        Memory.write_i32(bind + 4, FROG_GPU_VERTEX_STRIDE)
+        Memory.write_i32(bind + 4, KOBIC_GPU_VERTEX_STRIDE)
         Memory.write_i32(bind + 8, 0)
         Memory.write_i32(bind + 12, 2)
         Memory.write_i32(bind + 16, 0)      # binding 2 stride 0 (global)
@@ -1960,8 +1960,8 @@ attach RenderPass:
         if self.lighting_set_layout != 0:
             vkDestroyDescriptorSetLayout(device, self.lighting_set_layout, 0)
         self.shadow.cleanup(device)
-        frog_sky_pass_cleanup(device)
-        frog_bloom_pass_cleanup(device)
+        kobic_sky_pass_cleanup(device)
+        kobic_bloom_pass_cleanup(device)
         if self.vert_shader_module != 0:
             vkDestroyShaderModule(device, self.vert_shader_module, 0)
         if self.frag_shader_module != 0:

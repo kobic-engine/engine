@@ -1,5 +1,5 @@
 ##############################
-# Frog - Fullscreen Sky Pass
+# Kobic - Fullscreen Sky Pass
 # One runtime-owned pipeline for the engine's single Vulkan device.
 ##############################
 
@@ -9,7 +9,7 @@ static g_sky_vert_shader_module: i64 = 0
 static g_sky_frag_shader_module: i64 = 0
 static g_sky_initialized: i32 = 0
 
-fun frog_sky_pass_create_shader_module(device: i64, code: i64, size: i64) -> i64:
+fun kobic_sky_pass_create_shader_module(device: i64, code: i64, size: i64) -> i64:
     if code == 0 or size <= 0:
         return 0
     ci: i64 = Memory.malloc_zeroed(40)
@@ -31,7 +31,7 @@ fun frog_sky_pass_create_shader_module(device: i64, code: i64, size: i64) -> i64
         return 0
     return shader_handle
 
-fun frog_sky_pass_create_pipeline_layout(device: i64, desc_set_layout: i64) -> i32:
+fun kobic_sky_pass_create_pipeline_layout(device: i64, desc_set_layout: i64) -> i32:
     pc_range: i64 = Memory.malloc_zeroed(12)
     dsl_arr: i64 = 0
     ci: i64 = Memory.malloc_zeroed(48)
@@ -73,7 +73,7 @@ fun frog_sky_pass_create_pipeline_layout(device: i64, desc_set_layout: i64) -> i
         return 0
     return 1
 
-fun frog_sky_pass_create_pipeline(device: i64, render_pass: i64) -> i32:
+fun kobic_sky_pass_create_pipeline(device: i64, render_pass: i64) -> i32:
     entry: str = "main"
     stages: i64 = Memory.malloc_zeroed(96)
     vertex_input: i64 = Memory.malloc_zeroed(48)
@@ -178,28 +178,28 @@ fun frog_sky_pass_create_pipeline(device: i64, render_pass: i64) -> i32:
         return 0
     return 1
 
-fun frog_sky_pass_init(device: i64, render_pass: i64, desc_set_layout: i64, vert_data: i64, vert_size: i64, frag_data: i64, frag_size: i64) -> i32:
-    g_sky_vert_shader_module = frog_sky_pass_create_shader_module(device, vert_data, vert_size)
-    g_sky_frag_shader_module = frog_sky_pass_create_shader_module(device, frag_data, frag_size)
+fun kobic_sky_pass_init(device: i64, render_pass: i64, desc_set_layout: i64, vert_data: i64, vert_size: i64, frag_data: i64, frag_size: i64) -> i32:
+    g_sky_vert_shader_module = kobic_sky_pass_create_shader_module(device, vert_data, vert_size)
+    g_sky_frag_shader_module = kobic_sky_pass_create_shader_module(device, frag_data, frag_size)
     if g_sky_vert_shader_module == 0 or g_sky_frag_shader_module == 0:
         return 0
-    if frog_sky_pass_create_pipeline_layout(device, desc_set_layout) == 0:
+    if kobic_sky_pass_create_pipeline_layout(device, desc_set_layout) == 0:
         return 0
-    if frog_sky_pass_create_pipeline(device, render_pass) == 0:
+    if kobic_sky_pass_create_pipeline(device, render_pass) == 0:
         return 0
     g_sky_initialized = 1
     return 1
 
-fun frog_sky_pass_ready() -> i32:
+fun kobic_sky_pass_ready() -> i32:
     return g_sky_initialized
 
-fun frog_sky_pass_pipeline() -> i64:
+fun kobic_sky_pass_pipeline() -> i64:
     return g_sky_pipeline
 
-fun frog_sky_pass_layout() -> i64:
+fun kobic_sky_pass_layout() -> i64:
     return g_sky_pipeline_layout
 
-fun frog_sky_pass_cleanup(device: i64):
+fun kobic_sky_pass_cleanup(device: i64):
     if g_sky_pipeline != 0:
         vkDestroyPipeline(device, g_sky_pipeline, 0)
     if g_sky_pipeline_layout != 0:

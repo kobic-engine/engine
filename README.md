@@ -1,12 +1,12 @@
-# Frog Engine
+# Kobic Engine
 
 **100% OOP 3D game engine for Dolet. No ECS.**
 
-Frog is a deliberate architectural counterpart to Kobic: same engine scope
+Kobic is a deliberate architectural counterpart to Kobic: same engine scope
 (3D rendering, input, math, scene graph) but organised as a classic
 object-oriented framework instead of an Entity-Component-System.
 
-Every "thing" in a Frog game is used through an object-style API:
+Every "thing" in a Kobic game is used through an object-style API:
 
 ```dolet
 scene: Scene = Scene.create(20000)
@@ -19,7 +19,7 @@ scene.update_all(dt)
 ## What it is NOT
 
 - **Not an ECS.** No archetypes, no component storages, no queries.
-- **Not a thin wrapper around Kobic.** Frog imports zero Kobic source files.
+- **Not a thin wrapper around Kobic.** Kobic imports zero Kobic source files.
   It only shares the same OS-level packages (Vulkan bindings, window
   bindings, input bindings) that any independent engine would need.
 
@@ -79,7 +79,7 @@ limits, ownership, and regression checks.
 Existing upload, transform, and Node3D APIs retain their behavior. See
 [Mesh service contracts and tests](docs/MESH_SERVICES.md).
 
-Large-world coordinate math is separately opt-in with `import frog.spatial`:
+Large-world coordinate math is separately opt-in with `import kobic.spatial`:
 `SpacePosition`, `SpatialVector`, and `SpatialFrame` have no renderer/window
 dependencies. This does not automatically rebase the scene or camera.
 
@@ -91,8 +91,8 @@ dependencies. This does not automatically rebase the scene or camera.
 
 ## Obin workflow
 
-Frog is an engine package rather than a second project manager. Dolet
-applications use Obin as their single project interface; its optional Frog
+Kobic is an engine package rather than a second project manager. Dolet
+applications use Obin as their single project interface; its optional Kobic
 adapter discovers referenced static glTF/GLB models and PNG textures, builds the
 pure-Dolet cooker, incrementally cooks stale assets, and then invokes `doletc`:
 
@@ -105,7 +105,7 @@ obin package --profile release
 Enable the adapter in the application manifest:
 
 ```toml
-[tool.frog]
+[tool.kobic]
 enabled = true
 cook-models = true
 cook-textures = true
@@ -123,7 +123,7 @@ lods = [0.45, 0.22]
 Static PNG path literals are discovered automatically. `texture-roots` covers
 textures selected dynamically at runtime, while `texture-excludes` avoids
 cooking source files that the application does not use. Each PNG is cooked to
-an adjacent FrogTexture v2 sidecar with a complete offline mip chain. Color and
+an adjacent KobicTexture v2 sidecar with a complete offline mip chain. Color and
 general data use BC7, tangent-space normals and glTF metallic-roughness use BC5,
 single-channel occlusion uses BC4, and explicit `lossless` overrides use RGBA8.
 The runtime validates the mip table and GPU format support, uploads the payload
@@ -135,8 +135,8 @@ Packaged builds omit a PNG only when its cooked sidecar validates; set
 `keep-source-textures = true` when a release must retain both representations.
 
 `obin build --force` rebuilds and recooks when a clean verification is needed.
-Frog Cooker remains part of the engine package as an internal Dolet tool; there
-is intentionally no separate `frog.exe` workflow.
+Kobic Cooker remains part of the engine package as an internal Dolet tool; there
+is intentionally no separate `kobic.exe` workflow.
 
 `TextureSpec.with_mip_lod_bias(bias)` optionally adjusts sampled mip detail;
 the default is zero and preserves existing materials. Negative values prefer
@@ -163,7 +163,7 @@ without an upload; the preparation buffer is limited to 64MiB.
 
 ## Philosophy
 
-Frog exists to make the ECS vs OOP performance / ergonomics trade-off
+Kobic exists to make the ECS vs OOP performance / ergonomics trade-off
 concrete. The companion game project `simple-game-frog-oop-3d/` is a
 line-for-line port of `simple-game-kubic-ecs-3d/` so the two can be
 compared fairly.

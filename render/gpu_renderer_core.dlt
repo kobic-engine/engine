@@ -1,6 +1,6 @@
 ##############################
-# Frog Engine — GpuRendererCore
-# Vulkan backend for Frog's OOP scene/Engine facade.
+# Kobic Engine — GpuRendererCore
+# Vulkan backend for Kobic's OOP scene/Engine facade.
 ##############################
 
 struct GpuBufferUpload:
@@ -24,28 +24,28 @@ struct GpuMeshBounds:
     center_z: f32 = 0.0
     radius: f32 = 1.0
 
-imm FROG_POINT_LIGHT_SLOTS: i32 = 8
-imm FROG_POINT_LIGHT_DATA_SIZE: i64 = 336
+imm KOBIC_POINT_LIGHT_SLOTS: i32 = 8
+imm KOBIC_POINT_LIGHT_DATA_SIZE: i64 = 336
 
 # Shadow caster size-cull threshold (angular: worldRadius / |clipW|).
 # 0.0 disables (default = prior behavior). The engine raises it for dense
 # scenes so casters that map to a sub-pixel shadow are skipped.
-static g_frog_shadow_min_size: f32 = 0.0
+static g_kobic_shadow_min_size: f32 = 0.0
 
 # Cascade-0 priority cull (CSM overlap reduction). When > 0, a caster that is
 # fully contained inside cascade 0's box (with this NDC safety margin) is NOT
 # re-rendered into cascade 1, eliminating the double-draw in the cascade
 # overlap region. 0.0 disables (default). Risky under grazing light, so it's
 # opt-in; the margin keeps casters near the boundary in both cascades.
-static g_frog_shadow_cascade0_margin: f32 = 0.0
+static g_kobic_shadow_cascade0_margin: f32 = 0.0
 
 # CPU recording profiler (opt-in, shares the gpu_timing flag's spirit). Counts
 # wall-clock ticks spent building the shadow instance buffer vs the rest of
 # command recording, to find the real CPU bottleneck. Printed every 120 frames.
-static g_frog_cpu_prof_enabled: i32 = 0
-static g_frog_cpu_prof_shadow_ticks: i64 = 0
-static g_frog_cpu_prof_total_ticks: i64 = 0
-static g_frog_cpu_prof_frames: i32 = 0
+static g_kobic_cpu_prof_enabled: i32 = 0
+static g_kobic_cpu_prof_shadow_ticks: i64 = 0
+static g_kobic_cpu_prof_total_ticks: i64 = 0
+static g_kobic_cpu_prof_frames: i32 = 0
 
 # Parallel shadow visibility precompute. The heavy per-caster test (matrix
 # transform + sqrt + frustum + cascade-0 containment) is run across worker
@@ -76,23 +76,23 @@ static g_shadow_vis_body:       i64 = 0   # cached @heap fun(i32), created once
 # pass culls each cascade on the GPU (reusing the cull compute) and draws via
 # vkCmdDrawIndexedIndirect from the compacted shadow output — eliminating the
 # CPU shadow compaction + per-caster matrix copy. 0 = CPU path (default/safe).
-static g_frog_gpu_shadow_cull: i32 = 0
+static g_kobic_gpu_shadow_cull: i32 = 0
 # Scratch push-constant block (112B) for shadow cascade cull dispatches.
-static g_frog_shadow_cull_push: i64 = 0
+static g_kobic_shadow_cull_push: i64 = 0
 
-fun _frog_abs_f32(v: f32) -> f32:
+fun _kobic_abs_f32(v: f32) -> f32:
     if v < 0.0:
         return 0.0 - v
     return v
 
-fun _frog_pack_light(color: Color, ambient: f32) -> f32:
+fun _kobic_pack_light(color: Color, ambient: f32) -> f32:
     r: i32 = (clamp(color.r, 0.0, 1.0) * 63.0 + 0.5) as i32
     g: i32 = (clamp(color.g, 0.0, 1.0) * 63.0 + 0.5) as i32
     b: i32 = (clamp(color.b, 0.0, 1.0) * 63.0 + 0.5) as i32
     a: i32 = (clamp(ambient, 0.0, 1.0) * 63.0 + 0.5) as i32
     return (r + g * 64 + b * 4096 + a * 262144) as f32
 
-fun _frog_pack_material(material: Material3D) -> f32:
+fun _kobic_pack_material(material: Material3D) -> f32:
     r: i32 = (clamp(material.emissive.r, 0.0, 1.0) * 31.0 + 0.5) as i32
     g: i32 = (clamp(material.emissive.g, 0.0, 1.0) * 31.0 + 0.5) as i32
     b: i32 = (clamp(material.emissive.b, 0.0, 1.0) * 31.0 + 0.5) as i32
@@ -122,7 +122,7 @@ fun _frog_pack_material(material: Material3D) -> f32:
         world_pixel_sampling = 1
     return (r + g * 32 + b * 1024 + unlit * 32768 + emissive_map * 131072 + normal_map * 262144 + metallic_roughness_map * 524288 + occlusion_map * 1048576 + alpha_clip * 2097152 + double_sided * 4194304 + world_pixel_sampling * 8388608) as f32
 
-fun _frog_mesh_bounds(vertices: i64, vertex_count: i32) -> GpuMeshBounds:
+fun _kobic_mesh_bounds(vertices: i64, vertex_count: i32) -> GpuMeshBounds:
     if vertices == 0:
         return GpuMeshBounds()
     if vertex_count <= 0:
@@ -136,7 +136,7 @@ fun _frog_mesh_bounds(vertices: i64, vertex_count: i32) -> GpuMeshBounds:
     max_z: f32 = min_z
     i: i32 = 1
     while i < vertex_count:
-        off: i64 = (i as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        off: i64 = (i as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         x: f32 = Memory.read_f32(vertices + off)
         y: f32 = Memory.read_f32(vertices + off + 4)
         z: f32 = Memory.read_f32(vertices + off + 8)
@@ -163,7 +163,7 @@ fun _frog_mesh_bounds(vertices: i64, vertex_count: i32) -> GpuMeshBounds:
     radius: f32 = @sqrt(dx * dx + dy * dy + dz * dz) * 0.5 + 1.0
     return GpuMeshBounds(center_x=cx, center_y=cy, center_z=cz, radius=radius)
 
-fun _frog_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32) -> i32:
+fun _kobic_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32) -> i32:
     if vp == 0:
         return 1
     if model == 0:
@@ -195,22 +195,22 @@ fun _frog_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, boun
     # the GPU cull). Comparing the world radius against unnormalized clip
     # coordinates is not conservative once the projection scale exceeds 1
     # (any vertical FOV below 90 degrees) and dropped visible meshes.
-    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 0), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 16), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 32), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 48), x, y, z, bounds) == 1:
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 0), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 16), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 32), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 48), x, y, z, bounds) == 1:
         return 0
-    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 0), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 16), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 32), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 48), x, y, z, bounds) == 1:
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 0), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 16), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 32), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 48), x, y, z, bounds) == 1:
         return 0
-    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
         return 0
-    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
         return 0
     # Near (z >= -w, conservative for 0..1 depth) and far planes.
-    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
         return 0
-    if _frog_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
         return 0
     return 1
 
-fun _frog_sphere_outside_plane(a: f32, b: f32, c: f32, d: f32, x: f32, y: f32, z: f32, radius: f32) -> i32:
+fun _kobic_sphere_outside_plane(a: f32, b: f32, c: f32, d: f32, x: f32, y: f32, z: f32, radius: f32) -> i32:
     length: f32 = @sqrt(a * a + b * b + c * c)
     if length < 0.000001:
         return 0
@@ -218,7 +218,7 @@ fun _frog_sphere_outside_plane(a: f32, b: f32, c: f32, d: f32, x: f32, y: f32, z
         return 1
     return 0
 
-fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32, cam_x: f32, cam_y: f32, cam_z: f32, max_distance: f32) -> i32:
+fun _kobic_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32, cam_x: f32, cam_y: f32, cam_z: f32, max_distance: f32) -> i32:
     if vp == 0:
         return 1
     if model == 0:
@@ -254,7 +254,7 @@ fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f3
     cw: f32 = Memory.read_f32(vp + 12) * x + Memory.read_f32(vp + 28) * y + Memory.read_f32(vp + 44) * z + Memory.read_f32(vp + 60)
 
     bounds: f32 = bound_radius * max_scale * 2.25 + 2.0
-    limit: f32 = _frog_abs_f32(cw) * 1.08 + bounds
+    limit: f32 = _kobic_abs_f32(cw) * 1.08 + bounds
 
     if cw < 0.0 - bounds:
         return 0
@@ -268,7 +268,7 @@ fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f3
         return 0
     if cz < 0.0 - bounds:
         return 0
-    if cz > _frog_abs_f32(cw) + bounds:
+    if cz > _kobic_abs_f32(cw) + bounds:
         return 0
 
     # Shadow caster SIZE cull (shadow LOD): a caster whose projected footprint
@@ -283,8 +283,8 @@ fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f3
     #   projected_ndc_radius = world_radius * max(dx, dy) / |cw|
     # NDC spans [-1, 1] (width 2), so a threshold of e.g. 0.01 means "cull
     # casters whose shadow radius is under 0.5% of the shadow map dimension".
-    # g_frog_shadow_min_size = 0 disables the cull (default keeps prior behavior).
-    if g_frog_shadow_min_size > 0.0:
+    # g_kobic_shadow_min_size = 0 disables the cull (default keeps prior behavior).
+    if g_kobic_shadow_min_size > 0.0:
         world_radius: f32 = bound_radius * max_scale
         gx0: f32 = Memory.read_f32(vp + 0)
         gx1: f32 = Memory.read_f32(vp + 16)
@@ -297,11 +297,11 @@ fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f3
         grad: f32 = grad_x
         if grad_y > grad:
             grad = grad_y
-        denom: f32 = _frog_abs_f32(cw)
+        denom: f32 = _kobic_abs_f32(cw)
         if denom < 0.0001:
             denom = 0.0001
         ndc_radius: f32 = world_radius * grad / denom
-        if ndc_radius < g_frog_shadow_min_size:
+        if ndc_radius < g_kobic_shadow_min_size:
             return 0
     return 1
 
@@ -309,7 +309,7 @@ fun _frog_shadow_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f3
 # given cascade's NDC box (x,y in [-1,1], z in [0,1]) with a safety margin.
 # Used to skip re-drawing a near caster into the far cascade (CSM overlap
 # reduction). Conservative: any uncertainty -> 0 (keep the draw).
-fun _frog_shadow_fully_in_cascade(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32, margin: f32) -> i32:
+fun _kobic_shadow_fully_in_cascade(vp: i64, model: i64, bound_x: f32, bound_y: f32, bound_z: f32, bound_radius: f32, margin: f32) -> i32:
     if vp == 0:
         return 0
     if model == 0:
@@ -371,7 +371,7 @@ fun _frog_shadow_fully_in_cascade(vp: i64, model: i64, bound_x: f32, bound_y: f3
 # the serial logic in _record_shadow_pass exactly (shadow-flag cast bit +
 # per-instance frustum/distance test + cascade-0 containment cull) so the
 # compaction loop produces a byte-identical instance buffer.
-fun _frog_shadow_vis_one(gi: i32):
+fun _kobic_shadow_vis_one(gi: i32):
     out: i64 = g_shadow_vis_out
     vbc: i32 = g_shadow_vb_count
     light_vp: i64 = g_shadow_light_vp
@@ -424,23 +424,23 @@ fun _frog_shadow_vis_one(gi: i32):
         vis: i32 = 0
         if castable == 1:
             cascade_matrix: i64 = light_vp + (c as i64) * 64
-            vis = _frog_shadow_instance_visible(cascade_matrix, g_model, bound_x, bound_y, bound_z, bound_r, g_shadow_cam_x, g_shadow_cam_y, g_shadow_cam_z, eff_dist)
+            vis = _kobic_shadow_instance_visible(cascade_matrix, g_model, bound_x, bound_y, bound_z, bound_r, g_shadow_cam_x, g_shadow_cam_y, g_shadow_cam_z, eff_dist)
             if vis == 1:
                 if c == 1:
-                    if g_frog_shadow_cascade0_margin > 0.0:
-                        if _frog_shadow_fully_in_cascade(light_vp, g_model, bound_x, bound_y, bound_z, bound_r, g_frog_shadow_cascade0_margin) == 1:
+                    if g_kobic_shadow_cascade0_margin > 0.0:
+                        if _kobic_shadow_fully_in_cascade(light_vp, g_model, bound_x, bound_y, bound_z, bound_r, g_kobic_shadow_cascade0_margin) == 1:
                             vis = 0
         Memory.write_i32(out + ((c * vbc + gi) as i64) * 4, vis)
         c = c + 1
 
-fun _frog_cull_one(self_addr: i64, vp: i64, gi: i32, res: i64):
+fun _kobic_cull_one(self_addr: i64, vp: i64, gi: i32, res: i64):
     core: GpuRendererCore = self_addr as GpuRendererCore
     visible: i32 = 1
     if core.vb_visible != 0:
         if Memory.read_i32(core.vb_visible + gi * 4) == 0:
             visible = 0
     if visible==1 and core.mesh_material_params!=0:
-        if Memory.read_f32(core.mesh_material_params+(gi as i64)*(FROG_GPU_MESH_MATERIAL_STRIDE as i64)+8)<0.0:
+        if Memory.read_f32(core.mesh_material_params+(gi as i64)*(KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)+8)<0.0:
             # Viewmodels use their own near-depth projection in the vertex
             # shader, so the world near-plane cannot cull them on the CPU.
             Memory.write_i32(res+(gi as i64)*4,1)
@@ -466,7 +466,7 @@ fun _frog_cull_one(self_addr: i64, vp: i64, gi: i32, res: i64):
                 bound_r = Memory.read_f32(core.mesh_bound_rs + gi * 4)
                 if bound_r <= 0.0:
                     bound_r = 8.0
-            visible = _frog_instance_visible(vp, g_model, bound_x, bound_y, bound_z, bound_r)
+            visible = _kobic_instance_visible(vp, g_model, bound_x, bound_y, bound_z, bound_r)
     Memory.write_i32(res + (gi as i64) * 4, visible)
 
 # Globals for the transform-only candidate refresh (parallel body reads
@@ -484,7 +484,7 @@ fun _gpu_cull_refresh_one(k: i32):
         cull: GpuCullPipeline = g_refresh_cull as GpuCullPipeline
         cull.write_model_at(k, model_ptr)
 
-fun _frog_taa_halton(index: i32, axis: i32) -> f32:
+fun _kobic_taa_halton(index: i32, axis: i32) -> f32:
     if axis == 0:
         if index == 0:
             return 0.5
@@ -549,9 +549,9 @@ struct GpuRendererCore:
     # Per-frame instance buffers (one per frame-in-flight) to avoid a
     # CPU/GPU race: frame N must not overwrite the buffer frame N-1 is still
     # reading. Slot 0 mirrors instance_buffer/instance_memory for back-compat.
-    instance_buffers:  i64 = 0    # VkBuffer[FROG_INSTANCE_SLOTS]
-    instance_memories: i64 = 0    # VkDeviceMemory[FROG_INSTANCE_SLOTS]
-    instance_mapped_ptrs: i64 = 0 # Persistently mapped ptr[FROG_INSTANCE_SLOTS]
+    instance_buffers:  i64 = 0    # VkBuffer[KOBIC_INSTANCE_SLOTS]
+    instance_memories: i64 = 0    # VkDeviceMemory[KOBIC_INSTANCE_SLOTS]
+    instance_mapped_ptrs: i64 = 0 # Persistently mapped ptr[KOBIC_INSTANCE_SLOTS]
     instance_capacity: i32 = 0
     vb_count:          i32 = 0
     vb_capacity:       i32 = 0
@@ -635,8 +635,8 @@ struct GpuRendererCore:
     gpu_cand_gi: i64 = 0       # i32[vb_capacity]
     gpu_cand_n:  i32 = 0       # number of live candidate slots from last rebuild
     gpu_grp_n: i32 = 0
-    gpu_slot_grpn: i64 = 0     # i32[FROG_CULL_SLOTS]: group count last written per slot
-    gpu_slot_cmdbase: i64 = 0  # i32[FROG_CULL_SLOTS]: cmd base index per slot
+    gpu_slot_grpn: i64 = 0     # i32[KOBIC_CULL_SLOTS]: group count last written per slot
+    gpu_slot_cmdbase: i64 = 0  # i32[KOBIC_CULL_SLOTS]: cmd base index per slot
     gpu_cull_push: i64 = 0     # 112B push-constant scratch (planes + group fields)
     gpu_cull_rec: i64 = 0      # 128B instance-record scratch (model+material+uv+texidx)
     gpu_cull_slot: i32 = 0     # frame slot the current precull wrote into
@@ -652,15 +652,15 @@ struct GpuRendererCore:
     gpu_static_page_reps: i64 = 0   # i32[] representative mesh per page
     gpu_static_page_cmds: i64 = 0   # i32[] page counter/header command offset
     gpu_static_page_capacity: i32 = 0
-    gpu_static_slot_dirty: i64 = 0  # i32[FROG_CULL_SLOTS]
+    gpu_static_slot_dirty: i64 = 0  # i32[KOBIC_CULL_SLOTS]
     # Static candidates carry their mesh's real model matrix (a rotating
     # planet moves every terrain page). Candidate -> mesh map and per-slot
     # bookkeeping so transform-only changes refresh matrices without a
     # full regroup.
     gpu_static_cand_meshes: i64 = 0      # i32[cull capacity], absolute index
     gpu_static_cand_capacity: i32 = 0
-    gpu_static_slot_counts: i64 = 0      # i32[FROG_CULL_SLOTS]
-    gpu_static_slot_xform: i64 = 0       # i32[FROG_CULL_SLOTS] serial seen
+    gpu_static_slot_counts: i64 = 0      # i32[KOBIC_CULL_SLOTS]
+    gpu_static_slot_xform: i64 = 0       # i32[KOBIC_CULL_SLOTS] serial seen
     gpu_static_xform_serial: i32 = 0
     # Late-occlusion static meshes (set_mesh_late_occlusion): flag array with
     # its own capacity, their own page ranges after the normal candidates,
@@ -761,7 +761,7 @@ struct GpuRendererCore:
     # draw. One per frame slot, each pointing at that slot's region of the cull
     # output buffer. Built once after the SSBO pipeline + cull buffers exist.
     ssbo_desc_pool:    i64 = 0
-    ssbo_desc_sets:    i64 = 0   # VkDescriptorSet[FROG_CULL_SLOTS]
+    ssbo_desc_sets:    i64 = 0   # VkDescriptorSet[KOBIC_CULL_SLOTS]
     ssbo_desc_outbuf:  i64 = 0   # out_buffer the sets were built against (realloc guard)
     ssbo_draw_enabled: i32 = 0   # ssbo pipeline ready && bindless && indirect-count
     ssbo_pipeline_ready: i32 = 0 # ssbo pipeline built (set at init; gates firstInstance)
@@ -892,7 +892,7 @@ attach GpuRendererCore:
         self.mesh_metallic_roughness_tex_ids = Memory.malloc_zeroed(self.vb_capacity * 4)
         self.mesh_occlusion_tex_ids = Memory.malloc_zeroed(self.vb_capacity * 4)
         self.mesh_desc_sets = Memory.malloc_zeroed(self.vb_capacity * 8)
-        self.mesh_material_params = Memory.malloc_zeroed(self.vb_capacity * FROG_GPU_MESH_MATERIAL_STRIDE)
+        self.mesh_material_params = Memory.malloc_zeroed(self.vb_capacity * KOBIC_GPU_MESH_MATERIAL_STRIDE)
         self.mesh_shadow_flags = Memory.malloc_zeroed(self.vb_capacity * 4)
         self.mesh_transparent = Memory.malloc_zeroed(self.vb_capacity * 4)
         self.mesh_shadow_distances = Memory.malloc_zeroed(self.vb_capacity * 4)
@@ -906,7 +906,7 @@ attach GpuRendererCore:
             Memory.write_i32(self.mesh_normal_tex_ids + mti * 4, 0 - 1)
             Memory.write_i32(self.mesh_metallic_roughness_tex_ids + mti * 4, 0 - 1)
             Memory.write_i32(self.mesh_occlusion_tex_ids + mti * 4, 0 - 1)
-            material_off: i64 = (mti as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
+            material_off: i64 = (mti as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
             Memory.write_f32(self.mesh_material_params + material_off + 4, 1.0)
             Memory.write_f32(self.mesh_material_params + material_off + 16, 1.0)
             Memory.write_f32(self.mesh_material_params + material_off + 20, 1.0)
@@ -942,26 +942,26 @@ attach GpuRendererCore:
         Memory.write_i64(self.scratch_inst_off_arr, 0)
         self.instance_culling_enabled = 0
         # GPU-driven draw: per-frame group tracking arrays (mi / outBase /
-        # candidate count). Sized to FROG_CULL_MAX_GROUPS.
-        self.gpu_grp_capacity = FROG_CULL_MAX_GROUPS
-        self.gpu_grp_mi = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
-        self.gpu_grp_outbase = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
-        self.gpu_grp_count = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
-        self.gpu_grp_indexed = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
-        self.gpu_grp_cmd = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
-        self.gpu_grp_inbase = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
-        self.gpu_grp_draw = Memory.malloc_zeroed((FROG_CULL_MAX_GROUPS as i64) * 4)
+        # candidate count). Sized to KOBIC_CULL_MAX_GROUPS.
+        self.gpu_grp_capacity = KOBIC_CULL_MAX_GROUPS
+        self.gpu_grp_mi = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
+        self.gpu_grp_outbase = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
+        self.gpu_grp_count = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
+        self.gpu_grp_indexed = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
+        self.gpu_grp_cmd = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
+        self.gpu_grp_inbase = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
+        self.gpu_grp_draw = Memory.malloc_zeroed((KOBIC_CULL_MAX_GROUPS as i64) * 4)
         self.gpu_grp_n = 0
         # candidate-slot -> gi map, one entry per registered instance.
         self.gpu_cand_gi = Memory.malloc_zeroed((self.vb_capacity as i64) * 4)
         self.gpu_cand_n = 0
-        self.gpu_cull_push = Memory.malloc_zeroed(FROG_CULL_PUSH_SIZE)
+        self.gpu_cull_push = Memory.malloc_zeroed(KOBIC_CULL_PUSH_SIZE)
         self.gpu_cull_rec = Memory.malloc_zeroed(128)
-        self.gpu_slot_grpn = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
-        self.gpu_slot_cmdbase = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
-        self.gpu_static_slot_dirty = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
+        self.gpu_slot_grpn = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 4)
+        self.gpu_slot_cmdbase = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 4)
+        self.gpu_static_slot_dirty = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 4)
         static_dirty_slot: i32 = 0
-        while static_dirty_slot < FROG_CULL_SLOTS:
+        while static_dirty_slot < KOBIC_CULL_SLOTS:
             Memory.write_i32(self.gpu_static_slot_dirty + static_dirty_slot * 4, 1)
             static_dirty_slot = static_dirty_slot + 1
         self.retire_capacity = 0
@@ -1072,7 +1072,7 @@ attach GpuRendererCore:
         Memory.free(bind_flags)
         Memory.free(dsl_bind)
         if dsl_r != 0:
-            print("[frog.bindless] layout creation failed; classic path")
+            print("[kobic.bindless] layout creation failed; classic path")
             return 0
         self.bindless_layout = layout
 
@@ -1099,7 +1099,7 @@ attach GpuRendererCore:
         Memory.free(dp_ci)
         Memory.free(dps)
         if dp_r != 0:
-            print("[frog.bindless] pool creation failed; classic path")
+            print("[kobic.bindless] pool creation failed; classic path")
             return 0
         self.bindless_pool = pool
 
@@ -1124,12 +1124,12 @@ attach GpuRendererCore:
         Memory.free(ai)
         Memory.free(layout_arr)
         if ar != 0:
-            print("[frog.bindless] set allocation failed; classic path")
+            print("[kobic.bindless] set allocation failed; classic path")
             return 0
         self.bindless_set = bset
         self.bindless_count = 0
         self.bindless_enabled = 1
-        print(@"[frog.bindless] table ready (capacity={cap})")
+        print(@"[kobic.bindless] table ready (capacity={cap})")
         return 1
 
     # Phase 2: build the instance-SSBO descriptor sets (set 3) for the
@@ -1143,12 +1143,12 @@ attach GpuRendererCore:
             return 0
         if cull.out_handle() == 0:
             return 0
-        slot_stride: i64 = (cull.slot_capacity() as i64) * (FROG_CULL_OUT_STRIDE as i64)
+        slot_stride: i64 = (cull.slot_capacity() as i64) * (KOBIC_CULL_OUT_STRIDE as i64)
         if slot_stride <= 0:
             return 0
         self.ssbo_layout_ref = ssbo_layout
 
-        # Pool: FROG_CULL_SLOTS storage-buffer sets. Reset on rebuild so we can
+        # Pool: KOBIC_CULL_SLOTS storage-buffer sets. Reset on rebuild so we can
         # re-allocate the sets to point at a reallocated output buffer.
         if self.ssbo_desc_pool == 0:
             ps: i64 = Memory.malloc_zeroed(8)
@@ -1160,10 +1160,10 @@ attach GpuRendererCore:
                 Memory.free(dp_out)
                 return 0
             Memory.write_i32(ps, 7)              # STORAGE_BUFFER
-            Memory.write_i32(ps + 4, FROG_CULL_SLOTS)
+            Memory.write_i32(ps + 4, KOBIC_CULL_SLOTS)
             Memory.write_i32(dp_ci, 33)
             Memory.write_i32(dp_ci + 16, 1)      # FREE_DESCRIPTOR_SET (allow reset/realloc)
-            Memory.write_i32(dp_ci + 20, FROG_CULL_SLOTS)   # maxSets
+            Memory.write_i32(dp_ci + 20, KOBIC_CULL_SLOTS)   # maxSets
             Memory.write_i32(dp_ci + 24, 1)
             Memory.write_ptr(dp_ci + 32, ps)
             dp_r: i32 = vkCreateDescriptorPool(self.device, dp_ci, 0, dp_out)
@@ -1173,13 +1173,13 @@ attach GpuRendererCore:
             Memory.free(ps)
             if dp_r != 0:
                 return 0
-            self.ssbo_desc_sets = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 8)
+            self.ssbo_desc_sets = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 8)
         else:
             vkResetDescriptorPool(self.device, self.ssbo_desc_pool, 0)
 
         # Allocate + write one set per slot, each over its output region.
         s: i32 = 0
-        while s < FROG_CULL_SLOTS:
+        while s < KOBIC_CULL_SLOTS:
             layout_arr: i64 = Memory.malloc_zeroed(8)
             ai: i64 = Memory.malloc_zeroed(40)
             set_out: i64 = Memory.malloc_zeroed(8)
@@ -1214,7 +1214,7 @@ attach GpuRendererCore:
             s = s + 1
         self.ssbo_draw_enabled = 1
         self.ssbo_desc_outbuf = cull.out_handle()
-        print("[frog.bindless] SSBO instance pipeline ready")
+        print("[kobic.bindless] SSBO instance pipeline ready")
         return 1
 
     # Phase 1 task 1.3: write a (view, sampler) pair into the next free slot
@@ -1304,7 +1304,7 @@ attach GpuRendererCore:
                 cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
                 ready = cull.ready
             if ready == 0:
-                print("[frog.cull] GPU culling not ready; CPU fallback")
+                print("[kobic.cull] GPU culling not ready; CPU fallback")
                 m = 0
         self.culling_mode = m
 
@@ -1379,8 +1379,8 @@ attach GpuRendererCore:
             i = i + 1
 
         # Build push constants: extract frustum planes from VP + candidate count.
-        push: i64 = Memory.malloc_zeroed(FROG_CULL_PUSH_SIZE)
-        frog_cull_extract_planes(vp_mat, push)
+        push: i64 = Memory.malloc_zeroed(KOBIC_CULL_PUSH_SIZE)
+        kobic_cull_extract_planes(vp_mat, push)
         Memory.write_i32(push + 96, cand)
 
         cull.prepare_group_cmd(0, 36, 0, 0, 0)
@@ -1394,7 +1394,7 @@ attach GpuRendererCore:
         Memory.free(push)
 
         gpu_visible: i32 = cull.group_visible_count(0)
-        print(@"[frog.cull] scene cull: candidates={cand} gpu_visible={gpu_visible}")
+        print(@"[kobic.cull] scene cull: candidates={cand} gpu_visible={gpu_visible}")
 
     # GPU-driven culling pre-pass. Persistent-input architecture:
     #   - The candidate records are uploaded to the GPU ONCE (and re-packed
@@ -1438,8 +1438,8 @@ attach GpuRendererCore:
 
         # Frustum planes (cheap, per frame).
         push: i64 = self.gpu_cull_push
-        Memory.set(push, 0, FROG_CULL_PUSH_SIZE)
-        frog_cull_extract_planes(vp_mat, push)
+        Memory.set(push, 0, KOBIC_CULL_PUSH_SIZE)
+        kobic_cull_extract_planes(vp_mat, push)
 
         # Ensure the CPU's per-frame writes to the host-mapped input + indirect
         # buffers are visible to the compute pass before it dispatches (fixes
@@ -1571,7 +1571,7 @@ attach GpuRendererCore:
                         gi = gi + 1
 
                 if group_n > 0:
-                    if grp < FROG_CULL_MAX_GROUPS:
+                    if grp < KOBIC_CULL_MAX_GROUPS:
                         draw_count: i32 = ic
                         if indexed == 0:
                             draw_count = vc
@@ -1623,8 +1623,8 @@ attach GpuRendererCore:
 
     fun _ensure_gpu_static_cand_capacity(self, capacity: i32) -> i32:
         if self.gpu_static_slot_counts == 0:
-            self.gpu_static_slot_counts = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
-            self.gpu_static_slot_xform = Memory.malloc_zeroed((FROG_CULL_SLOTS as i64) * 4)
+            self.gpu_static_slot_counts = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 4)
+            self.gpu_static_slot_xform = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 4)
             if self.gpu_static_slot_counts == 0 or self.gpu_static_slot_xform == 0:
                 return 0
         if capacity <= self.gpu_static_cand_capacity and self.gpu_static_cand_meshes != 0:
@@ -1664,7 +1664,7 @@ attach GpuRendererCore:
         self.gpu_static_dirty = 1
         if self.gpu_static_slot_dirty != 0:
             static_dirty_slot: i32 = 0
-            while static_dirty_slot < FROG_CULL_SLOTS:
+            while static_dirty_slot < KOBIC_CULL_SLOTS:
                 Memory.write_i32(self.gpu_static_slot_dirty + static_dirty_slot * 4, 1)
                 static_dirty_slot = static_dirty_slot + 1
         if self.gpu_cull_ptr != 0:
@@ -1761,7 +1761,7 @@ attach GpuRendererCore:
                         if Memory.read_i32(self.vb_visible + mi * 4) != 0:
                             index_count: i32 = Memory.read_i32(self.ib_index_counts + mi * 4)
                             if index_count > 0:
-                                if cursor >= FROG_CULL_MAX_GROUPS or cursor >= cull.slot_cap:
+                                if cursor >= KOBIC_CULL_MAX_GROUPS or cursor >= cull.slot_cap:
                                     return 0
                                 if rep < 0:
                                     rep = mi
@@ -1779,7 +1779,7 @@ attach GpuRendererCore:
                 mi = mi + 1
             Memory.write_i32(bases + page * 4, page_base)
             page_count: i32 = cursor - page_base
-            if command_cursor + page_count + 1 > FROG_CULL_MAX_GROUPS:
+            if command_cursor + page_count + 1 > KOBIC_CULL_MAX_GROUPS:
                 return 0
             Memory.write_i32(counts + page * 4, page_count)
             Memory.write_i32(reps + page * 4, rep)
@@ -1817,7 +1817,7 @@ attach GpuRendererCore:
             Memory.write_i32(self.gpu_static_slot_dirty + slot * 4, 0)
             other_dirty: i32 = 0
             dirty_scan: i32 = 0
-            while dirty_scan < FROG_CULL_SLOTS:
+            while dirty_scan < KOBIC_CULL_SLOTS:
                 if Memory.read_i32(self.gpu_static_slot_dirty + dirty_scan * 4) != 0:
                     other_dirty = 1
                 dirty_scan = dirty_scan + 1
@@ -1839,8 +1839,8 @@ attach GpuRendererCore:
             return 0
         cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
         push: i64 = self.gpu_cull_push
-        Memory.set(push, 0, FROG_CULL_PUSH_SIZE)
-        frog_cull_extract_planes(vp_mat, push)
+        Memory.set(push, 0, KOBIC_CULL_PUSH_SIZE)
+        kobic_cull_extract_planes(vp_mat, push)
         mode: f32 = 0.0 - 1.0
         if occlusion == 1:
             mode = 0.0 - 2.0
@@ -1892,23 +1892,23 @@ attach GpuRendererCore:
             rep: i32 = Memory.read_i32(self.gpu_late_page_reps + page * 4)
             if count > 0 and rep >= 0:
                 model: i64 = Memory.read_ptr(self.model_matrices + rep * 8)
-                dst: i64 = mapped_instances + ((instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                dst: i64 = mapped_instances + ((instance_write as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                 if model != 0:
                     Memory.copy(dst, model, 64)
                 if self.mesh_material_params != 0:
-                    Memory.copy(dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + (rep as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64), 32)
+                    Memory.copy(dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + (rep as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64), 32)
                 receive_shadow: i32 = 1
                 if self.mesh_shadow_flags != 0:
                     shadow_flags: i32 = Memory.read_i32(self.mesh_shadow_flags + rep * 4)
                     receive_shadow = (shadow_flags / 2) - (shadow_flags / 4) * 2
                 if receive_shadow == 1:
-                    packed: f32 = Memory.read_f32(dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12)
-                    Memory.write_f32(dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed + 65536.0)
+                    packed: f32 = Memory.read_f32(dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12)
+                    Memory.write_f32(dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed + 65536.0)
                 self._write_record_texidx(dst, rep)
                 Memory.write_ptr(self.scratch_vb_arr, Memory.read_ptr(self.arena_page_vbs + page * 8))
                 vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
                 Memory.write_ptr(self.scratch_inst_vb_arr, frame_inst_buf)
-                Memory.write_i64(self.scratch_inst_off_arr, (instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                Memory.write_i64(self.scratch_inst_off_arr, (instance_write as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                 vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
                 vkCmdBindIndexBuffer(cmd, Memory.read_ptr(self.arena_page_ibs + page * 8), 0, 1)
                 if use_bindless == 0:
@@ -1999,7 +1999,7 @@ attach GpuRendererCore:
             self.gpu_static_dirty = 1
             if self.gpu_static_slot_dirty != 0:
                 dirty_slot: i32 = 0
-                while dirty_slot < FROG_CULL_SLOTS:
+                while dirty_slot < KOBIC_CULL_SLOTS:
                     Memory.write_i32(self.gpu_static_slot_dirty + dirty_slot * 4, 1)
                     dirty_slot = dirty_slot + 1
         slot_dirty: i32 = self.gpu_static_dirty
@@ -2014,8 +2014,8 @@ attach GpuRendererCore:
             return 0
 
         push: i64 = self.gpu_cull_push
-        Memory.set(push, 0, FROG_CULL_PUSH_SIZE)
-        frog_cull_extract_planes(vp_mat, push)
+        Memory.set(push, 0, KOBIC_CULL_PUSH_SIZE)
+        kobic_cull_extract_planes(vp_mat, push)
         static_mode: f32 = 0.0 - 1.0
         if self.gpu_hzb_use_frame == 1:
             static_mode = 0.0 - 2.0
@@ -2058,18 +2058,18 @@ attach GpuRendererCore:
         normal: i32 = self._mesh_bindless_slot(self.mesh_normal_tex_ids, gi, white_slot)
         mr: i32 = self._mesh_bindless_slot(self.mesh_metallic_roughness_tex_ids, gi, white_slot)
         occ: i32 = self._mesh_bindless_slot(self.mesh_occlusion_tex_ids, gi, white_slot)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET, albedo)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 4, emissive)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 8, normal)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 12, mr)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 16, occ)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 20, frog_skin_offset(gi))
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_TEXIDX_OFFSET + 24, 0)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET, albedo)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 4, emissive)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 8, normal)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 12, mr)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 16, occ)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 20, kobic_skin_offset(gi))
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 24, 0)
         alpha: f32 = 1.0
         if self.mesh_material_params != 0:
-            material_off: i64 = (gi as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
+            material_off: i64 = (gi as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
             alpha = clamp(Memory.read_f32(self.mesh_material_params + material_off + 32), 0.0, 1.0)
-        Memory.write_i32(rec + FROG_GPU_INSTANCE_ALPHA_OFFSET, (alpha * 65535.0 + 0.5) as i32)
+        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_ALPHA_OFFSET, (alpha * 65535.0 + 0.5) as i32)
 
     # Resolve mesh gi's texture id from a mesh->tex_id array into a bindless
     # slot, falling back to `fallback_slot` when the id is missing/-1.
@@ -2106,25 +2106,25 @@ attach GpuRendererCore:
         Memory.copy(rec, g_model, 64)
         # Material + uv: mirror the CPU path exactly.
         if self.mesh_material_params != 0:
-            material_off: i64 = (gi as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
-            Memory.copy(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + material_off, 32)
+            material_off: i64 = (gi as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+            Memory.copy(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + material_off, 32)
         else:
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET, 0.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 4, 1.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 8, 0.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, 0.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_UV_OFFSET, 1.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_UV_OFFSET + 4, 1.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_UV_OFFSET + 8, 0.0)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_UV_OFFSET + 12, 0.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET, 0.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 4, 1.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 8, 0.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12, 0.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_UV_OFFSET, 1.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_UV_OFFSET + 4, 1.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_UV_OFFSET + 8, 0.0)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_UV_OFFSET + 12, 0.0)
         # Shadow-receive bit packed into material.w (matches CPU path).
         receive_shadow: i32 = 1
         if self.mesh_shadow_flags != 0:
             shadow_flags: i32 = Memory.read_i32(self.mesh_shadow_flags + gi * 4)
             receive_shadow = (shadow_flags / 2) - (shadow_flags / 4) * 2
         if receive_shadow == 1:
-            packed_material: f32 = Memory.read_f32(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12)
-            Memory.write_f32(rec + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed_material + 65536.0)
+            packed_material: f32 = Memory.read_f32(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12)
+            Memory.write_f32(rec + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed_material + 65536.0)
         self._write_record_texidx(rec, gi)
         cull.write_full_instance(dst_idx, rec, bx, by, bz, br)
 
@@ -2214,7 +2214,7 @@ attach GpuRendererCore:
                 # offset (out_base * stride) and keep the indirect command's
                 # firstInstance=0, so we don't need drawIndirectFirstInstance.
                 Memory.write_ptr(self.scratch_inst_vb_arr, out_buf)
-                Memory.write_i64(self.scratch_inst_off_arr, (out_base as i64) * (FROG_CULL_OUT_STRIDE as i64))
+                Memory.write_i64(self.scratch_inst_off_arr, (out_base as i64) * (KOBIC_CULL_OUT_STRIDE as i64))
                 vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
 
                 grp_desc: i64 = self.mesh_descriptor_set(rp, mi)
@@ -2287,7 +2287,7 @@ attach GpuRendererCore:
                     last_vb = vb_handle
 
                 Memory.write_ptr(self.scratch_inst_vb_arr, out_buf)
-                Memory.write_i64(self.scratch_inst_off_arr, (out_base as i64) * (FROG_CULL_OUT_STRIDE as i64))
+                Memory.write_i64(self.scratch_inst_off_arr, (out_base as i64) * (KOBIC_CULL_OUT_STRIDE as i64))
                 vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
 
                 cull.set_draw_count(g, 1)
@@ -2328,7 +2328,7 @@ attach GpuRendererCore:
                             vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
                             last_vb = vb2
                         Memory.write_ptr(self.scratch_inst_vb_arr, out_buf)
-                        Memory.write_i64(self.scratch_inst_off_arr, (out_base2 as i64) * (FROG_CULL_OUT_STRIDE as i64))
+                        Memory.write_i64(self.scratch_inst_off_arr, (out_base2 as i64) * (KOBIC_CULL_OUT_STRIDE as i64))
                         vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
                         cull.set_draw_count(gt, 1)
                         cmd_off2: i64 = cull.group_cmd_offset(cmd_index2)
@@ -2364,7 +2364,7 @@ attach GpuRendererCore:
         slot: i32 = self.gpu_cull_slot
         if slot < 0:
             slot = 0
-        if slot >= FROG_CULL_SLOTS:
+        if slot >= KOBIC_CULL_SLOTS:
             slot = 0
         ssbo_set: i64 = Memory.read_ptr(self.ssbo_desc_sets + slot * 8)
         if ssbo_set != 0:
@@ -2444,8 +2444,8 @@ attach GpuRendererCore:
         self.point_light_count = count
         if self.point_light_count < 0:
             self.point_light_count = 0
-        if self.point_light_count > FROG_POINT_LIGHT_SLOTS:
-            self.point_light_count = FROG_POINT_LIGHT_SLOTS
+        if self.point_light_count > KOBIC_POINT_LIGHT_SLOTS:
+            self.point_light_count = KOBIC_POINT_LIGHT_SLOTS
 
     fun set_shadow_camera(self, x: f32, y: f32, z: f32, pitch: f32, yaw: f32):
         pitch_rad: f32 = pitch * 3.14159265 / 180.0
@@ -2582,11 +2582,11 @@ attach GpuRendererCore:
     fun _record_capture_copy(self, cmd: i64, swap_image: i64, width: i32, height: i32):
         self.capture_requested = 0
         if self.capture_swap_transfer == 0 or swap_image == 0 or width <= 0 or height <= 0:
-            print("[frog.capture] swapchain images do not allow transfer reads; frame not captured")
+            print("[kobic.capture] swapchain images do not allow transfer reads; frame not captured")
             return
         buf: GpuBufferUpload = self._create_mapped_buffer((width as i64) * (height as i64) * 4, 2)
         if buf.ok == 0:
-            print("[frog.capture] could not allocate the readback buffer")
+            print("[kobic.capture] could not allocate the readback buffer")
             return
         region: i64 = Memory.malloc_zeroed(56)
         barrier: i64 = Memory.malloc_zeroed(24)
@@ -2655,7 +2655,7 @@ attach GpuRendererCore:
                 file.write_bytes(pixels, pixel_bytes as i32)
                 file.close()
             else:
-                print("[frog.capture] could not open " + self.capture_path)
+                print("[kobic.capture] could not open " + self.capture_path)
             Memory.free(header)
         vkDestroyBuffer(self.device, self.capture_buffer, 0)
         vkFreeMemory(self.device, self.capture_memory, 0)
@@ -2682,38 +2682,38 @@ attach GpuRendererCore:
     # pass. 0.0 disables (default). Cheap win for dense scenes.
     fun set_shadow_min_size(self, threshold: f32):
         if threshold < 0.0:
-            g_frog_shadow_min_size = 0.0
+            g_kobic_shadow_min_size = 0.0
         else:
-            g_frog_shadow_min_size = threshold
+            g_kobic_shadow_min_size = threshold
 
     # CSM cascade-0 priority cull: skip re-drawing near casters into the far
     # cascade. margin is an NDC safety band (0 disables). Risky under grazing
     # light, so opt-in.
     fun set_shadow_cascade0_margin(self, margin: f32):
         if margin < 0.0:
-            g_frog_shadow_cascade0_margin = 0.0
+            g_kobic_shadow_cascade0_margin = 0.0
         else:
-            g_frog_shadow_cascade0_margin = margin
+            g_kobic_shadow_cascade0_margin = margin
 
     # Enable CPU command-recording profiler (prints shadow-build vs total
     # recording us every 120 frames). Off by default.
     fun set_cpu_record_timing(self, enabled: i32):
         if enabled == 0:
-            g_frog_cpu_prof_enabled = 0
+            g_kobic_cpu_prof_enabled = 0
         else:
-            g_frog_cpu_prof_enabled = 1
-        g_frog_cpu_prof_shadow_ticks = 0
-        g_frog_cpu_prof_total_ticks = 0
-        g_frog_cpu_prof_frames = 0
+            g_kobic_cpu_prof_enabled = 1
+        g_kobic_cpu_prof_shadow_ticks = 0
+        g_kobic_cpu_prof_total_ticks = 0
+        g_kobic_cpu_prof_frames = 0
 
     # S6: enable GPU-driven shadow culling (cull each cascade on the GPU +
     # indirect draw, eliminating the CPU shadow compaction). Only active when
     # the GPU draw path is on; otherwise the CPU shadow path runs. 0 = CPU.
     fun set_gpu_shadow_cull(self, enabled: i32):
         if enabled == 0:
-            g_frog_gpu_shadow_cull = 0
+            g_kobic_gpu_shadow_cull = 0
         else:
-            g_frog_gpu_shadow_cull = 1
+            g_kobic_gpu_shadow_cull = 1
 
     fun _debug_record_frame(self):
         if self.debug_render_stats_enabled == 0:
@@ -2728,7 +2728,7 @@ attach GpuRendererCore:
             registered_triangle_count: i64 = self.debug_registered_indices / 3
             visible_vertex_count: i64 = self.debug_visible_vertices
             registered_vertex_count: i64 = self.debug_registered_vertices
-            print(@"[frog.render] frames=120 meshes={mesh_count} instances={instance_count} vertices={visible_vertex_count} registeredVertices={registered_vertex_count} triangles={triangle_count} registeredTriangles={registered_triangle_count} draws={draw_count} indexed={indexed_count}")
+            print(@"[kobic.render] frames=120 meshes={mesh_count} instances={instance_count} vertices={visible_vertex_count} registeredVertices={registered_vertex_count} triangles={triangle_count} registeredTriangles={registered_triangle_count} draws={draw_count} indexed={indexed_count}")
             self.debug_window_triangles = triangle_count
             self.debug_window_vertices = visible_vertex_count
             self.debug_window_draws = draw_count as i64
@@ -2769,7 +2769,7 @@ attach GpuRendererCore:
                 bound_r: f32 = Memory.read_f32(self.mesh_bound_rs + mi * 4)
                 if bound_r <= 0.0:
                     bound_r = 8.0
-                visible = _frog_instance_visible(vp, model, bound_x, bound_y, bound_z, bound_r)
+                visible = _kobic_instance_visible(vp, model, bound_x, bound_y, bound_z, bound_r)
             primitive_indices: i32 = Memory.read_i32(self.ib_index_counts + mi * 4)
             vertex_count: i32 = Memory.read_i32(self.vb_vert_counts + mi * 4)
             if primitive_indices <= 0:
@@ -2815,7 +2815,7 @@ attach GpuRendererCore:
         new_mesh_metallic_roughness_tex: i64 = Memory.malloc_zeroed(new_cap * 4)
         new_mesh_occlusion_tex: i64 = Memory.malloc_zeroed(new_cap * 4)
         new_mesh_desc_sets: i64 = Memory.malloc_zeroed(new_cap * 8)
-        new_mesh_materials: i64 = Memory.malloc_zeroed(new_cap * FROG_GPU_MESH_MATERIAL_STRIDE)
+        new_mesh_materials: i64 = Memory.malloc_zeroed(new_cap * KOBIC_GPU_MESH_MATERIAL_STRIDE)
         new_shadow_flags: i64 = Memory.malloc_zeroed(new_cap * 4)
         new_shadow_distances: i64 = Memory.malloc_zeroed(new_cap * 4)
         new_transparent: i64 = Memory.malloc_zeroed(new_cap * 4)
@@ -2826,7 +2826,7 @@ attach GpuRendererCore:
             Memory.write_i32(new_mesh_normal_tex + mti2 * 4, 0 - 1)
             Memory.write_i32(new_mesh_metallic_roughness_tex + mti2 * 4, 0 - 1)
             Memory.write_i32(new_mesh_occlusion_tex + mti2 * 4, 0 - 1)
-            new_material_off: i64 = (mti2 as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
+            new_material_off: i64 = (mti2 as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
             Memory.write_f32(new_mesh_materials + new_material_off + 4, 1.0)
             Memory.write_f32(new_mesh_materials + new_material_off + 16, 1.0)
             Memory.write_f32(new_mesh_materials + new_material_off + 20, 1.0)
@@ -2873,7 +2873,7 @@ attach GpuRendererCore:
         if self.mesh_desc_sets != 0:
             Memory.copy(new_mesh_desc_sets, self.mesh_desc_sets, self.vb_capacity * 8)
         if self.mesh_material_params != 0:
-            Memory.copy(new_mesh_materials, self.mesh_material_params, self.vb_capacity * FROG_GPU_MESH_MATERIAL_STRIDE)
+            Memory.copy(new_mesh_materials, self.mesh_material_params, self.vb_capacity * KOBIC_GPU_MESH_MATERIAL_STRIDE)
         if self.mesh_shadow_flags != 0:
             Memory.copy(new_shadow_flags, self.mesh_shadow_flags, self.vb_capacity * 4)
         if self.mesh_shadow_distances != 0:
@@ -3355,7 +3355,7 @@ attach GpuRendererCore:
         Memory.write_ptr(self.arena_page_imaps + page * 8, ib.mapped)
         Memory.write_i64(self.arena_page_icaps + page * 8, ibytes)
         self.arena_page_count = page + 1
-        print(@"[frog.mesh_arena] page={page} vertex_bytes={vbytes} index_bytes={ibytes}")
+        print(@"[kobic.mesh_arena] page={page} vertex_bytes={vbytes} index_bytes={ibytes}")
         return page
 
     fun reserve_dynamic_mesh_arena(self, vertex_bytes: i64, index_bytes: i64) -> i32:
@@ -3441,7 +3441,7 @@ attach GpuRendererCore:
         # the arena to ~5x its live geometry, one 160 MB page allocation (and a
         # visible hitch) at a time. The remainder keeps the original retire
         # stamp: that memory has been unused for the same >= 8 frames.
-        min_split_vbytes: i64 = 256 * (FROG_GPU_VERTEX_STRIDE as i64)
+        min_split_vbytes: i64 = 256 * (KOBIC_GPU_VERTEX_STRIDE as i64)
         min_split_ibytes: i64 = 384 * 4
         reuse_pass: i32 = 0
         while reuse_pass < 2:
@@ -3484,7 +3484,7 @@ attach GpuRendererCore:
                 rest_v: i64 = b_vcap - vbytes
                 rest_i: i64 = b_icap - ibytes
                 if rest_v >= min_split_vbytes and rest_i >= min_split_ibytes:
-                    self._arena_push_free(b_page, b_fv + (vbytes / (FROG_GPU_VERTEX_STRIDE as i64)) as i32, b_fi + (ibytes / 4) as i32, rest_v, rest_i, b_frame)
+                    self._arena_push_free(b_page, b_fv + (vbytes / (KOBIC_GPU_VERTEX_STRIDE as i64)) as i32, b_fi + (ibytes / 4) as i32, rest_v, rest_i, b_frame)
                     return GpuArenaSlice(page=b_page, first_vertex=b_fv, first_index=b_fi, vertex_capacity=vbytes, index_capacity=ibytes, ok=1)
                 return GpuArenaSlice(page=b_page, first_vertex=b_fv, first_index=b_fi, vertex_capacity=b_vcap, index_capacity=b_icap, ok=1)
             if preferred_page < 0:
@@ -3502,7 +3502,7 @@ attach GpuRendererCore:
             if pvc + vbytes <= pvcap and pic + ibytes <= picap:
                 Memory.write_i64(self.arena_page_vcursors + page * 8, pvc + vbytes)
                 Memory.write_i64(self.arena_page_icursors + page * 8, pic + ibytes)
-                return GpuArenaSlice(page=page, first_vertex=(pvc / (FROG_GPU_VERTEX_STRIDE as i64)) as i32, first_index=(pic / 4) as i32, vertex_capacity=vbytes, index_capacity=ibytes, ok=1)
+                return GpuArenaSlice(page=page, first_vertex=(pvc / (KOBIC_GPU_VERTEX_STRIDE as i64)) as i32, first_index=(pic / 4) as i32, vertex_capacity=vbytes, index_capacity=ibytes, ok=1)
         page = 0
         while page < self.arena_page_count:
             vc: i64 = Memory.read_i64(self.arena_page_vcursors + page * 8)
@@ -3512,7 +3512,7 @@ attach GpuRendererCore:
             if vc + vbytes <= vcap2 and ic + ibytes <= icap2:
                 Memory.write_i64(self.arena_page_vcursors + page * 8, vc + vbytes)
                 Memory.write_i64(self.arena_page_icursors + page * 8, ic + ibytes)
-                return GpuArenaSlice(page=page, first_vertex=(vc / (FROG_GPU_VERTEX_STRIDE as i64)) as i32, first_index=(ic / 4) as i32, vertex_capacity=vbytes, index_capacity=ibytes, ok=1)
+                return GpuArenaSlice(page=page, first_vertex=(vc / (KOBIC_GPU_VERTEX_STRIDE as i64)) as i32, first_index=(ic / 4) as i32, vertex_capacity=vbytes, index_capacity=ibytes, ok=1)
             page = page + 1
         page = self._arena_add_page(vbytes, ibytes)
         if page < 0:
@@ -3554,7 +3554,7 @@ attach GpuRendererCore:
         while new_cap < needed:
             new_cap = new_cap * 2
 
-        size: i64 = (new_cap as i64) * (FROG_GPU_INSTANCE_STRIDE as i64)
+        size: i64 = (new_cap as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64)
         zeros: i64 = Memory.malloc_zeroed(size)
         if zeros == 0:
             return 0
@@ -3574,7 +3574,7 @@ attach GpuRendererCore:
                 if old_mapped != 0:
                     vkUnmapMemory(self.device, old_mem)
             if old_mem != 0:
-                old_size: i64 = (self.instance_capacity as i64) * (FROG_GPU_INSTANCE_STRIDE as i64)
+                old_size: i64 = (self.instance_capacity as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64)
                 self._retire_buffer_pair(old_buf, old_mem, old_size, 128)
             elif old_buf != 0:
                 vkDestroyBuffer(self.device, old_buf, 0)
@@ -3660,7 +3660,7 @@ attach GpuRendererCore:
             new_cap = 1024
         while new_cap < needed:
             new_cap = new_cap * 2
-        size: i64 = (new_cap as i64) * (FROG_GPU_INSTANCE_STRIDE as i64)
+        size: i64 = (new_cap as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64)
         zeros: i64 = Memory.malloc_zeroed(size)
         if zeros == 0:
             return 0
@@ -3677,7 +3677,7 @@ attach GpuRendererCore:
             if old_mem != 0:
                 if old_mapped != 0:
                     vkUnmapMemory(self.device, old_mem)
-                self._retire_buffer_pair(old_buf, old_mem, (instance_capacity as i64) * (FROG_GPU_INSTANCE_STRIDE as i64), 128)
+                self._retire_buffer_pair(old_buf, old_mem, (instance_capacity as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64), 128)
             elif old_buf != 0:
                 vkDestroyBuffer(self.device, old_buf, 0)
 
@@ -3756,18 +3756,18 @@ attach GpuRendererCore:
             return 0
         if Memory.read_ptr(self.skin_buffers) != 0 and Memory.read_ptr(self.skin_buffers + 8) != 0:
             return 1
-        zero: i64 = Memory.malloc_zeroed(FROG_SKIN_BYTES)
+        zero: i64 = Memory.malloc_zeroed(KOBIC_SKIN_BYTES)
         if zero == 0:
             return 0
         slot: i32 = 0
         while slot < 2:
             if Memory.read_ptr(self.skin_buffers + slot * 8) == 0:
-                upload: GpuBufferUpload = self._upload_buffer(zero, FROG_SKIN_BYTES, 32)
+                upload: GpuBufferUpload = self._upload_buffer(zero, KOBIC_SKIN_BYTES, 32)
                 if upload.ok == 0:
                     Memory.free(zero)
                     return 0
                 Memory.write_ptr(self.scratch_map_pp, 0)
-                result: i32 = vkMapMemory(self.device, upload.memory, 0, FROG_SKIN_BYTES, 0, self.scratch_map_pp)
+                result: i32 = vkMapMemory(self.device, upload.memory, 0, KOBIC_SKIN_BYTES, 0, self.scratch_map_pp)
                 mapped: i64 = Memory.read_ptr(self.scratch_map_pp)
                 if result != 0 or mapped == 0:
                     vkDestroyBuffer(self.device, upload.handle, 0)
@@ -3790,7 +3790,7 @@ attach GpuRendererCore:
         if self.point_light_buffers == 0 or self.point_light_memories == 0 or self.point_light_mapped_ptrs == 0 or self.point_light_desc_sets == 0:
             return 0
 
-        zero_data: i64 = Memory.malloc_zeroed(FROG_POINT_LIGHT_DATA_SIZE)
+        zero_data: i64 = Memory.malloc_zeroed(KOBIC_POINT_LIGHT_DATA_SIZE)
         if zero_data == 0:
             return 0
         slot: i32 = 0
@@ -3799,14 +3799,14 @@ attach GpuRendererCore:
             memory: i64 = Memory.read_ptr(self.point_light_memories + slot * 8)
             mapped: i64 = Memory.read_ptr(self.point_light_mapped_ptrs + slot * 8)
             if buffer == 0 or memory == 0 or mapped == 0:
-                uploaded: GpuBufferUpload = self._upload_buffer(zero_data, FROG_POINT_LIGHT_DATA_SIZE, 16)
+                uploaded: GpuBufferUpload = self._upload_buffer(zero_data, KOBIC_POINT_LIGHT_DATA_SIZE, 16)
                 if uploaded.ok == 0:
                     Memory.free(zero_data)
                     return 0
                 Memory.write_ptr(self.point_light_buffers + slot * 8, uploaded.handle)
                 Memory.write_ptr(self.point_light_memories + slot * 8, uploaded.memory)
                 Memory.write_ptr(self.scratch_map_pp, 0)
-                map_result: i32 = vkMapMemory(self.device, uploaded.memory, 0, FROG_POINT_LIGHT_DATA_SIZE, 0, self.scratch_map_pp)
+                map_result: i32 = vkMapMemory(self.device, uploaded.memory, 0, KOBIC_POINT_LIGHT_DATA_SIZE, 0, self.scratch_map_pp)
                 mapped = Memory.read_ptr(self.scratch_map_pp)
                 if map_result != 0 or mapped == 0:
                     vkDestroyBuffer(self.device, uploaded.handle, 0)
@@ -3821,7 +3821,7 @@ attach GpuRendererCore:
                     Memory.free(zero_data)
                     return 0
                 skin_buffer: i64 = Memory.read_ptr(self.skin_buffers + slot * 8)
-                desc = rp.make_lighting_descriptor(self.device, buffer, FROG_POINT_LIGHT_DATA_SIZE, skin_buffer)
+                desc = rp.make_lighting_descriptor(self.device, buffer, KOBIC_POINT_LIGHT_DATA_SIZE, skin_buffer)
                 if desc == 0:
                     Memory.free(zero_data)
                     return 0
@@ -3840,7 +3840,7 @@ attach GpuRendererCore:
             if self.point_light_buffers != 0:
                 buffer = Memory.read_ptr(self.point_light_buffers + slot * 8)
             if buffer != 0:
-                desc: i64 = rp.make_lighting_descriptor(self.device, buffer, FROG_POINT_LIGHT_DATA_SIZE, Memory.read_ptr(self.skin_buffers + slot * 8))
+                desc: i64 = rp.make_lighting_descriptor(self.device, buffer, KOBIC_POINT_LIGHT_DATA_SIZE, Memory.read_ptr(self.skin_buffers + slot * 8))
                 if desc == 0:
                     return 0
                 Memory.write_ptr(self.point_light_desc_sets + slot * 8, desc)
@@ -3850,7 +3850,7 @@ attach GpuRendererCore:
     fun _write_point_light_data(self, out: i64, env: Environment):
         if out == 0:
             return
-        Memory.set(out, 0, FROG_POINT_LIGHT_DATA_SIZE)
+        Memory.set(out, 0, KOBIC_POINT_LIGHT_DATA_SIZE)
         if env.lighting.enabled == 1:
             if env.sky.enabled() == 1:
                 Memory.write_f32(out + 272, env.sky.zenith_color.r)
@@ -3869,8 +3869,8 @@ attach GpuRendererCore:
         if self.point_light_ptrs == 0:
             return
         source_count: i32 = self.point_light_count
-        if source_count > FROG_POINT_LIGHT_SLOTS:
-            source_count = FROG_POINT_LIGHT_SLOTS
+        if source_count > KOBIC_POINT_LIGHT_SLOTS:
+            source_count = KOBIC_POINT_LIGHT_SLOTS
         write_index: i32 = 0
         source_index: i32 = 0
         while source_index < source_count:
@@ -4212,7 +4212,7 @@ attach GpuRendererCore:
             return
         if self.mesh_bound_rs == 0:
             return
-        bounds: GpuMeshBounds = _frog_mesh_bounds(vertices, vertex_count)
+        bounds: GpuMeshBounds = _kobic_mesh_bounds(vertices, vertex_count)
         Memory.write_f32(self.mesh_bound_xs + mesh_id * 4, bounds.center_x)
         Memory.write_f32(self.mesh_bound_ys + mesh_id * 4, bounds.center_y)
         Memory.write_f32(self.mesh_bound_zs + mesh_id * 4, bounds.center_z)
@@ -4239,7 +4239,7 @@ attach GpuRendererCore:
             return 0 - 1
         if self.vb_count >= self.vb_capacity:
             self._grow_vb_arrays()
-        data_size: i64 = (vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        data_size: i64 = (vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         uploaded: GpuBufferUpload = self._upload_buffer(vertices, data_size, 128)
         if uploaded.ok == 0:
             return 0 - 1
@@ -4272,7 +4272,7 @@ attach GpuRendererCore:
             return 0 - 1
         if self.vb_count >= self.vb_capacity:
             self._grow_vb_arrays()
-        vb_size: i64 = (vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        vb_size: i64 = (vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         ib_size: i64 = (index_count as i64) * 4
         uploaded_vb: GpuBufferUpload = self._upload_buffer(vertices, vb_size, 128)
         if uploaded_vb.ok == 0:
@@ -4311,7 +4311,7 @@ attach GpuRendererCore:
             return -1
         if self.vb_count >= self.vb_capacity:
             self._grow_vb_arrays()
-        vbytes: i64 = (mesh.vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        vbytes: i64 = (mesh.vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         ibytes: i64 = (mesh.index_count as i64) * 4
         slice: GpuArenaSlice = self._arena_alloc_slice(vbytes, ibytes, -1)
         if slice.ok == 0:
@@ -4321,7 +4321,7 @@ attach GpuRendererCore:
         if vmap == 0 or imap == 0:
             self._arena_retire_slice(slice.page, slice.first_vertex, slice.first_index, slice.vertex_capacity, slice.index_capacity)
             return -1
-        Memory.copy(vmap + (slice.first_vertex as i64) * (FROG_GPU_VERTEX_STRIDE as i64), mesh.vertices, vbytes)
+        Memory.copy(vmap + (slice.first_vertex as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64), mesh.vertices, vbytes)
         Memory.copy(imap + (slice.first_index as i64) * 4, mesh.indices, ibytes)
         idx: i32 = self.vb_count
         Memory.write_ptr(self.vb_handles + idx * 8, Memory.read_ptr(self.arena_page_vbs + slice.page * 8))
@@ -4355,7 +4355,7 @@ attach GpuRendererCore:
         old_page: i32 = Memory.read_i32(self.mesh_arena_pages + mesh_id * 4)
         if old_page < 0:
             return -1
-        vbytes: i64 = (mesh.vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        vbytes: i64 = (mesh.vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         ibytes: i64 = (mesh.index_count as i64) * 4
         slice: GpuArenaSlice = self._arena_alloc_slice(vbytes, ibytes, old_page)
         if slice.ok == 0:
@@ -4365,7 +4365,7 @@ attach GpuRendererCore:
         if vmap == 0 or imap == 0:
             self._arena_retire_slice(slice.page, slice.first_vertex, slice.first_index, slice.vertex_capacity, slice.index_capacity)
             return -1
-        Memory.copy(vmap + (slice.first_vertex as i64) * (FROG_GPU_VERTEX_STRIDE as i64), mesh.vertices, vbytes)
+        Memory.copy(vmap + (slice.first_vertex as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64), mesh.vertices, vbytes)
         Memory.copy(imap + (slice.first_index as i64) * 4, mesh.indices, ibytes)
 
         old_first_vertex: i32 = Memory.read_i32(self.vb_first_vertices + mesh_id * 4)
@@ -4417,7 +4417,7 @@ attach GpuRendererCore:
                             return 0 - 1
             si = si + 1
 
-        vb_size: i64 = (mesh.vertex_count as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
+        vb_size: i64 = (mesh.vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
         uploaded_vb: GpuBufferUpload = self._upload_buffer(mesh.vertices, vb_size, 128)
         if uploaded_vb.ok == 0:
             return 0 - 1
@@ -4501,9 +4501,9 @@ attach GpuRendererCore:
         if self.mesh_desc_sets != 0:
             Memory.write_ptr(self.mesh_desc_sets + idx * 8, Memory.read_ptr(self.mesh_desc_sets + src_vb_idx * 8))
         if self.mesh_material_params != 0:
-            dst_material_off: i64 = (idx as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
-            src_material_off: i64 = (src_vb_idx as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
-            Memory.copy(self.mesh_material_params + dst_material_off, self.mesh_material_params + src_material_off, FROG_GPU_MESH_MATERIAL_STRIDE)
+            dst_material_off: i64 = (idx as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+            src_material_off: i64 = (src_vb_idx as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+            Memory.copy(self.mesh_material_params + dst_material_off, self.mesh_material_params + src_material_off, KOBIC_GPU_MESH_MATERIAL_STRIDE)
         if self.mesh_shadow_flags != 0:
             Memory.write_i32(self.mesh_shadow_flags + idx * 4, Memory.read_i32(self.mesh_shadow_flags + src_vb_idx * 4))
         if self.mesh_shadow_distances != 0:
@@ -4637,7 +4637,7 @@ attach GpuRendererCore:
             Memory.write_i32(self.tex_bindless_slots + idx * 4, bslot)
             if self.bindless_enabled == 1:
                 if idx == 0:
-                    print(@"[frog.bindless] first texture -> slot {bslot}")
+                    print(@"[kobic.bindless] first texture -> slot {bslot}")
         self.tex_count = idx + 1
         return idx
 
@@ -4723,8 +4723,8 @@ attach GpuRendererCore:
                         if self.transparent_visible_count < 0:
                             self.transparent_visible_count = 0
             Memory.write_i32(self.mesh_transparent + mesh_id * 4, tflag)
-        off: i64 = (mesh_id as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
-        packed_material: f32 = _frog_pack_material(material)
+        off: i64 = (mesh_id as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+        packed_material: f32 = _kobic_pack_material(material)
         surface_parameter: f32 = material.gpu_surface_parameter()
         emission_parameter: f32 = material.gpu_emission_parameter()
         if material.viewmodel!=0:
@@ -5503,10 +5503,10 @@ attach GpuRendererCore:
     fun _record_sky_texture_object(self, cmd: i64, width: i32, height: i32, sky: Sky, cam_view: i64, cam_proj: i64, light_ptr: i64, has_direction: i32, dir_x: f32, dir_y: f32, dir_z: f32, enabled: i32, texture_id: i32, color: Color, size: f32):
         if enabled == 0:
             return
-        if frog_sky_pass_ready() == 0:
+        if kobic_sky_pass_ready() == 0:
             return
-        sky_pipeline: i64 = frog_sky_pass_pipeline()
-        sky_layout: i64 = frog_sky_pass_layout()
+        sky_pipeline: i64 = kobic_sky_pass_pipeline()
+        sky_layout: i64 = kobic_sky_pass_layout()
         if sky_pipeline == 0 or sky_layout == 0:
             return
         if cam_view == 0 or cam_proj == 0:
@@ -5582,7 +5582,7 @@ attach GpuRendererCore:
         Memory.write_f32(push_data + 84, sky.horizon_color.g)
         Memory.write_f32(push_data + 88, sky.horizon_color.b)
         if texture_id >= 0:
-            Memory.write_f32(push_data + 92, frog_sky_texture_size(texture_id))
+            Memory.write_f32(push_data + 92, kobic_sky_texture_size(texture_id))
         else:
             Memory.write_f32(push_data + 92, object_glow)
         Memory.write_f32(push_data + 96, sky.lower_color.r)
@@ -5602,8 +5602,8 @@ attach GpuRendererCore:
     fun _record_sky_clouds(self, cmd: i64, width: i32, height: i32, sky: Sky, cam_view: i64, cam_proj: i64):
         if sky.cloud_enabled == 0:
             return
-        sky_pipeline: i64 = frog_sky_pass_pipeline()
-        sky_layout: i64 = frog_sky_pass_layout()
+        sky_pipeline: i64 = kobic_sky_pass_pipeline()
+        sky_layout: i64 = kobic_sky_pass_layout()
         if sky_pipeline == 0 or sky_layout == 0:
             return
         desc: i64 = self.texture_descriptor_set(-1)
@@ -5657,9 +5657,9 @@ attach GpuRendererCore:
         if cam_view == 0 or cam_proj == 0:
             return
 
-        if frog_sky_pass_ready() != 0:
-            sky_pipeline: i64 = frog_sky_pass_pipeline()
-            sky_layout: i64 = frog_sky_pass_layout()
+        if kobic_sky_pass_ready() != 0:
+            sky_pipeline: i64 = kobic_sky_pass_pipeline()
+            sky_layout: i64 = kobic_sky_pass_layout()
             if sky_pipeline != 0 and sky_layout != 0:
                 vkCmdBindPipeline(cmd, 0, sky_pipeline)
                 base_desc: i64 = self.texture_descriptor_set(-1)
@@ -5773,8 +5773,8 @@ attach GpuRendererCore:
         if env.advanced_post != 0 and cam_proj != 0 and self.scratch_camera_proj != 0:
             Memory.copy(self.scratch_camera_proj, cam_proj, 64)
             jitter_index: i32 = self.frame_serial - (self.frame_serial / 8) * 8
-            jitter_x: f32 = (_frog_taa_halton(jitter_index, 0) - 0.5) * 2.0 / (render_width as f32)
-            jitter_y: f32 = (_frog_taa_halton(jitter_index, 1) - 0.5) * 2.0 / (render_height as f32)
+            jitter_x: f32 = (_kobic_taa_halton(jitter_index, 0) - 0.5) * 2.0 / (render_width as f32)
+            jitter_y: f32 = (_kobic_taa_halton(jitter_index, 1) - 0.5) * 2.0 / (render_height as f32)
             Memory.write_f32(self.scratch_camera_proj + 32, Memory.read_f32(self.scratch_camera_proj + 32) - jitter_x)
             Memory.write_f32(self.scratch_camera_proj + 36, Memory.read_f32(self.scratch_camera_proj + 36) - jitter_y)
             render_proj = self.scratch_camera_proj
@@ -5792,7 +5792,7 @@ attach GpuRendererCore:
                 if verify_vp != 0:
                     if cam_view != 0:
                     if render_proj != 0:
-                        _frog_multiply_4x4_into(render_proj, cam_view, verify_vp)
+                        _kobic_multiply_4x4_into(render_proj, cam_view, verify_vp)
                             self.gpu_cull_verify(rp.vk_command_pool, verify_vp)
 
         # Acquire next image (reset fence AFTER successful acquire to avoid deadlock)
@@ -5815,7 +5815,7 @@ attach GpuRendererCore:
         # A floating-point scene target preserves bright values until the
         # final presentation stage. ToneMapping.none() remains neutral.
         use_scaled: i32 = 1
-        if self.ensure_render_scale_target(rp, FROG_HDR_COLOR_FORMAT, rw, rh) == 1:
+        if self.ensure_render_scale_target(rp, KOBIC_HDR_COLOR_FORMAT, rw, rh) == 1:
             fb = self.scale_framebuffer
         else:
             return
@@ -5949,12 +5949,12 @@ attach GpuRendererCore:
         active_cascade_count: i32 = cascade_count
         if active_cascade_count < 1:
             active_cascade_count = 1
-        if active_cascade_count > FROG_CULL_SHADOW_CASCADES:
-            active_cascade_count = FROG_CULL_SHADOW_CASCADES
+        if active_cascade_count > KOBIC_CULL_SHADOW_CASCADES:
+            active_cascade_count = KOBIC_CULL_SHADOW_CASCADES
 
-        if g_frog_shadow_cull_push == 0:
-            g_frog_shadow_cull_push = Memory.malloc_zeroed(FROG_CULL_PUSH_SIZE)
-        push: i64 = g_frog_shadow_cull_push
+        if g_kobic_shadow_cull_push == 0:
+            g_kobic_shadow_cull_push = Memory.malloc_zeroed(KOBIC_CULL_PUSH_SIZE)
+        push: i64 = g_kobic_shadow_cull_push
         if push == 0:
             return 0 - 1
 
@@ -5985,8 +5985,8 @@ attach GpuRendererCore:
         cascade_index: i32 = 0
         while cascade_index < active_cascade_count:
             cascade_matrix: i64 = light_vp + (cascade_index as i64) * 64
-            Memory.set(push, 0, FROG_CULL_PUSH_SIZE)
-            frog_cull_extract_planes(cascade_matrix, push)
+            Memory.set(push, 0, KOBIC_CULL_PUSH_SIZE)
+            kobic_cull_extract_planes(cascade_matrix, push)
             # camDistance vec4 at offset 112 (after 96 planes + 16 uints).
             Memory.write_f32(push + 112, s_cam_x)
             Memory.write_f32(push + 116, s_cam_y)
@@ -6087,7 +6087,7 @@ attach GpuRendererCore:
                     vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
                     last_bound = vb_handle
                 Memory.write_ptr(self.scratch_inst_vb_arr, shadow_out_buf)
-                Memory.write_i64(self.scratch_inst_off_arr, (out_cursor2 as i64) * (FROG_CULL_OUT_STRIDE as i64))
+                Memory.write_i64(self.scratch_inst_off_arr, (out_cursor2 as i64) * (KOBIC_CULL_OUT_STRIDE as i64))
                 vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
                 if indexed == 1:
                     if ib_handle != last_index_bound:
@@ -6112,7 +6112,7 @@ attach GpuRendererCore:
             return 0
         if light_vp == 0:
             return 0
-        if g_frog_gpu_shadow_cull == 1:
+        if g_kobic_gpu_shadow_cull == 1:
             gpu_drawn: i32 = self._record_shadow_pass_gpu(cmd, rp, frame_slot, light_vp, cascade_count)
             if gpu_drawn >= 0:
                 return gpu_drawn
@@ -6172,7 +6172,7 @@ attach GpuRendererCore:
                 g_shadow_cam_y = cam_y
                 g_shadow_cam_z = cam_z
                 if g_shadow_vis_body == 0:
-                    vis_body: @heap fun(i32) = fun(gi: i32) _frog_shadow_vis_one(gi)
+                    vis_body: @heap fun(i32) = fun(gi: i32) _kobic_shadow_vis_one(gi)
                     g_shadow_vis_body = vis_body as i64
                 vis_body2: @heap fun(i32) = g_shadow_vis_body as @heap fun(i32)
                 engine_parallel_for(self.vb_count, vis_body2)
@@ -6257,7 +6257,7 @@ attach GpuRendererCore:
                             if shadow_vis != 0:
                                 visible = Memory.read_i32(shadow_vis + ((cascade_index * self.vb_count + gi) as i64) * 4)
                             if visible == 1:
-                                dst: i64 = mapped + ((instance_base + instance_write) as i64) * (FROG_GPU_INSTANCE_STRIDE as i64)
+                                dst: i64 = mapped + ((instance_base + instance_write) as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64)
                                 Memory.copy(dst, g_model, 64)
                                 Memory.set(dst + 64, 0, 64)
                                 instance_write = instance_write + 1
@@ -6294,7 +6294,7 @@ attach GpuRendererCore:
                             vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
                             last_bound = vb_handle
                         Memory.write_ptr(self.scratch_inst_vb_arr, shadow_instance_buffer)
-                        Memory.write_i64(self.scratch_inst_off_arr, ((instance_base + group_start) as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                        Memory.write_i64(self.scratch_inst_off_arr, ((instance_base + group_start) as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                         vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
                         if ib_handle != 0:
                             if ic > 0:
@@ -6313,7 +6313,7 @@ attach GpuRendererCore:
         return shadow_instance_total
 
     fun _record_bloom_present(self, cmd: i64, framebuffer: i64, rp: RenderPass, src_image: i64, src_desc: i64, src_already_sampled: i32, dst_image: i64, dst_width: i32, dst_height: i32, bloom: Bloom, tone_mapping: ToneMapping):
-        if frog_bloom_pass_ready() == 0:
+        if kobic_bloom_pass_ready() == 0:
             return
         if framebuffer == 0:
             return
@@ -6343,8 +6343,8 @@ attach GpuRendererCore:
 
         vkCmdBeginRenderPass(cmd, rpi, 0)
 
-        bloom_pipeline: i64 = frog_bloom_pass_pipeline()
-        bloom_layout: i64 = frog_bloom_pass_layout()
+        bloom_pipeline: i64 = kobic_bloom_pass_pipeline()
+        bloom_layout: i64 = kobic_bloom_pass_layout()
         if bloom_pipeline != 0 and bloom_layout != 0:
             vkCmdBindPipeline(cmd, 0, bloom_pipeline)
 
@@ -6413,7 +6413,7 @@ attach GpuRendererCore:
         if frame_slot > 1:
             frame_slot = 1
         if self.skin_mapped != 0:
-            frog_skin_publish_slot(Memory.read_ptr(self.skin_mapped + frame_slot * 8), frame_slot)
+            kobic_skin_publish_slot(Memory.read_ptr(self.skin_mapped + frame_slot * 8), frame_slot)
         hzb_cam_x: f32 = Memory.read_f32(self.render_state + 64)
         hzb_cam_y: f32 = Memory.read_f32(self.render_state + 68)
         hzb_cam_z: f32 = Memory.read_f32(self.render_state + 72)
@@ -6486,8 +6486,8 @@ attach GpuRendererCore:
         self.profiler.begin_frame(cmd)
 
         cpu_prof_frame_start: i64 = 0
-        if g_frog_cpu_prof_enabled == 1:
-            cpu_prof_frame_start = frog_time_now_ticks()
+        if g_kobic_cpu_prof_enabled == 1:
+            cpu_prof_frame_start = kobic_time_now_ticks()
 
         if shadow_enabled == 1:
             if shadow_instances_ready == 1:
@@ -6497,11 +6497,11 @@ attach GpuRendererCore:
                 if cascade_count_for_pass > 2:
                     cascade_count_for_pass = 2
                 shadow_t0: i64 = 0
-                if g_frog_cpu_prof_enabled == 1:
-                    shadow_t0 = frog_time_now_ticks()
+                if g_kobic_cpu_prof_enabled == 1:
+                    shadow_t0 = kobic_time_now_ticks()
                 shadow_casters: i32 = self._record_shadow_pass(cmd, rp, frame_slot, shadow_data, cascade_count_for_pass)
-                if g_frog_cpu_prof_enabled == 1:
-                    g_frog_cpu_prof_shadow_ticks = g_frog_cpu_prof_shadow_ticks + (frog_time_now_ticks() - shadow_t0)
+                if g_kobic_cpu_prof_enabled == 1:
+                    g_kobic_cpu_prof_shadow_ticks = g_kobic_cpu_prof_shadow_ticks + (kobic_time_now_ticks() - shadow_t0)
                 if shadow_casters == 0:
                     shadow_enabled = 0
                     Memory.write_f32(shadow_global_mapped + 128, 0.0)
@@ -6521,7 +6521,7 @@ attach GpuRendererCore:
                 if cam_proj != 0:
                     precull_vp: i64 = self.scratch_vp_matrix
                     if precull_vp != 0:
-                        _frog_multiply_4x4_into(cam_proj, cam_view, precull_vp)
+                        _kobic_multiply_4x4_into(cam_proj, cam_view, precull_vp)
                         if self.gpu_draw_enabled == 1:
                             self.gpu_precull_main(cmd, precull_vp, frame_slot)
                         else:
@@ -6640,7 +6640,7 @@ attach GpuRendererCore:
                     if cam_proj != 0:
                         vp_mat = self.scratch_vp_matrix
                         if vp_mat != 0:
-                            _frog_multiply_4x4_into(cam_proj, cam_view, vp_mat)
+                            _kobic_multiply_4x4_into(cam_proj, cam_view, vp_mat)
                 pc_data: i64 = 0
 
                 instance_ready: i32 = self._ensure_instance_capacity(self.vb_count)
@@ -6707,7 +6707,7 @@ attach GpuRendererCore:
                                 dx: f32 = light.dir_x
                                 dy: f32 = light.dir_y
                                 dz: f32 = light.dir_z
-                                Memory.write_f32(pc_data + 76, _frog_pack_light(light.color, light.ambient))
+                                Memory.write_f32(pc_data + 76, _kobic_pack_light(light.color, light.ambient))
                                 Memory.write_f32(pc_data + 112, dx)
                                 Memory.write_f32(pc_data + 116, dy)
                                 Memory.write_f32(pc_data + 120, dz)
@@ -6728,7 +6728,7 @@ attach GpuRendererCore:
                         cull_self_addr: i64 = self as i64
                         cull_vp: i64 = vp_mat
                         cull_res: i64 = self.vb_cull_result
-                        cull_body: @heap fun(i32) = fun(gi: i32) _frog_cull_one(cull_self_addr, cull_vp, gi, cull_res)
+                        cull_body: @heap fun(i32) = fun(gi: i32) _kobic_cull_one(cull_self_addr, cull_vp, gi, cull_res)
                         engine_parallel_for(self.vb_count, cull_body)
 
                 # World-space dynamic arena meshes can keep independent
@@ -6763,18 +6763,18 @@ attach GpuRendererCore:
 
                                 if static_rep >= 0:
                                     static_model: i64 = Memory.read_ptr(self.model_matrices + static_rep * 8)
-                                    static_dst: i64 = mapped_instances + ((instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                                    static_dst: i64 = mapped_instances + ((instance_write as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                                     Memory.copy(static_dst, static_model, 64)
                                     if self.mesh_material_params != 0:
-                                        static_material_off: i64 = (static_rep as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
-                                        Memory.copy(static_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + static_material_off, 32)
+                                        static_material_off: i64 = (static_rep as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+                                        Memory.copy(static_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + static_material_off, 32)
                                     receive_shadow: i32 = 1
                                     if self.mesh_shadow_flags != 0:
                                         static_shadow_flags: i32 = Memory.read_i32(self.mesh_shadow_flags + static_rep * 4)
                                         receive_shadow = (static_shadow_flags / 2) - (static_shadow_flags / 4) * 2
                                     if receive_shadow == 1:
-                                        static_packed_material: f32 = Memory.read_f32(static_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12)
-                                        Memory.write_f32(static_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, static_packed_material + 65536.0)
+                                        static_packed_material: f32 = Memory.read_f32(static_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12)
+                                        Memory.write_f32(static_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12, static_packed_material + 65536.0)
                                     self._write_record_texidx(static_dst, static_rep)
 
                                     static_vb: i64 = Memory.read_ptr(self.arena_page_vbs + static_page * 8)
@@ -6782,7 +6782,7 @@ attach GpuRendererCore:
                                     Memory.write_ptr(self.scratch_vb_arr, static_vb)
                                     vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
                                     Memory.write_ptr(self.scratch_inst_vb_arr, frame_inst_buf)
-                                    Memory.write_i64(self.scratch_inst_off_arr, (instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                                    Memory.write_i64(self.scratch_inst_off_arr, (instance_write as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                                     vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
                                     vkCmdBindIndexBuffer(cmd, static_ib, 0, 1)
                                     if use_bindless == 0:
@@ -6803,7 +6803,7 @@ attach GpuRendererCore:
                                                 if Memory.read_i32(self.mesh_arena_pages + static_scan * 4) == static_page:
                                                     if Memory.read_i32(self.vb_cull_result + static_scan * 4) == 1:
                                                         static_ic: i32 = Memory.read_i32(self.ib_index_counts + static_scan * 4)
-                                                        if static_ic > 0 and static_cmd_cursor < FROG_CULL_MAX_GROUPS:
+                                                        if static_ic > 0 and static_cmd_cursor < KOBIC_CULL_MAX_GROUPS:
                                                             static_first_index: i32 = Memory.read_i32(self.ib_first_indices + static_scan * 4)
                                                             static_vertex_offset: i32 = Memory.read_i32(self.vb_first_vertices + static_scan * 4)
                                                             static_cmd: i32 = static_cmd_base + static_cmd_cursor
@@ -6958,27 +6958,27 @@ attach GpuRendererCore:
                                     if Memory.read_i32(self.vb_cull_result + gi * 4) == 0:
                                         visible = 0
                                 if visible == 1:
-                                    instance_dst: i64 = mapped_instances + ((instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                                    instance_dst: i64 = mapped_instances + ((instance_write as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                                     Memory.copy(instance_dst, g_model, 64)
                                     if self.mesh_material_params != 0:
-                                        group_material_off: i64 = (gi as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64)
-                                        Memory.copy(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + group_material_off, 32)
+                                        group_material_off: i64 = (gi as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+                                        Memory.copy(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + group_material_off, 32)
                                     else:
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET, 0.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 4, 1.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 8, 0.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, 0.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_UV_OFFSET, 1.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_UV_OFFSET + 4, 1.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_UV_OFFSET + 8, 0.0)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_UV_OFFSET + 12, 0.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET, 0.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 4, 1.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 8, 0.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12, 0.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_UV_OFFSET, 1.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_UV_OFFSET + 4, 1.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_UV_OFFSET + 8, 0.0)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_UV_OFFSET + 12, 0.0)
                                     receive_shadow: i32 = 1
                                     if self.mesh_shadow_flags != 0:
                                         shadow_flags: i32 = Memory.read_i32(self.mesh_shadow_flags + gi * 4)
                                         receive_shadow = (shadow_flags / 2) - (shadow_flags / 4) * 2
                                     if receive_shadow == 1:
-                                        packed_material: f32 = Memory.read_f32(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12)
-                                        Memory.write_f32(instance_dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed_material + 65536.0)
+                                        packed_material: f32 = Memory.read_f32(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12)
+                                        Memory.write_f32(instance_dst + KOBIC_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed_material + 65536.0)
                                     self._write_record_texidx(instance_dst, gi)
                                     instance_write = instance_write + 1
                                     group_count = group_count + 1
@@ -6991,7 +6991,7 @@ attach GpuRendererCore:
                                 last_bound = vb_handle
 
                             Memory.write_ptr(self.scratch_inst_vb_arr, frame_inst_buf)
-                            Memory.write_i64(self.scratch_inst_off_arr, (group_start as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                            Memory.write_i64(self.scratch_inst_off_arr, (group_start as i64) * (KOBIC_GPU_INSTANCE_STRIDE as i64))
                             vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
 
                             # Bind the texture descriptor set for this group
@@ -7055,7 +7055,7 @@ attach GpuRendererCore:
             if cam_view != 0 and cam_proj != 0:
                 debug_vp = self.scratch_vp_matrix
                 if debug_vp != 0:
-                    _frog_multiply_4x4_into(cam_proj, cam_view, debug_vp)
+                    _kobic_multiply_4x4_into(cam_proj, cam_view, debug_vp)
             self._record_collision_debug(cmd, rp, debug_vp, width, height)
 
         self.profiler.mark(cmd, 7)
@@ -7065,7 +7065,7 @@ attach GpuRendererCore:
             hzb_build: GpuHzb = self.gpu_hzb_ptr as GpuHzb
             hzb_vp: i64 = self.scratch_vp_matrix
             if hzb_vp != 0 and cam_view != 0 and cam_proj != 0:
-                _frog_multiply_4x4_into(cam_proj, cam_view, hzb_vp)
+                _kobic_multiply_4x4_into(cam_proj, cam_view, hzb_vp)
                 if hzb_build.record_build(cmd, self.scale_depth_image, hzb_vp, width, height) == 1:
                     depth_is_sampled = 1
                     self.gpu_hzb_prev_x = hzb_cam_x
@@ -7083,7 +7083,7 @@ attach GpuRendererCore:
         # GPU-timer: boundary after the main render pass (sky + scene draws).
         self.profiler.mark(cmd, 2)
         if use_scaled == 1:
-            if frog_bloom_pass_ready() != 0:
+            if kobic_bloom_pass_ready() != 0:
                 post_image: i64 = scale_color_image
                 post_desc: i64 = 0
                 post_sampled: i32 = 0
@@ -7092,7 +7092,7 @@ attach GpuRendererCore:
                     if env.advanced_post != 0:
                         temporal_vp: i64 = self.scratch_vp_matrix
                         if temporal_vp != 0 and cam_view != 0 and cam_proj != 0:
-                            _frog_multiply_4x4_into(cam_proj, cam_view, temporal_vp)
+                            _kobic_multiply_4x4_into(cam_proj, cam_view, temporal_vp)
                             if temporal.record(cmd, self.scale_color_image, self.scale_geometry_image, self.scale_depth_image, depth_is_sampled, temporal_vp) == 1:
                                 post_image = temporal.output_image()
                                 post_desc = temporal.output_descriptor()
@@ -7106,19 +7106,19 @@ attach GpuRendererCore:
         self.profiler.mark(cmd, 3)
         vkEndCommandBuffer(cmd)
 
-        if g_frog_cpu_prof_enabled == 1:
-            g_frog_cpu_prof_total_ticks = g_frog_cpu_prof_total_ticks + (frog_time_now_ticks() - cpu_prof_frame_start)
-            g_frog_cpu_prof_frames = g_frog_cpu_prof_frames + 1
-            if g_frog_cpu_prof_frames >= 120:
-                freq: i64 = g_frog_timer_freq
+        if g_kobic_cpu_prof_enabled == 1:
+            g_kobic_cpu_prof_total_ticks = g_kobic_cpu_prof_total_ticks + (kobic_time_now_ticks() - cpu_prof_frame_start)
+            g_kobic_cpu_prof_frames = g_kobic_cpu_prof_frames + 1
+            if g_kobic_cpu_prof_frames >= 120:
+                freq: i64 = g_kobic_timer_freq
                 if freq <= 0:
                     freq = 1000000000
-                shadow_us: i64 = (g_frog_cpu_prof_shadow_ticks * 1000000 as i64) / (freq * 120 as i64)
-                total_us: i64 = (g_frog_cpu_prof_total_ticks * 1000000 as i64) / (freq * 120 as i64)
-                print(@"[frog.cpu_rec] avg/120 shadow_build={shadow_us} us  total_record={total_us} us")
-                g_frog_cpu_prof_shadow_ticks = 0
-                g_frog_cpu_prof_total_ticks = 0
-                g_frog_cpu_prof_frames = 0
+                shadow_us: i64 = (g_kobic_cpu_prof_shadow_ticks * 1000000 as i64) / (freq * 120 as i64)
+                total_us: i64 = (g_kobic_cpu_prof_total_ticks * 1000000 as i64) / (freq * 120 as i64)
+                print(@"[kobic.cpu_rec] avg/120 shadow_build={shadow_us} us  total_record={total_us} us")
+                g_kobic_cpu_prof_shadow_ticks = 0
+                g_kobic_cpu_prof_total_ticks = 0
+                g_kobic_cpu_prof_frames = 0
 
     fun cleanup(self) -> void:
         self.cleanup_collision_debug()
@@ -7414,7 +7414,7 @@ attach GpuRendererCore:
         self.skin_buffers = 0
         self.skin_memories = 0
         self.skin_mapped = 0
-        frog_skin_reset()
+        kobic_skin_reset()
         self.point_light_buffers = 0
         self.point_light_memories = 0
         self.point_light_mapped_ptrs = 0
@@ -7563,7 +7563,7 @@ fun multiply_4x4_matrices(a: i64, b: i64) -> i64:
     return out
 
 # Zero-alloc version: writes result into pre-allocated out buffer
-fun _frog_multiply_4x4_into(a: i64, b: i64, out: i64) -> void:
+fun _kobic_multiply_4x4_into(a: i64, b: i64, out: i64) -> void:
     col: i32 = 0
     while col < 4:
         co: i32 = col * 16

@@ -1,10 +1,10 @@
 ##############################
-# Frog Engine - Main Hub
+# Kobic Engine - Main Hub
 # OOP engine, no ECS.
 #
-# Usage: import frog
+# Usage: import kobic
 #   Then access Vec3, Mat4, GameObject, Scene, Engine, ...
 ##############################
 
-# This file is the entry point when `import frog` is used.
+# This file is the entry point when `import kobic` is used.
 # All exports are defined in mod.dlt. Load order is strict.

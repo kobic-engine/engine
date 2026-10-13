@@ -1,5 +1,5 @@
 ##############################
-# Frog - Engine Runtime
+# Kobic - Engine Runtime
 # Owns window, Vulkan state, swapchain, render pass, and renderer.
 ##############################
 
@@ -64,14 +64,14 @@ attach EngineRuntime:
             ctx.cleanup()
             runtime.app.shutdown()
             return runtime
-        if frog_sky_pass_init(ctx.vk_device, render_pass.vk_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, sky_frag_shader.data, sky_frag_shader.size) == 0:
+        if kobic_sky_pass_init(ctx.vk_device, render_pass.vk_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, sky_frag_shader.data, sky_frag_shader.size) == 0:
             print("GPU sky pass init failed")
             render_pass.cleanup(ctx.vk_device)
             swapchain.cleanup(ctx.vk_instance, ctx.vk_device)
             ctx.cleanup()
             runtime.app.shutdown()
             return runtime
-        if frog_bloom_pass_init(ctx.vk_device, render_pass.vk_present_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, bloom_frag_shader.data, bloom_frag_shader.size) == 0:
+        if kobic_bloom_pass_init(ctx.vk_device, render_pass.vk_present_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, bloom_frag_shader.data, bloom_frag_shader.size) == 0:
             print("GPU post-process pass init failed")
             render_pass.cleanup(ctx.vk_device)
             swapchain.cleanup(ctx.vk_instance, ctx.vk_device)
@@ -92,9 +92,9 @@ attach EngineRuntime:
 
         temporal: GpuTemporal = GpuTemporal()
         if temporal.init(ctx.vk_device, ctx.vk_physical_device) == 1:
-            print("[frog.post] G-buffer GTAO + TAA pipeline ready")
+            print("[kobic.post] G-buffer GTAO + TAA pipeline ready")
         else:
-            print("[frog.post] temporal pipeline unavailable (direct HDR fallback)")
+            print("[kobic.post] temporal pipeline unavailable (direct HDR fallback)")
         runtime.temporal = temporal
 
         # Conservative previous-frame depth is initialized before culling so
@@ -113,10 +113,10 @@ attach EngineRuntime:
         if cull.init(ctx.vk_device, ctx.vk_physical_device) == 1:
             if hzb_ready == 1:
                 cull.set_hzb_resources(hzb.image_view, hzb.sampler, hzb.state_buffer)
-            print("[frog.cull] GPU culling pipeline ready")
+            print("[kobic.cull] GPU culling pipeline ready")
             cull.self_test(render_pass.vk_command_pool, ctx.vk_graphics_queue)
         else:
-            print("[frog.cull] GPU culling pipeline FAILED to init (CPU fallback)")
+            print("[kobic.cull] GPU culling pipeline FAILED to init (CPU fallback)")
         runtime.cull = cull
         # NOTE: do NOT bind the cull pointer to the renderer here. `runtime`
         # is a local that gets copied by value into g_engine_runtime on
@@ -124,7 +124,7 @@ attach EngineRuntime:
         # this local's `cull`. Engine.start() calls bind_cull() AFTER the
         # final runtime is in place, so gpu_cull_ptr points at the persistent
         # g_engine_runtime.cull.
-        runtime.renderer.core.set_culling_mode(FROG_CULL_MODE_CPU)
+        runtime.renderer.core.set_culling_mode(KOBIC_CULL_MODE_CPU)
 
         # Phase 1 (R1): wire the bindless texture table. Feed device support
         # (from the detected GpuCaps) + the engine opt-in flag into the
@@ -140,7 +140,7 @@ attach EngineRuntime:
             # layout exists. If it fails, bindless_enabled is cleared so the
             # classic pipeline/draw path stays in effect.
             if render_pass._create_bindless_pipeline(ctx.vk_device, width, height, runtime.renderer.core.bindless_layout) == 1:
-                print("[frog.bindless] pipeline ready")
+                print("[kobic.bindless] pipeline ready")
                 # Phase 2: also build the GPU-driven SSBO pipeline (batched
                 # indirect-count draw). Non-fatal if it fails — the per-group
                 # bindless indirect-count path stays as the fallback.
@@ -149,7 +149,7 @@ attach EngineRuntime:
                     runtime.renderer.core.ssbo_pipeline_ready = 1
             else:
                 runtime.renderer.core.bindless_enabled = 0
-                print("[frog.bindless] pipeline build failed; classic path")
+                print("[kobic.bindless] pipeline build failed; classic path")
         # Re-copy render_pass into the runtime so the bindless pipeline fields
         # (set on the local above) are reflected in the stored value-type copy.
         runtime.render_pass = render_pass
@@ -288,7 +288,7 @@ attach EngineRuntime:
             cooked_resolved: str = Assets.resolve(cooked_path)
             if Str.equals(cooked_resolved, "") == false:
                 if PathOps.exists(cooked_resolved):
-                    cooked: CookedTexture = FrogTextureLoader.load(cooked_resolved)
+                    cooked: CookedTexture = KobicTextureLoader.load(cooked_resolved)
                     if cooked.valid == 1:
                         cooked_tid: i32 = self.renderer.upload_texture_cooked_spec(self.render_pass, self.render_pass.vk_command_pool, cooked, spec)
                         cooked.free()
@@ -323,10 +323,10 @@ attach EngineRuntime:
             if Str.equals(cooked_path, "") == false:
                 cooked_resolved: str = Assets.resolve(cooked_path)
                 if Str.equals(cooked_resolved, "") == false:
-                    cooked = FrogTextureLoader.load(cooked_resolved)
-                    if cooked.valid != 0 and cooked.format == FROG_TEXTURE_FORMAT_RGBA8 and cooked.swizzle == 0:
+                    cooked = KobicTextureLoader.load(cooked_resolved)
+                    if cooked.valid != 0 and cooked.format == KOBIC_TEXTURE_FORMAT_RGBA8 and cooked.swizzle == 0:
                         source = Image.wrap_rgba(cooked.width,cooked.height,cooked.pixels+cooked.level_offset(0))
-        padded: Image = frog_texture_pad_atlas(source,columns,rows,core_pixels,gutter_pixels)
+        padded: Image = kobic_texture_pad_atlas(source,columns,rows,core_pixels,gutter_pixels)
         source.free()
         cooked.free()
         if padded.is_valid() == 0:
@@ -409,7 +409,7 @@ attach EngineRuntime:
         self.renderer.set_instance_culling(enabled)
 
     # Select the culling strategy for the main pass:
-    #   FROG_CULL_MODE_CPU (default), _GPU, or _AUTO.
+    #   KOBIC_CULL_MODE_CPU (default), _GPU, or _AUTO.
     fun set_culling_mode(self, mode: i32):
         self.renderer.set_culling_mode(mode)
 
@@ -442,7 +442,7 @@ attach EngineRuntime:
         # Pending uploads belong to the command pool about to be destroyed.
         gpu_tex_flush_pending(self.ctx.vk_device, self.render_pass.vk_command_pool, self.ctx.vk_graphics_queue)
         vkDeviceWaitIdle(self.ctx.vk_device)
-        frog_debug_collision_destroy_pipeline(self.ctx.vk_device)
+        kobic_debug_collision_destroy_pipeline(self.ctx.vk_device)
         self.renderer.destroy_render_scale_target()
         self.render_pass.cleanup(self.ctx.vk_device)
         self.swapchain.cleanup(self.ctx.vk_instance, self.ctx.vk_device)
@@ -466,13 +466,13 @@ attach EngineRuntime:
             swapchain.cleanup(self.ctx.vk_instance, self.ctx.vk_device)
             self.ready_flag = 0
             return 0
-        if frog_sky_pass_init(self.ctx.vk_device, render_pass.vk_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, sky_frag_shader.data, sky_frag_shader.size) == 0:
+        if kobic_sky_pass_init(self.ctx.vk_device, render_pass.vk_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, sky_frag_shader.data, sky_frag_shader.size) == 0:
             print("GPU sky pass resize failed")
             render_pass.cleanup(self.ctx.vk_device)
             swapchain.cleanup(self.ctx.vk_instance, self.ctx.vk_device)
             self.ready_flag = 0
             return 0
-        if frog_bloom_pass_init(self.ctx.vk_device, render_pass.vk_present_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, bloom_frag_shader.data, bloom_frag_shader.size) == 0:
+        if kobic_bloom_pass_init(self.ctx.vk_device, render_pass.vk_present_render_pass, render_pass.desc_set_layout, sky_vert_shader.data, sky_vert_shader.size, bloom_frag_shader.data, bloom_frag_shader.size) == 0:
             print("GPU post-process pass resize failed")
             render_pass.cleanup(self.ctx.vk_device)
             swapchain.cleanup(self.ctx.vk_instance, self.ctx.vk_device)
@@ -491,7 +491,7 @@ attach EngineRuntime:
                     self.renderer.core.ssbo_pipeline_ready = 1
             else:
                 self.renderer.core.bindless_enabled = 0
-                print("[frog.bindless] resize pipeline unavailable; classic path")
+                print("[kobic.bindless] resize pipeline unavailable; classic path")
         self.renderer.core._mark_cull_dirty_struct()
         vert_shader.release()
         frag_shader.release()

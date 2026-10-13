@@ -1,6 +1,6 @@
 # No renderer/window required: public material API and unchanged UV ABI.
 import std
-import frog
+import kobic
 
 fun world_scale_require(ok: bool, label: str):
     if ok == false:

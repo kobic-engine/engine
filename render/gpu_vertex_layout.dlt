@@ -1,21 +1,21 @@
 ##############################
-# Frog - GPU Vertex Layout
+# Kobic - GPU Vertex Layout
 ##############################
 
-imm FROG_GPU_VERTEX_STRIDE: i32 = 44
-imm FROG_GPU_VERTEX_POS_OFFSET: i32 = 0
-imm FROG_GPU_VERTEX_NORMAL_OFFSET: i32 = 12
-imm FROG_GPU_VERTEX_COLOR_OFFSET: i32 = 24
-imm FROG_GPU_VERTEX_UV_OFFSET: i32 = 36
+imm KOBIC_GPU_VERTEX_STRIDE: i32 = 44
+imm KOBIC_GPU_VERTEX_POS_OFFSET: i32 = 0
+imm KOBIC_GPU_VERTEX_NORMAL_OFFSET: i32 = 12
+imm KOBIC_GPU_VERTEX_COLOR_OFFSET: i32 = 24
+imm KOBIC_GPU_VERTEX_UV_OFFSET: i32 = 36
 
-imm FROG_GPU_INSTANCE_STRIDE: i32 = 128
-imm FROG_GPU_INSTANCE_MATERIAL_OFFSET: i32 = 64
-imm FROG_GPU_INSTANCE_UV_OFFSET: i32 = 80
+imm KOBIC_GPU_INSTANCE_STRIDE: i32 = 128
+imm KOBIC_GPU_INSTANCE_MATERIAL_OFFSET: i32 = 64
+imm KOBIC_GPU_INSTANCE_UV_OFFSET: i32 = 80
 # CPU-side material records append one scalar alpha after the two vec4 blocks.
 # The GPU instance record stores its quantized value in the last previously
 # spare texture-index word, keeping the established 128-byte instance ABI.
-imm FROG_GPU_MESH_MATERIAL_STRIDE: i32 = 36
-imm FROG_GPU_INSTANCE_ALPHA_OFFSET: i32 = 124
+imm KOBIC_GPU_MESH_MATERIAL_STRIDE: i32 = 36
+imm KOBIC_GPU_INSTANCE_ALPHA_OFFSET: i32 = 124
 # Phase 1 bindless: texture-index block appended to the instance record.
 # Offset 96..127 (32 bytes = 8 i32). The first 5 ints are bindless table
 # slots for the material's textures; the last 3 are spare/padding so the
@@ -23,4 +23,4 @@ imm FROG_GPU_INSTANCE_ALPHA_OFFSET: i32 = 124
 #   96  albedo slot      100 emissive slot     104 normal slot
 #   108 metallic-rough.  112 occlusion slot    116/120 spare
 #   124 material alpha UNORM16 stored in an i32
-imm FROG_GPU_INSTANCE_TEXIDX_OFFSET: i32 = 96
+imm KOBIC_GPU_INSTANCE_TEXIDX_OFFSET: i32 = 96

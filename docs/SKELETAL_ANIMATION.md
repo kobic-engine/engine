@@ -1,11 +1,11 @@
 # Skeletal meshes and camera booms
 
-Frog exposes `Skeleton3D`, `SkinnedMesh3D`, and `SpringArm3D` as reusable
+Kobic exposes `Skeleton3D`, `SkinnedMesh3D`, and `SpringArm3D` as reusable
 object-style services. These contain no Bitora, planet, terrain, or player rules.
 
 ## GPU skinning
 
-`SkinnedMesh3D.load(path)` loads a validated `.frogskin` asset through `Assets`.
+`SkinnedMesh3D.load(path)` loads a validated `.kobicskin` asset through `Assets`.
 Check `mesh.mesh_id >= 0` before using it; `mesh.error` describes failures.
 The mesh starts hidden. Bind a material/texture and publish a root model matrix
 using the existing Engine mesh APIs, then make it visible.
@@ -38,7 +38,7 @@ renderer's existing engine-owned lifetime until shutdown.
 ## Offline asset format
 
 ```powershell
-python tools/frog_skin_cooker.py source.gltf destination.frogskin
+python tools/kobic_skin_cooker.py source.gltf destination.kobicskin
 ```
 
 The cooker requires NumPy. Version 1 accepts one external-buffer glTF 2.0,
@@ -62,7 +62,7 @@ shadow shaders do not yet deform vertices. Keep those flags disabled.
 
 `resolve(clearance, dt)` retracts immediately when blocked and eases outward
 when released, returning a length in `[0, desired_length]`. The caller supplies
-collision clearance in world units; Frog does not assume a collision shape,
+collision clearance in world units; Kobic does not assume a collision shape,
 terrain backend, character capsule, or input binding. It never moves physics.
 
 Regression: compile/run `tests/skeleton_checks.dlt` from the compiler workspace.

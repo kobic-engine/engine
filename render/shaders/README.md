@@ -1,9 +1,9 @@
-# Frog Embedded Shaders
+# Kobic Embedded Shaders
 
 `textured.vert` and `textured.frag` are the source of the SPIR-V embedded in
 `render/gpu_shaders.dlt`.
 
-Regenerate the embedded shaders from the `packages/frog` directory:
+Regenerate the embedded shaders from the `packages/kobic` directory:
 
 ```powershell
 glslangValidator -V --target-env vulkan1.0 render/shaders/textured.vert -o render/shaders/textured.vert.spv

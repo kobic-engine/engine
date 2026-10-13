@@ -1,10 +1,10 @@
 ##############################
-# Frog Model Cooker
-# Pure Dolet offline glTF 2.0 -> .frogmodel v2 compiler.
+# Kobic Model Cooker
+# Pure Dolet offline glTF 2.0 -> .kobicmodel v2 compiler.
 ##############################
 
-imm COOK_FROG_MAGIC: i32 = 0x4D475246
-imm COOK_FROG_VERSION: i32 = 2
+imm COOK_KOBIC_MAGIC: i32 = 0x4D475246
+imm COOK_KOBIC_VERSION: i32 = 2
 imm COOK_PROTOCOL_VERSION: i32 = 3
 imm COOK_VERTEX_STRIDE: i64 = 44
 imm COOK_TEMP_VERTEX_STRIDE: i64 = 32
@@ -69,7 +69,7 @@ g_cook_glb_bin_size: i64 = 0
 g_cook_nodes_processed: i32 = 0
 
 fun cook_fail(message: str):
-    print(@"frog cooker: {message}")
+    print(@"kobic cooker: {message}")
     Process.exit(1)
 
 fun cook_abs_f64(value: f64) -> f64:
@@ -1017,7 +1017,7 @@ fun cook_visit_node(node_index: i32, parent: i64, active: i64, node_count: i32):
         cook_process_mesh(mesh_index, world)
     g_cook_nodes_processed = g_cook_nodes_processed + 1
     if (g_cook_nodes_processed % 10) == 0 or g_cook_nodes_processed == g_cook_node_count:
-        print(@"frog cooker: geometry {g_cook_nodes_processed}/{g_cook_node_count} nodes")
+        print(@"kobic cooker: geometry {g_cook_nodes_processed}/{g_cook_node_count} nodes")
     children: JsonValue = node.get("children")
     child: i32 = 0
     while child < children.size():
@@ -1338,7 +1338,7 @@ fun cook_write_group_vertices(output: i64, vertex_offset: i64, index_offset: i64
             corner = corner + 1
         triangle = triangle + 1
 
-fun cook_build_frogmodel() -> i64:
+fun cook_build_kobicmodel() -> i64:
     output_size: i64 = cook_calculate_output_size()
     if output_size <= 0 or output_size > 2147483647:
         cook_fail("cooked model exceeds the supported 2 GiB file size")
@@ -1349,8 +1349,8 @@ fun cook_build_frogmodel() -> i64:
     part_count: i32 = cook_total_part_count()
     lod_table: i64 = 16
     part_table: i64 = lod_table + ((lod_count as i64) * 8)
-    Memory.write_i32(output, COOK_FROG_MAGIC)
-    Memory.write_i32(output + 4, COOK_FROG_VERSION)
+    Memory.write_i32(output, COOK_KOBIC_MAGIC)
+    Memory.write_i32(output + 4, COOK_KOBIC_VERSION)
     Memory.write_i32(output + 8, lod_count)
     Memory.write_i32(output + 12, lod_table as i32)
 
@@ -1422,8 +1422,8 @@ fun cook_build_frogmodel() -> i64:
     return result
 
 fun cook_usage():
-    print("Frog Cooker - pure Dolet model and texture cooker")
-    print("usage: frog-cooker <scene.gltf|scene.glb|texture.png> [--out <output>] [--lods|--no-lods] [--lod <ratio>]")
+    print("Kobic Cooker - pure Dolet model and texture cooker")
+    print("usage: kobic-cooker <scene.gltf|scene.glb|texture.png> [--out <output>] [--lods|--no-lods] [--lod <ratio>]")
     print("textures: --texture-kind auto|color|normal|metallic-roughness|occlusion|data|lossless")
     print("models preserve materials and default to LOD ratios 0.45 and 0.22")
 
@@ -1431,20 +1431,20 @@ fun cook_default_output(source: str) -> str:
     source_length: i64 = Memory.strlen(source)
     if source_length >= 5 and Str.ends_with(source, ".gltf"):
         base: str = Str.substring(source, 0, source_length - 5)
-        output: str = Str.concat(base, ".frogmodel")
+        output: str = Str.concat(base, ".kobicmodel")
         Memory.free(base as i64)
         return output
     if source_length >= 4 and Str.ends_with(source, ".glb"):
         base: str = Str.substring(source, 0, source_length - 4)
-        output: str = Str.concat(base, ".frogmodel")
+        output: str = Str.concat(base, ".kobicmodel")
         Memory.free(base as i64)
         return output
     if source_length >= 4 and Str.ends_with(source, ".png"):
         base: str = Str.substring(source, 0, source_length - 4)
-        output: str = Str.concat(base, ".frogtex")
+        output: str = Str.concat(base, ".kobictex")
         Memory.free(base as i64)
         return output
-    return Str.concat(source, ".frogmodel")
+    return Str.concat(source, ".kobicmodel")
 
 fun cook_main():
     argc: i32 = Argv.count()
@@ -1564,13 +1564,13 @@ fun cook_main():
         cook_fail("only glTF 2.x is supported")
     Memory.free(version as i64)
     cook_load_buffers()
-    print("frog cooker: source loaded")
+    print("kobic cooker: source loaded")
     cook_collect_triangles()
-    print(@"frog cooker: collected {g_cook_total_triangles} triangles")
+    print(@"kobic cooker: collected {g_cook_total_triangles} triangles")
     if g_cook_total_triangles <= 0:
         cook_fail("no triangle primitives found")
     g_cook_levels.append(cook_build_level(1.0))
-    print("frog cooker: built source level")
+    print("kobic cooker: built source level")
     if disable_lods == 0:
         if custom_lods == 0:
             g_cook_lod_ratios.append(0.45 as f32)
@@ -1579,8 +1579,8 @@ fun cook_main():
         while lod_index < g_cook_lod_ratios.size():
             g_cook_levels.append(cook_build_level(g_cook_lod_ratios.get_f32(lod_index)))
             lod_index = lod_index + 1
-    cooked: i64 = cook_build_frogmodel()
-    print("frog cooker: serialized model")
+    cooked: i64 = cook_build_kobicmodel()
+    print("kobic cooker: serialized model")
     output_data: i64 = Memory.read_i64(cooked)
     output_size: i64 = Memory.read_i64(cooked + 8)
     file: File = File.open_cwd(output, "w")

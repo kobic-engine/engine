@@ -1,21 +1,21 @@
 ##############################
-# Frog - Cooked Texture Loader
+# Kobic - Cooked Texture Loader
 # v1 RGBA8 compatibility + v2 GPU-native mip chains.
 ##############################
 
-imm FROG_TEXTURE_MAGIC: i32 = 0x58455446
-imm FROG_TEXTURE_VERSION: i32 = 2
-imm FROG_TEXTURE_V1_HEADER_SIZE: i64 = 32
-imm FROG_TEXTURE_HEADER_SIZE: i64 = 64
-imm FROG_TEXTURE_LEVEL_SIZE: i64 = 16
+imm KOBIC_TEXTURE_MAGIC: i32 = 0x58455446
+imm KOBIC_TEXTURE_VERSION: i32 = 2
+imm KOBIC_TEXTURE_V1_HEADER_SIZE: i64 = 32
+imm KOBIC_TEXTURE_HEADER_SIZE: i64 = 64
+imm KOBIC_TEXTURE_LEVEL_SIZE: i64 = 16
 
-imm FROG_TEXTURE_FORMAT_RGBA8: i32 = 1
-imm FROG_TEXTURE_FORMAT_BC7: i32 = 2
-imm FROG_TEXTURE_FORMAT_BC5: i32 = 3
-imm FROG_TEXTURE_FORMAT_BC4: i32 = 4
+imm KOBIC_TEXTURE_FORMAT_RGBA8: i32 = 1
+imm KOBIC_TEXTURE_FORMAT_BC7: i32 = 2
+imm KOBIC_TEXTURE_FORMAT_BC5: i32 = 3
+imm KOBIC_TEXTURE_FORMAT_BC4: i32 = 4
 
-imm FROG_TEXTURE_SWIZZLE_IDENTITY: i32 = 0
-imm FROG_TEXTURE_SWIZZLE_GB_FROM_RG: i32 = 1
+imm KOBIC_TEXTURE_SWIZZLE_IDENTITY: i32 = 0
+imm KOBIC_TEXTURE_SWIZZLE_GB_FROM_RG: i32 = 1
 
 struct CookedTexture:
     version: i32 = 0
@@ -35,31 +35,31 @@ struct CookedTexture:
     fun level_offset(self, level: i32) -> i64:
         if level < 0 or level >= self.mip_count or self.levels == 0:
             return 0
-        return Memory.read_i32(self.levels + (level as i64) * FROG_TEXTURE_LEVEL_SIZE) as i64
+        return Memory.read_i32(self.levels + (level as i64) * KOBIC_TEXTURE_LEVEL_SIZE) as i64
 
     fun level_size(self, level: i32) -> i64:
         if level < 0 or level >= self.mip_count or self.levels == 0:
             return 0
-        return Memory.read_i32(self.levels + (level as i64) * FROG_TEXTURE_LEVEL_SIZE + 4) as i64
+        return Memory.read_i32(self.levels + (level as i64) * KOBIC_TEXTURE_LEVEL_SIZE + 4) as i64
 
     fun level_width(self, level: i32) -> i32:
         if level < 0 or level >= self.mip_count or self.levels == 0:
             return 0
-        return Memory.read_i32(self.levels + (level as i64) * FROG_TEXTURE_LEVEL_SIZE + 8)
+        return Memory.read_i32(self.levels + (level as i64) * KOBIC_TEXTURE_LEVEL_SIZE + 8)
 
     fun level_height(self, level: i32) -> i32:
         if level < 0 or level >= self.mip_count or self.levels == 0:
             return 0
-        return Memory.read_i32(self.levels + (level as i64) * FROG_TEXTURE_LEVEL_SIZE + 12)
+        return Memory.read_i32(self.levels + (level as i64) * KOBIC_TEXTURE_LEVEL_SIZE + 12)
 
     fun vk_format(self, srgb: i32) -> i32:
-        if self.format == FROG_TEXTURE_FORMAT_BC7:
+        if self.format == KOBIC_TEXTURE_FORMAT_BC7:
             if srgb != 0:
                 return 146
             return 145
-        if self.format == FROG_TEXTURE_FORMAT_BC5:
+        if self.format == KOBIC_TEXTURE_FORMAT_BC5:
             return 141
-        if self.format == FROG_TEXTURE_FORMAT_BC4:
+        if self.format == KOBIC_TEXTURE_FORMAT_BC4:
             return 139
         if srgb != 0:
             return 43
@@ -82,17 +82,17 @@ struct CookedTexture:
         self.buffer = 0
         self.valid = 0
 
-fun frog_texture_expected_level_size(width: i32, height: i32, format: i32) -> i64:
-    if format == FROG_TEXTURE_FORMAT_RGBA8:
+fun kobic_texture_expected_level_size(width: i32, height: i32, format: i32) -> i64:
+    if format == KOBIC_TEXTURE_FORMAT_RGBA8:
         return (width as i64) * (height as i64) * 4
     blocks_x: i64 = ((width + 3) / 4) as i64
     blocks_y: i64 = ((height + 3) / 4) as i64
     block_size: i64 = 16
-    if format == FROG_TEXTURE_FORMAT_BC4:
+    if format == KOBIC_TEXTURE_FORMAT_BC4:
         block_size = 8
     return blocks_x * blocks_y * block_size
 
-fun frog_texture_load_v1(data: i64, size: i64) -> CookedTexture:
+fun kobic_texture_load_v1(data: i64, size: i64) -> CookedTexture:
     width: i32 = Memory.read_i32(data + 8)
     height: i32 = Memory.read_i32(data + 12)
     channels: i32 = Memory.read_i32(data + 16)
@@ -100,9 +100,9 @@ fun frog_texture_load_v1(data: i64, size: i64) -> CookedTexture:
     data_offset: i64 = Memory.read_i32(data + 24) as i64
     data_size: i64 = Memory.read_i32(data + 28) as i64
     expected: i64 = (width as i64) * (height as i64) * 4
-    if width <= 0 or height <= 0 or channels != 4 or format != FROG_TEXTURE_FORMAT_RGBA8:
+    if width <= 0 or height <= 0 or channels != 4 or format != KOBIC_TEXTURE_FORMAT_RGBA8:
         return CookedTexture()
-    if data_offset < FROG_TEXTURE_V1_HEADER_SIZE or data_size != expected or data_offset + data_size > size:
+    if data_offset < KOBIC_TEXTURE_V1_HEADER_SIZE or data_size != expected or data_offset + data_size > size:
         return CookedTexture()
     # Reuse the v1 header's final 16 bytes as a synthetic single-level entry.
     Memory.write_i32(data + 16, 0)
@@ -111,8 +111,8 @@ fun frog_texture_load_v1(data: i64, size: i64) -> CookedTexture:
     Memory.write_i32(data + 28, height)
     return CookedTexture(version=1, width=width, height=height, format=format, flags=0, mip_count=1, swizzle=0, kind=0, levels=data + 16, pixels=data + data_offset, size=data_size, buffer=data, valid=1)
 
-fun frog_texture_load_v2(data: i64, size: i64) -> CookedTexture:
-    if size < FROG_TEXTURE_HEADER_SIZE:
+fun kobic_texture_load_v2(data: i64, size: i64) -> CookedTexture:
+    if size < KOBIC_TEXTURE_HEADER_SIZE:
         return CookedTexture()
     width: i32 = Memory.read_i32(data + 8)
     height: i32 = Memory.read_i32(data + 12)
@@ -125,14 +125,14 @@ fun frog_texture_load_v2(data: i64, size: i64) -> CookedTexture:
     data_offset: i64 = Memory.read_i32(data + 40) as i64
     data_size: i64 = Memory.read_i32(data + 44) as i64
     kind: i32 = Memory.read_i32(data + 48)
-    if width <= 0 or height <= 0 or format < FROG_TEXTURE_FORMAT_RGBA8 or format > FROG_TEXTURE_FORMAT_BC4:
+    if width <= 0 or height <= 0 or format < KOBIC_TEXTURE_FORMAT_RGBA8 or format > KOBIC_TEXTURE_FORMAT_BC4:
         return CookedTexture()
-    if mip_count <= 0 or mip_count > 32 or entry_size != (FROG_TEXTURE_LEVEL_SIZE as i32):
+    if mip_count <= 0 or mip_count > 32 or entry_size != (KOBIC_TEXTURE_LEVEL_SIZE as i32):
         return CookedTexture()
-    if swizzle < FROG_TEXTURE_SWIZZLE_IDENTITY or swizzle > FROG_TEXTURE_SWIZZLE_GB_FROM_RG:
+    if swizzle < KOBIC_TEXTURE_SWIZZLE_IDENTITY or swizzle > KOBIC_TEXTURE_SWIZZLE_GB_FROM_RG:
         return CookedTexture()
-    table_size: i64 = (mip_count as i64) * FROG_TEXTURE_LEVEL_SIZE
-    if table_offset < FROG_TEXTURE_HEADER_SIZE or table_offset + table_size > size:
+    table_size: i64 = (mip_count as i64) * KOBIC_TEXTURE_LEVEL_SIZE
+    if table_offset < KOBIC_TEXTURE_HEADER_SIZE or table_offset + table_size > size:
         return CookedTexture()
     if data_offset < table_offset + table_size or data_size <= 0 or data_offset + data_size > size:
         return CookedTexture()
@@ -141,12 +141,12 @@ fun frog_texture_load_v2(data: i64, size: i64) -> CookedTexture:
     expected_offset: i64 = 0
     level: i32 = 0
     while level < mip_count:
-        entry: i64 = data + table_offset + (level as i64) * FROG_TEXTURE_LEVEL_SIZE
+        entry: i64 = data + table_offset + (level as i64) * KOBIC_TEXTURE_LEVEL_SIZE
         level_offset: i64 = Memory.read_i32(entry) as i64
         level_size: i64 = Memory.read_i32(entry + 4) as i64
         level_width: i32 = Memory.read_i32(entry + 8)
         level_height: i32 = Memory.read_i32(entry + 12)
-        expected_size: i64 = frog_texture_expected_level_size(expected_width, expected_height, format)
+        expected_size: i64 = kobic_texture_expected_level_size(expected_width, expected_height, format)
         if level_offset != expected_offset or level_size != expected_size:
             return CookedTexture()
         if level_width != expected_width or level_height != expected_height:
@@ -163,10 +163,10 @@ fun frog_texture_load_v2(data: i64, size: i64) -> CookedTexture:
         return CookedTexture()
     return CookedTexture(version=2, width=width, height=height, format=format, flags=flags, mip_count=mip_count, swizzle=swizzle, kind=kind, levels=data + table_offset, pixels=data + data_offset, size=data_size, buffer=data, valid=1)
 
-struct FrogTextureLoader:
+struct KobicTextureLoader:
     _placeholder: i32 = 0
 
-attach FrogTextureLoader:
+attach KobicTextureLoader:
 
     static fun load(resolved_path: str) -> CookedTexture:
         if PathOps.exists(resolved_path) == false:
@@ -175,7 +175,7 @@ attach FrogTextureLoader:
         if file.is_valid() == false:
             return CookedTexture()
         size: i64 = file.get_size()
-        if size < FROG_TEXTURE_V1_HEADER_SIZE or size > 2147483647:
+        if size < KOBIC_TEXTURE_V1_HEADER_SIZE or size > 2147483647:
             file.close()
             return CookedTexture()
         data: i64 = Memory.malloc(size)
@@ -187,15 +187,15 @@ attach FrogTextureLoader:
         if (read as i64) != size:
             Memory.free(data)
             return CookedTexture()
-        if Memory.read_i32(data) != FROG_TEXTURE_MAGIC:
+        if Memory.read_i32(data) != KOBIC_TEXTURE_MAGIC:
             Memory.free(data)
             return CookedTexture()
         version: i32 = Memory.read_i32(data + 4)
         cooked: CookedTexture = CookedTexture()
         if version == 1:
-            cooked = frog_texture_load_v1(data, size)
-        elif version == FROG_TEXTURE_VERSION:
-            cooked = frog_texture_load_v2(data, size)
+            cooked = kobic_texture_load_v1(data, size)
+        elif version == KOBIC_TEXTURE_VERSION:
+            cooked = kobic_texture_load_v2(data, size)
         if cooked.valid == 0:
             Memory.free(data)
         return cooked

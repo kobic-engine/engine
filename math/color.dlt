@@ -1,5 +1,5 @@
 ##############################
-# Frog - Color (RGBA)
+# Kobic - Color (RGBA)
 ##############################
 
 struct Color:

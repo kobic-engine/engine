@@ -1,5 +1,5 @@
 ##############################
-# Frog - Engine
+# Kobic - Engine
 # Public application entry point.
 ##############################
 
@@ -32,7 +32,7 @@ struct Engine:
     static mouse: EngineMouse = EngineMouse()
     static scene: EngineScene = EngineScene()
 
-static g_engine_title: str = "Frog Engine"
+static g_engine_title: str = "Kobic Engine"
 static g_engine_width: i32 = 1280
 static g_engine_height: i32 = 720
 static g_engine_scene: Scene = Scene()
@@ -188,8 +188,8 @@ attach Properties:
         return g_engine_frustum_culling_enabled
 
     # Select the main-pass culling strategy:
-    #   FROG_CULL_MODE_CPU (0, default), FROG_CULL_MODE_GPU (1),
-    #   FROG_CULL_MODE_AUTO (2). GPU/Auto need a ready GPU cull pipeline;
+    #   KOBIC_CULL_MODE_CPU (0, default), KOBIC_CULL_MODE_GPU (1),
+    #   KOBIC_CULL_MODE_AUTO (2). GPU/Auto need a ready GPU cull pipeline;
     #   otherwise the engine falls back to CPU.
     static fun set_culling_mode(mode: i32):
         m: i32 = mode
@@ -466,8 +466,8 @@ attach Debug:
             scale: f32 = g_engine_render_scale
             active_mode: PresentMode = Engine.properties.active_present_mode()
             active_mode_name: str = PresentMode.name(active_mode)
-            print(@"[frog.pacing] frames={frames} avg_ms={avg_ms} min_ms={min_ms} max_ms={max_ms}")
-            print(@"[frog.pacing] spikes={spikes} target_fps={target_fps} render_scale={scale} present={active_mode_name}")
+            print(@"[kobic.pacing] frames={frames} avg_ms={avg_ms} min_ms={min_ms} max_ms={max_ms}")
+            print(@"[kobic.pacing] spikes={spikes} target_fps={target_fps} render_scale={scale} present={active_mode_name}")
             Debug.reset_frame_pacing()
 
 attach EngineMouse:

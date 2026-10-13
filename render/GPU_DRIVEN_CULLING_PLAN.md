@@ -10,7 +10,7 @@
 
 ## Why
 Measured on collision-demo: `draws == instances` (up to ~3240 draws/frame)
-and CPU does `_frog_instance_visible` per instance every frame, single
+and CPU does `_kobic_instance_visible` per instance every frame, single
 threaded. At 830 FPS today it is not a bottleneck, but it caps how many
 objects the engine can ever handle. GPU-driven culling is the AAA-standard
 approach (UE5, Frostbite): the GPU decides what to draw.
@@ -40,7 +40,7 @@ GPU compute shader (per instance, parallel):
 - Storage-buffer + compute descriptor set layout creation. ✅
 - Compute shader (cull.comp) compiled to SPIR-V, embedded in gpu_shaders. ✅
 - Compute pipeline created and VERIFIED on real GPU: prints
-  "[frog.cull] GPU culling pipeline ready" at startup. ✅
+  "[kobic.cull] GPU culling pipeline ready" at startup. ✅
 - Fixed: dolet-vulkan-1.lib was missing compute symbols (vkCmdDispatch,
   vkCreateComputePipelines) — replaced with the full VulkanSDK vulkan-1.lib.
 - Fixed struct layouts (shader module sType=12 + codeSize@24/pCode@32,

@@ -1,7 +1,7 @@
 # Native regression: immutable sampler reuse, pool rollover, resize + draw paths.
 # No game assets or uniform-lighting extension are required.
 import std
-import frog
+import kobic
 
 fun texture_lifetime_require(ok: bool, message: str):
     if ok == false:
@@ -29,7 +29,7 @@ fun texture_lifetime_fixture(seed: i32) -> i32:
     return id
 
 fun run_texture_descriptor_lifetime_checks():
-    Engine.window.create("Frog texture lifetime checks", 320, 180)
+    Engine.window.create("Kobic texture lifetime checks", 320, 180)
     scene: Scene = Scene.create()
     camera: Camera3D = Camera3D.create("test")
     camera.position(0.0, 0.0, 8.0)
@@ -133,9 +133,9 @@ fun run_texture_descriptor_lifetime_checks():
         mode: i32 = 0
         while mode < 2:
             if mode == 0:
-                g_engine_runtime.set_culling_mode(FROG_CULL_MODE_CPU)
+                g_engine_runtime.set_culling_mode(KOBIC_CULL_MODE_CPU)
             else:
-                g_engine_runtime.set_culling_mode(FROG_CULL_MODE_GPU)
+                g_engine_runtime.set_culling_mode(KOBIC_CULL_MODE_GPU)
             frame: i32 = 0
             while frame < 4:
                 Engine.begin_frame()

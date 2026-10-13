@@ -1,5 +1,5 @@
 ##############################
-# Frog - 3D Lights
+# Kobic - 3D Lights
 # Public lighting descriptors for the scene graph.
 ##############################
 
@@ -21,7 +21,7 @@ struct ShadowSettings:
     filter_radius: f32 = 0.0
     adaptive: i32 = 1
 
-imm FROG_MAX_POINT_LIGHTS: i32 = 8
+imm KOBIC_MAX_POINT_LIGHTS: i32 = 8
 
 @heap struct DirectionalLight3D extends Node3D:
     color: Color = Color()
@@ -383,11 +383,11 @@ attach Scene:
             if existing == light_ptr:
                 return
             index = index + 1
-        if self.point_light_count >= FROG_MAX_POINT_LIGHTS:
+        if self.point_light_count >= KOBIC_MAX_POINT_LIGHTS:
             return
         if self.point_light_ptrs == 0:
-            self.point_light_ptrs = Memory.malloc_zeroed(FROG_MAX_POINT_LIGHTS * 8)
-            self.point_light_capacity = FROG_MAX_POINT_LIGHTS
+            self.point_light_ptrs = Memory.malloc_zeroed(KOBIC_MAX_POINT_LIGHTS * 8)
+            self.point_light_capacity = KOBIC_MAX_POINT_LIGHTS
         if self.point_light_ptrs == 0:
             return
         Memory.write_ptr(self.point_light_ptrs + self.point_light_count * 8, light_ptr)

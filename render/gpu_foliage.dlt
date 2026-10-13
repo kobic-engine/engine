@@ -1,5 +1,5 @@
 ##############################
-# Frog - GPU Interactive Foliage
+# Kobic - GPU Interactive Foliage
 # Compact, zero-per-plant CPU animation metadata.
 ##############################
 
@@ -29,8 +29,8 @@ fun gpu_tag_interactive_foliage(vertices: i64, first_vertex: i32, vertex_count: 
     vertex: i32 = 0
     while vertex < vertex_count:
         vertex_index: i32 = first_vertex + vertex
-        off: i64 = (vertex_index as i64) * (FROG_GPU_VERTEX_STRIDE as i64)
-        color_off: i64 = off + (FROG_GPU_VERTEX_COLOR_OFFSET as i64)
+        off: i64 = (vertex_index as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
+        color_off: i64 = off + (KOBIC_GPU_VERTEX_COLOR_OFFSET as i64)
 
         color_r: f32 = Memory.read_f32(vertices + color_off)
         color_g: f32 = Memory.read_f32(vertices + color_off + 4)

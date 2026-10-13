@@ -1,6 +1,6 @@
 # Headless engine regression: no window, Vulkan device, or game imports.
 import std
-import frog
+import kobic
 
 fun mesh_service_check(ok: bool, message: str):
     if ok == false:
@@ -84,6 +84,6 @@ fun run_mesh_service_checks():
     mesh_service_check(empty.capacity == 0 and empty.add(1) == false and empty.apply() == 0, "empty group safe")
     empty.destroy()
     Memory.free(empty as i64)
-    print("PASS: Frog mesh publication budget and rigid transform group")
+    print("PASS: Kobic mesh publication budget and rigid transform group")
 
 run_mesh_service_checks()

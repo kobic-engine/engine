@@ -1,6 +1,6 @@
 # CPU-only optional import: this must not load the Vulkan renderer/window.
 import std
-import frog.spatial
+import kobic.spatial
 
 fun spatial_check(ok: bool, message: str):
     if ok == false:
@@ -33,6 +33,6 @@ fun run_spatial_checks():
     frame.set_scale(-1.0)
     spatial_check(frame.frame_id == 7 and frame.parent_frame_id == -1 and frame.origin.sector_z == -2 and frame.rotation_y == 0.5 and frame.scale == 2.0, "frame metadata and positive-scale contract")
     frame.destroy()
-    print("PASS: optional Frog spatial coordinates without renderer dependencies")
+    print("PASS: optional Kobic spatial coordinates without renderer dependencies")
 
 run_spatial_checks()

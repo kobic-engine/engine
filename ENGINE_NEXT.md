@@ -1,6 +1,6 @@
-# Frog Engine - Next Engine Work
+# Kobic Engine - Next Engine Work
 
-This file tracks the engine-level systems that should live in Frog rather than
+This file tracks the engine-level systems that should live in Kobic rather than
 inside a single game project.
 
 ## Priority Order

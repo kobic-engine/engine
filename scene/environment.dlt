@@ -1,5 +1,5 @@
 ##############################
-# Frog - Scene Environment
+# Kobic - Scene Environment
 # Per-scene render environment: clear color, fog, and future sky/lighting.
 ##############################
 
@@ -27,27 +27,27 @@ imm SKY_TEXTURE_SIZE_CAPACITY: i32 = 4096
 
 static g_sky_texture_sizes: i64 = 0
 
-fun frog_sky_texture_size_store() -> i64:
+fun kobic_sky_texture_size_store() -> i64:
     if g_sky_texture_sizes == 0:
         g_sky_texture_sizes = Memory.malloc_zeroed(SKY_TEXTURE_SIZE_CAPACITY * 4)
     return g_sky_texture_sizes
 
-fun frog_sky_set_texture_size(texture_id: i32, size: f32):
+fun kobic_sky_set_texture_size(texture_id: i32, size: f32):
     if texture_id < 0:
         return
     if texture_id >= SKY_TEXTURE_SIZE_CAPACITY:
         return
-    store: i64 = frog_sky_texture_size_store()
+    store: i64 = kobic_sky_texture_size_store()
     if store == 0:
         return
     Memory.write_f32(store + texture_id * 4, size)
 
-fun frog_sky_texture_size(texture_id: i32) -> f32:
+fun kobic_sky_texture_size(texture_id: i32) -> f32:
     if texture_id < 0:
         return 1.0
     if texture_id >= SKY_TEXTURE_SIZE_CAPACITY:
         return 1.0
-    store: i64 = frog_sky_texture_size_store()
+    store: i64 = kobic_sky_texture_size_store()
     if store == 0:
         return 1.0
     value: f32 = Memory.read_f32(store + texture_id * 4)
@@ -779,7 +779,7 @@ attach Sky:
                 if self.sun_softness > 1.0:
                     self.sun_softness = 1.0
                 self.sun_texture_id = obj.texture_id
-                frog_sky_set_texture_size(obj.texture_id, obj.strength)
+                kobic_sky_set_texture_size(obj.texture_id, obj.strength)
                 self.sun_enabled = obj.enabled
             else:
                 if self.moon_enabled == 0:
@@ -795,7 +795,7 @@ attach Sky:
                     if self.moon_softness > 1.0:
                         self.moon_softness = 1.0
                     self.moon_texture_id = obj.texture_id
-                    frog_sky_set_texture_size(obj.texture_id, obj.strength)
+                    kobic_sky_set_texture_size(obj.texture_id, obj.strength)
                     self.moon_enabled = obj.enabled
         self.sync_primary_object()
         return self

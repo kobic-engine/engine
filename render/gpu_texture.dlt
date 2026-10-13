@@ -1,5 +1,5 @@
 ##############################
-# Frog Engine — GPU Texture
+# Kobic Engine — GPU Texture
 # Uploads an RGBA8 Image to a sampled Vulkan texture:
 #   staging buffer -> VkImage (OPTIMAL) -> image view + sampler.
 # Layout transitions via vkCmdPipelineBarrier; copy via vkCmdCopyBufferToImage.
@@ -557,7 +557,7 @@ fun gpu_make_image_view_aspect_mips_swizzle(device: i64, image: i64, fmt: i32, a
     Memory.write_ptr(ci + 24, image)
     Memory.write_i32(ci + 32, 1)        # VIEW_TYPE_2D
     Memory.write_i32(ci + 36, fmt)      # FORMAT (must match the image)
-    if swizzle == FROG_TEXTURE_SWIZZLE_GB_FROM_RG:
+    if swizzle == KOBIC_TEXTURE_SWIZZLE_GB_FROM_RG:
         # VkComponentSwizzle: ZERO=1, ONE=2, R=3, G=4.
         # glTF metallic-roughness expects roughness in G and metallic in B.
         Memory.write_i32(ci + 40, 1)
@@ -579,7 +579,7 @@ fun gpu_make_image_view_aspect_mips_swizzle(device: i64, image: i64, fmt: i32, a
     return view
 
 fun gpu_make_image_view_aspect_mips(device: i64, image: i64, fmt: i32, aspect: i32, mip_levels: i32) -> i64:
-    return gpu_make_image_view_aspect_mips_swizzle(device, image, fmt, aspect, mip_levels, FROG_TEXTURE_SWIZZLE_IDENTITY)
+    return gpu_make_image_view_aspect_mips_swizzle(device, image, fmt, aspect, mip_levels, KOBIC_TEXTURE_SWIZZLE_IDENTITY)
 
 fun gpu_make_image_view_aspect(device: i64, image: i64, fmt: i32, aspect: i32) -> i64:
     return gpu_make_image_view_aspect_mips(device, image, fmt, aspect, 1)

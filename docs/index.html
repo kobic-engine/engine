@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Frog Engine - Guide & API Reference</title>
+<title>Kobic Engine - Guide & API Reference</title>
 <style>
   :root {
     --bg: #0e1116;
@@ -110,7 +110,7 @@
     margin-bottom: 40px;
   }
   .hero h1 { font-size: 44px; margin: 0 0 12px; font-weight: 800; letter-spacing: -0.02em; }
-  .hero h1 .frog { color: var(--accent); }
+  .hero h1 .kobic { color: var(--accent); }
   .hero p.tag { font-size: 19px; color: var(--muted); margin: 0 0 20px; }
   .badges { display: flex; gap: 8px; flex-wrap: wrap; }
   .badge {
@@ -201,7 +201,7 @@
 <body>
 <div class="layout">
   <aside class="sidebar">
-    <div class="brand"><span class="logo">🐸</span> Frog Engine</div>
+    <div class="brand"><span class="logo">🐸</span> Kobic Engine</div>
     <nav>
       <a class="section">Getting Started</a>
       <a href="#overview">Overview</a>
@@ -244,7 +244,7 @@
 
   <main class="content">
     <div class="hero">
-      <h1><span class="frog">Frog</span> Engine</h1>
+      <h1><span class="kobic">Kobic</span> Engine</h1>
       <p class="tag">A 100% object-oriented 3D game engine for Dolet. No ECS.</p>
       <div class="badges">
         <span class="badge accent">Vulkan rendering</span>
@@ -255,7 +255,7 @@
     </div>
     <section id="overview">
       <h2>Overview</h2>
-      <p class="lead">Frog is a classic object-oriented 3D engine. Every object in the world is a <code>Node</code> in a scene graph, and you drive the whole thing through a small static <code>Engine</code> facade. The Vulkan backend, swapchain, and descriptor plumbing stay hidden; you work with scenes, cameras, meshes, materials, transforms, and textures.</p>
+      <p class="lead">Kobic is a classic object-oriented 3D engine. Every object in the world is a <code>Node</code> in a scene graph, and you drive the whole thing through a small static <code>Engine</code> facade. The Vulkan backend, swapchain, and descriptor plumbing stay hidden; you work with scenes, cameras, meshes, materials, transforms, and textures.</p>
       <div class="cards">
         <div class="card"><h4>Engine</h4><p>Window, lifecycle, frame timing, rendering, GPU selection, and debug flags.</p></div>
         <div class="card"><h4>Scene</h4><p>The active world. It owns a node tree, an active camera, and an environment.</p></div>
@@ -265,12 +265,12 @@
         <div class="card"><h4>Math</h4><p>Vec3, Mat4, Quat, Color plus angle / rng / clamp helpers.</p></div>
       </div>
       <p>Bring everything into scope with a single import:</p>
-      <pre><code><span class="tok-kw">import</span> frog</code></pre>
+      <pre><code><span class="tok-kw">import</span> kobic</code></pre>
     </section>
 
     <section id="mental-model">
       <h2>Mental Model</h2>
-      <p class="lead">Think in layers. The game owns code and assets. Frog owns reusable engine objects. The renderer stays behind the <code>Engine</code> facade unless you explicitly choose a low-level path.</p>
+      <p class="lead">Think in layers. The game owns code and assets. Kobic owns reusable engine objects. The renderer stays behind the <code>Engine</code> facade unless you explicitly choose a low-level path.</p>
       <table>
         <tr><th>Layer</th><th>You write</th><th>Purpose</th></tr>
         <tr><td>Application</td><td><code>Engine.window.create(...)</code>, <code>Engine.start()</code>, loop</td><td>Boot and drive the native game executable.</td></tr>
@@ -284,11 +284,11 @@
 
     <section id="install">
       <h2>Project Setup</h2>
-      <p>A Frog game is a normal Dolet program. You typically import the standard library, the engine, and your own game module:</p>
+      <p>A Kobic game is a normal Dolet program. You typically import the standard library, the engine, and your own game module:</p>
       <pre><code><span class="tok-kw">import</span> std
-<span class="tok-kw">import</span> frog
+<span class="tok-kw">import</span> kobic
 <span class="tok-kw">import</span> game.runtime</code></pre>
-      <p>Before loading any asset, mount a root directory. This is required; Frog does not choose a default asset folder.</p>
+      <p>Before loading any asset, mount a root directory. This is required; Kobic does not choose a default asset folder.</p>
       <pre><code>Assets.mount(<span class="tok-str">"assets"</span>)</code></pre>
       <p>Keep code and static files separate. The engine does not guess the root; the game chooses it.</p>
       <pre><code>my-game/
@@ -303,7 +303,7 @@
       <h2>Quick Start</h2>
       <p class="lead">A complete minimal scene with no external assets: one camera, one floor, one cube, and a render loop.</p>
       <pre><code><span class="tok-kw">import</span> std
-<span class="tok-kw">import</span> frog
+<span class="tok-kw">import</span> kobic
 
 <span class="tok-com"># 1. Configure before Engine.start()</span>
 Engine.window.create(<span class="tok-str">"My Game"</span>, <span class="tok-num">1280</span>, <span class="tok-num">720</span>)
@@ -398,7 +398,7 @@ scene.add_child(cube)</code></pre>
 
     <section id="gameloop">
       <h2>The Game Loop</h2>
-      <p>Frog does not hide the main loop. You own it. <code>Engine.start()</code> brings up Vulkan, <code>begin_frame()</code> returns the delta time in seconds, and a render call submits the frame for the current camera.</p>
+      <p>Kobic does not hide the main loop. You own it. <code>Engine.start()</code> brings up Vulkan, <code>begin_frame()</code> returns the delta time in seconds, and a render call submits the frame for the current camera.</p>
       <pre><code><span class="tok-kw">if</span> Engine.start() == <span class="tok-num">1</span>:
     Engine.mouse.capture()
     <span class="tok-kw">while</span> Engine.running() == <span class="tok-num">1</span>:
@@ -578,7 +578,7 @@ Engine.debug.box(
     Vec3.make(1.0, 2.0, 1.0),
     Color.rgba(0.1, 0.8, 1.0, 0.9)
 )</code></pre>
-      <p>The renderer discovers regular <code>Node3D</code> collision boxes and enabled <code>Raycast3D</code> nodes automatically, then submits the debug outlines as batched instanced line draws. If collision debugging is never enabled, Frog performs no physics-debug traversal, creates no debug GPU buffers, and submits no debug draw calls. Disabling it after first use stops traversal and rendering while retaining the cached GPU buffers for fast re-enabling.</p>
+      <p>The renderer discovers regular <code>Node3D</code> collision boxes and enabled <code>Raycast3D</code> nodes automatically, then submits the debug outlines as batched instanced line draws. If collision debugging is never enabled, Kobic performs no physics-debug traversal, creates no debug GPU buffers, and submits no debug draw calls. Disabling it after first use stops traversal and rendering while retaining the cached GPU buffers for fast re-enabling.</p>
 
       <h4>Engine.scene</h4>
       <table>
@@ -606,31 +606,31 @@ texture: <span class="tok-type">Texture2D</span> = Assets.textures.load(<span cl
       <h4>Loaders</h4>
       <table>
         <tr><th>Method</th><th>Returns</th><th>Description</th></tr>
-        <tr><td><code>Assets.models.load(path)</code></td><td>Model3D</td><td>Loads a model. For <code>.gltf</code> or <code>.glb</code>, Frog first checks for the neighboring <code>.frogmodel</code> cooked binary and uses it automatically when present.</td></tr>
-        <tr><td><code>Assets.textures.load(path)</code></td><td>Texture2D</td><td>Loads and GPU-uploads a texture (smooth spec). Frog prefers an adjacent <code>.frogtex</code> and falls back to PNG decoding when it is absent.</td></tr>
+        <tr><td><code>Assets.models.load(path)</code></td><td>Model3D</td><td>Loads a model. For <code>.gltf</code> or <code>.glb</code>, Kobic first checks for the neighboring <code>.kobicmodel</code> cooked binary and uses it automatically when present.</td></tr>
+        <tr><td><code>Assets.textures.load(path)</code></td><td>Texture2D</td><td>Loads and GPU-uploads a texture (smooth spec). Kobic prefers an adjacent <code>.kobictex</code> and falls back to PNG decoding when it is absent.</td></tr>
         <tr><td><code>Assets.textures.load(path, spec)</code></td><td>Texture2D</td><td>Same, with a <code>TextureSpec</code> controlling appearance.</td></tr>
         <tr><td><code>Assets.audio.load(path)</code></td><td>AudioClip</td><td>Loads an audio clip descriptor.</td></tr>
         <tr><td><code>Assets.shaders.load(path)</code></td><td>Shader3D</td><td>Loads a shader descriptor. Runtime compilation and pipeline binding are reserved for the advanced shader pipeline.</td></tr>
       </table>
 
       <h4>Model Import Cache And LODs</h4>
-      <p>Large source glTF or GLB files should be cooked once before shipping. Frog Cooker is written entirely in Dolet: it bakes the full node hierarchy, reads external or embedded geometry buffers, writes GPU-ready geometry, preserves source material slots, and generates LODs before the game starts.</p>
-      <pre><code>doletc tools/frog_cooker.dlt -o build/frog-cooker.exe -O3
-build/frog-cooker.exe assets/models/car/scene.gltf</code></pre>
-      <p>After that, game code names only the source model. Frog finds the adjacent cooked model and preloads its generated LODs:</p>
+      <p>Large source glTF or GLB files should be cooked once before shipping. Kobic Cooker is written entirely in Dolet: it bakes the full node hierarchy, reads external or embedded geometry buffers, writes GPU-ready geometry, preserves source material slots, and generates LODs before the game starts.</p>
+      <pre><code>doletc tools/kobic_cooker.dlt -o build/kobic-cooker.exe -O3
+build/kobic-cooker.exe assets/models/car/scene.gltf</code></pre>
+      <p>After that, game code names only the source model. Kobic finds the adjacent cooked model and preloads its generated LODs:</p>
       <pre><code>car: <span class="tok-type">Mesh3D</span> = Mesh3D.model(<span class="tok-str">"Car"</span>, <span class="tok-str">"models/car/scene.gltf"</span>)
 car.set_lods(ModelLods.auto(<span class="tok-num">32.0</span>, <span class="tok-num">72.0</span>))</code></pre>
-      <div class="note"><strong>Runtime rule.</strong> If <code>models/car/scene.frogmodel</code> exists beside <code>scene.gltf</code>, the loader uses the cooked binary. If it does not exist, Frog loads the source file directly for development.</div>
-      <div class="note"><strong>Material rule.</strong> Frog Cooker preserves source material slots by default so multi-part models keep their intended material assignment.</div>
-      <div class="note"><strong>LOD rule.</strong> The cooker writes LOD0 plus built-in 45% and 22% clustered LODs into one <code>scene.frogmodel</code>. Use <code>--no-lods</code> to emit only LOD0, or repeat <code>--lod ratio</code> for custom levels. Runtime switching performs no file I/O, JSON parsing, or upload.</div>
+      <div class="note"><strong>Runtime rule.</strong> If <code>models/car/scene.kobicmodel</code> exists beside <code>scene.gltf</code>, the loader uses the cooked binary. If it does not exist, Kobic loads the source file directly for development.</div>
+      <div class="note"><strong>Material rule.</strong> Kobic Cooker preserves source material slots by default so multi-part models keep their intended material assignment.</div>
+      <div class="note"><strong>LOD rule.</strong> The cooker writes LOD0 plus built-in 45% and 22% clustered LODs into one <code>scene.kobicmodel</code>. Use <code>--no-lods</code> to emit only LOD0, or repeat <code>--lod ratio</code> for custom levels. Runtime switching performs no file I/O, JSON parsing, or upload.</div>
 
       <h4>Obin Project Workflow</h4>
-      <p>Frog is an engine package, while the pure-Dolet <code>obin</code> tool owns the application workflow. Obin discovers the compiler, runs the Frog adapter, incrementally cooks referenced glTF/GLB models and PNG textures, creates the output directory, and builds or packages the game.</p>
+      <p>Kobic is an engine package, while the pure-Dolet <code>obin</code> tool owns the application workflow. Obin discovers the compiler, runs the Kobic adapter, incrementally cooks referenced glTF/GLB models and PNG textures, creates the output directory, and builds or packages the game.</p>
       <pre><code>obin build
 obin run
 obin package --profile release
 obin doctor</code></pre>
-      <pre><code>[tool.frog]
+      <pre><code>[tool.kobic]
 enabled = true
 cook-models = true
 cook-textures = true
@@ -640,7 +640,7 @@ texture-excludes = [<span class="tok-str">"@channels="</span>]
 lods = [<span class="tok-num">0.45</span>, <span class="tok-num">0.22</span>]</code></pre>
       <p>Static PNG path literals are discovered automatically. Use <code>texture-roots</code> for paths selected dynamically at runtime and <code>texture-excludes</code> to skip unused source variants. Set <code>cook-literal-textures = false</code> when only the explicit roots should be scanned.</p>
       <div class="note"><strong>Incremental cooking.</strong> An asset is recooked only when its source inputs, cooker executable, or cooked format version changed. <code>obin build --force</code> overrides this check.</div>
-      <div class="note"><strong>Release packaging.</strong> Obin omits a PNG only when its adjacent <code>.frogtex</code> passes format validation. Set <code>keep-source-textures = true</code> to ship both copies.</div>
+      <div class="note"><strong>Release packaging.</strong> Obin omits a PNG only when its adjacent <code>.kobictex</code> passes format validation. Set <code>keep-source-textures = true</code> to ship both copies.</div>
 
       <h3>Asset Types</h3>
       <p>Each loader returns a small struct describing the resource. Common fields:</p>
@@ -700,7 +700,7 @@ lods = [<span class="tok-num">0.45</span>, <span class="tok-num">0.22</span>]</c
         <tr><td><code>set_rotation(x, y, z)</code></td><td>Sets local rotation. Returns the node.</td></tr>
         <tr><td><code>set_scale(x, y, z)</code></td><td>Sets local scale. Returns the node.</td></tr>
       </table>
-      <div class="note">Built-in node types: <code>Node3D</code>, <code>Mesh3D</code>, <code>Camera3D</code>, and <code>RootNode</code>. Keep game-specific node structs in your game project; the Frog package should only carry reusable engine types.</div>
+      <div class="note">Built-in node types: <code>Node3D</code>, <code>Mesh3D</code>, <code>Camera3D</code>, and <code>RootNode</code>. Keep game-specific node structs in your game project; the Kobic package should only carry reusable engine types.</div>
 
       <h4>Custom game nodes</h4>
       <p>For normal gameplay objects, start with <code>Node3D</code> and add behavior in your game modules. For high-count custom data, define a game-owned struct that keeps the base node fields first, then add game fields after them.</p>
@@ -723,7 +723,7 @@ lods = [<span class="tok-num">0.45</span>, <span class="tok-num">0.22</span>]</c
     scale_y: <span class="tok-type">f32</span> = <span class="tok-num">1.0</span>
     scale_z: <span class="tok-type">f32</span> = <span class="tok-num">1.0</span>
     health: <span class="tok-type">i32</span> = <span class="tok-num">100</span></code></pre>
-      <div class="note warn">Alpha guidance: avoid adding game-only node types to Frog itself. Put them in the game repo, and use the engine's <code>Node</code> helpers by casting the node pointer when needed.</div>
+      <div class="note warn">Alpha guidance: avoid adding game-only node types to Kobic itself. Put them in the game repo, and use the engine's <code>Node</code> helpers by casting the node pointer when needed.</div>
     </section>
 
     <section id="node3d">
@@ -771,7 +771,7 @@ lods = [<span class="tok-num">0.45</span>, <span class="tok-num">0.22</span>]</c
 
     <section id="material3d">
       <h2>Material3D</h2>
-      <p class="lead">A reusable physically based surface descriptor for <code>Mesh3D</code>. Frog applies albedo, normal, metallic-roughness, occlusion, emission, shadows, and direct lights in the GPU renderer.</p>
+      <p class="lead">A reusable physically based surface descriptor for <code>Mesh3D</code>. Kobic applies albedo, normal, metallic-roughness, occlusion, emission, shadows, and direct lights in the GPU renderer.</p>
       <pre><code>mat: <span class="tok-type">Material3D</span> = Material3D.create()
 mat.set_albedo_texture(Assets.textures.load(<span class="tok-str">"textures/crate.png"</span>, TextureSpec.color_smooth()))
 mat.set_normal_map(Assets.textures.load(<span class="tok-str">"textures/crate_normal.png"</span>, TextureSpec.data_smooth()))
@@ -813,7 +813,7 @@ cube.set_material(mat)</code></pre>
       </table>
 
       <h3>ModelMaterials</h3>
-      <p>Use <code>ModelMaterials</code> when a glTF model has multiple material slots and you want explicit control by glTF material name or material index. Frog uploads each glTF primitive as an internal model part, then applies the matching material while the <code>Mesh3D</code> still behaves like one object for transform, visibility, and shadows.</p>
+      <p>Use <code>ModelMaterials</code> when a glTF model has multiple material slots and you want explicit control by glTF material name or material index. Kobic uploads each glTF primitive as an internal model part, then applies the matching material while the <code>Mesh3D</code> still behaves like one object for transform, visibility, and shadows.</p>
       <pre><code>wall: <span class="tok-type">Material3D</span> = Material3D.create()
 wall.set_texture(Assets.textures.load(<span class="tok-str">"textures/wall.png"</span>, TextureSpec.smooth()))
 wall.set_roughness(<span class="tok-num">0.85</span>)
@@ -923,7 +923,7 @@ building.scale(<span class="tok-num">0.035</span>, <span class="tok-num">0.035</
 scene.add_child(building)</code></pre>
 
       <div class="note"><strong>Shadow defaults.</strong> Renderable nodes cast and receive shadows by default. Only write <code>set_cast_shadows(0)</code> or <code>set_receive_shadows(0)</code> for exceptions such as effects, sky geometry, viewmodels, or special materials. Unlit materials never receive shadows effectively.</div>
-      <div class="note"><strong>Shadow culling.</strong> If no shadow caster survives the current light distance and cascade culling, Frog skips the shadow pass for that frame and disables receiver sampling automatically. When adaptive shadows are enabled and <code>set_filter_samples(0)</code> is in use, frames with only a few casters use cheaper PCF sampling.</div>
+      <div class="note"><strong>Shadow culling.</strong> If no shadow caster survives the current light distance and cascade culling, Kobic skips the shadow pass for that frame and disables receiver sampling automatically. When adaptive shadows are enabled and <code>set_filter_samples(0)</code> is in use, frames with only a few casters use cheaper PCF sampling.</div>
       <div class="note"><strong>Visibility is render-only.</strong> <code>set_visible(0)</code> removes the mesh from color rendering and shadow rendering, but the node, transform, raycast target, and collision box remain active. Use <code>without_collision()</code> or your own gameplay state when collision should disappear too.</div>
 
       <table>
@@ -1396,7 +1396,7 @@ debug_cube.set_color(Color.rgb(<span class="tok-num">0.95</span>, <span class="t
 
     <section id="textures">
       <h2>Guide: Textures</h2>
-      <p class="lead">A texture is a resource, so it loads through <code>Assets</code> and gets worn by a node &mdash; exactly like a model. One call reads a cooked <code>.frogtex</code> (or decodes the PNG fallback) and uploads it to the GPU; the node binds it. A <code>TextureSpec</code> describes how the image should appear.</p>
+      <p class="lead">A texture is a resource, so it loads through <code>Assets</code> and gets worn by a node &mdash; exactly like a model. One call reads a cooked <code>.kobictex</code> (or decodes the PNG fallback) and uploads it to the GPU; the node binds it. A <code>TextureSpec</code> describes how the image should appear.</p>
       <pre><code><span class="tok-com"># Load + GPU-upload model and texture (each happens once)</span>
 actor_model: <span class="tok-type">Model3D</span> = Assets.models.load(<span class="tok-str">"models/actor.gltf"</span>)
 actor_tex:   <span class="tok-type">Texture2D</span> = Assets.textures.load(<span class="tok-str">"textures/actor.png"</span>, TextureSpec.smooth())
@@ -1445,7 +1445,7 @@ tiles: <span class="tok-type">Texture2D</span> = Assets.textures.load(<span clas
 
 <span class="tok-com"># Normal map — linear data, not color</span>
 n: <span class="tok-type">Texture2D</span> = Assets.textures.load(<span class="tok-str">"textures/wall_normal.png"</span>, TextureSpec.data_smooth())</code></pre>
-      <div class="note"><strong>Cooked textures.</strong> Obin writes each selected PNG to an adjacent raw RGBA8 <code>.frogtex</code>. Runtime skips zlib/PNG decoding, batches setup uploads into one GPU submission, and still uses the original PNG transparently when no cooked sidecar exists.</div>
+      <div class="note"><strong>Cooked textures.</strong> Obin writes each selected PNG to an adjacent raw RGBA8 <code>.kobictex</code>. Runtime skips zlib/PNG decoding, batches setup uploads into one GPU submission, and still uses the original PNG transparently when no cooked sidecar exists.</div>
       <div class="note"><strong>PNG fallback.</strong> The pure-Dolet decoder supports full zlib/DEFLATE inflate, all five row filters, color types 0/2/3/4/6, and bit depths 1/2/4/8/16.</div>
       <div class="note"><strong>Low-level path.</strong> If you work with raw mesh ids (e.g. GPU instances), <code>Engine.upload_texture(path)</code> / <code>Engine.upload_texture_spec(path, spec)</code> and <code>Engine.bind_texture(mesh_id, tex_id)</code> are still available.</div>
     </section>
@@ -1501,7 +1501,7 @@ mat.set_texture(texture)
     </section>
 
     <footer>
-      <p>🐸 Frog Engine &mdash; object-oriented 3D for Dolet. Vulkan rendering, glTF models, PNG textures, scene-graph nodes. Alpha &mdash; under active construction. See <code>ROADMAP.md</code> for the build plan.</p>
+      <p>🐸 Kobic Engine &mdash; object-oriented 3D for Dolet. Vulkan rendering, glTF models, PNG textures, scene-graph nodes. Alpha &mdash; under active construction. See <code>ROADMAP.md</code> for the build plan.</p>
     </footer>
   </main>
 </div>

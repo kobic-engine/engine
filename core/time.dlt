@@ -1,29 +1,29 @@
 ##############################
-# Frog - Time
+# Kobic - Time
 # High-resolution frame timer.
 ##############################
 
-g_frog_timer_freq: i64 = 0
-g_frog_timer_start: i64 = 0
-g_frog_timer_initialized: i32 = 0
+g_kobic_timer_freq: i64 = 0
+g_kobic_timer_start: i64 = 0
+g_kobic_timer_initialized: i32 = 0
 
 fun init_engine_timer():
-    if g_frog_timer_initialized == 1:
+    if g_kobic_timer_initialized == 1:
         return
-    g_frog_timer_freq = frog_time_frequency()
-    if g_frog_timer_freq <= 0:
-        g_frog_timer_freq = 1000000000
-    g_frog_timer_start = frog_time_now_ticks()
-    g_frog_timer_initialized = 1
+    g_kobic_timer_freq = kobic_time_frequency()
+    if g_kobic_timer_freq <= 0:
+        g_kobic_timer_freq = 1000000000
+    g_kobic_timer_start = kobic_time_now_ticks()
+    g_kobic_timer_initialized = 1
 
 fun engine_time_seconds() -> f64:
-    if g_frog_timer_initialized == 0:
+    if g_kobic_timer_initialized == 0:
         init_engine_timer()
-    if g_frog_timer_freq == 0:
+    if g_kobic_timer_freq == 0:
         return 0.0
-    now: i64 = frog_time_now_ticks()
-    elapsed: i64 = now - g_frog_timer_start
-    return (elapsed as f64) / (g_frog_timer_freq as f64)
+    now: i64 = kobic_time_now_ticks()
+    elapsed: i64 = now - g_kobic_timer_start
+    return (elapsed as f64) / (g_kobic_timer_freq as f64)
 
 struct Clock:
     last_time: f64 = 0.0

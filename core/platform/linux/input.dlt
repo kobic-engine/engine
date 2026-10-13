@@ -1,7 +1,7 @@
 ##############################
-# Frog - Linux Input
+# Kobic - Linux Input
 ##############################
-# The window package owns native Wayland/X11 input collection. Frog consumes
+# The window package owns native Wayland/X11 input collection. Kobic consumes
 # the same target-neutral snapshot used by Eqoi and the standalone input lib.
 
 KEY_A: i32 = 65

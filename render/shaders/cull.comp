@@ -11,7 +11,7 @@
 // slice of the shared output buffer.
 //
 // Candidate layout (144 bytes): model 64 + material 16 + uv 16 + texidx 32 + bounds 16.
-// Output layout (128 bytes): model + material + uv + texidx (= FROG_GPU_INSTANCE_STRIDE).
+// Output layout (128 bytes): model + material + uv + texidx (= KOBIC_GPU_INSTANCE_STRIDE).
 
 layout(local_size_x = 64) in;
 

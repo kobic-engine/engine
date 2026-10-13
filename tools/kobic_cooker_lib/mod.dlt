@@ -1,0 +1,10 @@
+##############################
+# Kobic Cooker module entrypoint
+##############################
+module kobic_cooker_lib
+
+import json
+import image
+
+load kobic_texture_cooker
+load kobic_cooker_lib/main

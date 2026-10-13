@@ -1,11 +1,11 @@
 ##############################
-# Frog - Temporal post pipeline
+# Kobic - Temporal post pipeline
 # Half-resolution GTAO followed by HDR temporal resolve.
 ##############################
 
-FROG_GTAO_FORMAT: i32 = 9 # VK_FORMAT_R8_UNORM
+KOBIC_GTAO_FORMAT: i32 = 9 # VK_FORMAT_R8_UNORM
 
-fun frog_temporal_shader_module(device: i64, code: i64, size: i64) -> i64:
+fun kobic_temporal_shader_module(device: i64, code: i64, size: i64) -> i64:
     if code == 0 or size <= 0:
         return 0
     ci: i64 = Memory.malloc_zeroed(40)
@@ -27,7 +27,7 @@ fun frog_temporal_shader_module(device: i64, code: i64, size: i64) -> i64:
         return 0
     return handle
 
-fun frog_temporal_color_render_pass(device: i64, format: i32) -> i64:
+fun kobic_temporal_color_render_pass(device: i64, format: i32) -> i64:
     attachment: i64 = Memory.malloc_zeroed(36)
     color_ref: i64 = Memory.malloc_zeroed(8)
     subpass: i64 = Memory.malloc_zeroed(72)
@@ -63,7 +63,7 @@ fun frog_temporal_color_render_pass(device: i64, format: i32) -> i64:
         return 0
     return handle
 
-fun frog_temporal_descriptor_layout(device: i64, count: i32) -> i64:
+fun kobic_temporal_descriptor_layout(device: i64, count: i32) -> i64:
     if count <= 0:
         return 0
     bindings: i64 = Memory.malloc_zeroed((count as i64) * 24)
@@ -91,7 +91,7 @@ fun frog_temporal_descriptor_layout(device: i64, count: i32) -> i64:
         return 0
     return handle
 
-fun frog_temporal_pipeline_layout(device: i64, desc_layout: i64, push_size: i32) -> i64:
+fun kobic_temporal_pipeline_layout(device: i64, desc_layout: i64, push_size: i32) -> i64:
     range: i64 = Memory.malloc_zeroed(12)
     layouts: i64 = Memory.malloc_zeroed(8)
     ci: i64 = Memory.malloc_zeroed(48)
@@ -116,7 +116,7 @@ fun frog_temporal_pipeline_layout(device: i64, desc_layout: i64, push_size: i32)
         return 0
     return handle
 
-fun frog_temporal_pipeline(device: i64, render_pass: i64, layout: i64, vert_module: i64, frag_module: i64) -> i64:
+fun kobic_temporal_pipeline(device: i64, render_pass: i64, layout: i64, vert_module: i64, frag_module: i64) -> i64:
     entry: str = "main"
     stages: i64 = Memory.malloc_zeroed(96)
     vertex_input: i64 = Memory.malloc_zeroed(48)
@@ -195,7 +195,7 @@ fun frog_temporal_pipeline(device: i64, render_pass: i64, layout: i64, vert_modu
         return 0
     return handle
 
-fun frog_temporal_framebuffer(device: i64, render_pass: i64, view: i64, width: i32, height: i32) -> i64:
+fun kobic_temporal_framebuffer(device: i64, render_pass: i64, view: i64, width: i32, height: i32) -> i64:
     views: i64 = Memory.malloc_zeroed(8)
     ci: i64 = Memory.malloc_zeroed(64)
     out: i64 = Memory.malloc_zeroed(8)
@@ -218,7 +218,7 @@ fun frog_temporal_framebuffer(device: i64, render_pass: i64, view: i64, width: i
         return 0
     return handle
 
-fun frog_temporal_update_image(device: i64, set: i64, binding: i32, view: i64, sampler: i64):
+fun kobic_temporal_update_image(device: i64, set: i64, binding: i32, view: i64, sampler: i64):
     image: i64 = Memory.malloc_zeroed(24)
     write: i64 = Memory.malloc_zeroed(64)
     if image == 0 or write == 0:
@@ -236,7 +236,7 @@ fun frog_temporal_update_image(device: i64, set: i64, binding: i32, view: i64, s
     Memory.free(write)
     Memory.free(image)
 
-fun frog_temporal_depth_barrier(cmd: i64, image: i64, old_layout: i32, new_layout: i32, src_access: i32, dst_access: i32, src_stage: i64, dst_stage: i64):
+fun kobic_temporal_depth_barrier(cmd: i64, image: i64, old_layout: i32, new_layout: i32, src_access: i32, dst_access: i32, src_stage: i64, dst_stage: i64):
     barrier: i64 = Memory.malloc_zeroed(72)
     if barrier == 0:
         return
@@ -332,15 +332,15 @@ attach GpuTemporal:
     fun init(self, device: i64, phys_device: i64) -> i32:
         self.device = device
         self.phys_device = phys_device
-        self.gtao_render_pass = frog_temporal_color_render_pass(device, FROG_GTAO_FORMAT)
-        self.temporal_render_pass = frog_temporal_color_render_pass(device, FROG_HDR_COLOR_FORMAT)
-        self.gtao_desc_layout = frog_temporal_descriptor_layout(device, 2)
-        self.temporal_desc_layout = frog_temporal_descriptor_layout(device, 5)
+        self.gtao_render_pass = kobic_temporal_color_render_pass(device, KOBIC_GTAO_FORMAT)
+        self.temporal_render_pass = kobic_temporal_color_render_pass(device, KOBIC_HDR_COLOR_FORMAT)
+        self.gtao_desc_layout = kobic_temporal_descriptor_layout(device, 2)
+        self.temporal_desc_layout = kobic_temporal_descriptor_layout(device, 5)
         if self.gtao_render_pass == 0 or self.temporal_render_pass == 0 or self.gtao_desc_layout == 0 or self.temporal_desc_layout == 0:
             self.cleanup()
             return 0
-        self.gtao_pipeline_layout = frog_temporal_pipeline_layout(device, self.gtao_desc_layout, 64)
-        self.temporal_pipeline_layout = frog_temporal_pipeline_layout(device, self.temporal_desc_layout, 128)
+        self.gtao_pipeline_layout = kobic_temporal_pipeline_layout(device, self.gtao_desc_layout, 64)
+        self.temporal_pipeline_layout = kobic_temporal_pipeline_layout(device, self.temporal_desc_layout, 128)
         if self.gtao_pipeline_layout == 0 or self.temporal_pipeline_layout == 0:
             self.cleanup()
             return 0
@@ -348,17 +348,17 @@ attach GpuTemporal:
         vert_shader: EmbeddedShader = get_temporal_vert_shader()
         gtao_shader: EmbeddedShader = get_gtao_frag_shader()
         temporal_shader: EmbeddedShader = get_taa_gtao_frag_shader()
-        self.vert_module = frog_temporal_shader_module(device, vert_shader.data, vert_shader.size)
-        self.gtao_frag_module = frog_temporal_shader_module(device, gtao_shader.data, gtao_shader.size)
-        self.temporal_frag_module = frog_temporal_shader_module(device, temporal_shader.data, temporal_shader.size)
+        self.vert_module = kobic_temporal_shader_module(device, vert_shader.data, vert_shader.size)
+        self.gtao_frag_module = kobic_temporal_shader_module(device, gtao_shader.data, gtao_shader.size)
+        self.temporal_frag_module = kobic_temporal_shader_module(device, temporal_shader.data, temporal_shader.size)
         vert_shader.release()
         gtao_shader.release()
         temporal_shader.release()
         if self.vert_module == 0 or self.gtao_frag_module == 0 or self.temporal_frag_module == 0:
             self.cleanup()
             return 0
-        self.gtao_pipeline = frog_temporal_pipeline(device, self.gtao_render_pass, self.gtao_pipeline_layout, self.vert_module, self.gtao_frag_module)
-        self.temporal_pipeline = frog_temporal_pipeline(device, self.temporal_render_pass, self.temporal_pipeline_layout, self.vert_module, self.temporal_frag_module)
+        self.gtao_pipeline = kobic_temporal_pipeline(device, self.gtao_render_pass, self.gtao_pipeline_layout, self.vert_module, self.gtao_frag_module)
+        self.temporal_pipeline = kobic_temporal_pipeline(device, self.temporal_render_pass, self.temporal_pipeline_layout, self.vert_module, self.temporal_frag_module)
         if self.gtao_pipeline == 0 or self.temporal_pipeline == 0:
             self.cleanup()
             return 0
@@ -472,50 +472,50 @@ attach GpuTemporal:
         out_memory: i64 = Memory.malloc_zeroed(8)
         if out_image == 0 or out_memory == 0:
             return 0
-        if gpu_make_image_usage(self.device, self.phys_device, ao_width, ao_height, FROG_GTAO_FORMAT, 20, out_image, out_memory) == 0:
+        if gpu_make_image_usage(self.device, self.phys_device, ao_width, ao_height, KOBIC_GTAO_FORMAT, 20, out_image, out_memory) == 0:
             return 0
         self.gtao_image = Memory.read_ptr(out_image)
         self.gtao_memory = Memory.read_ptr(out_memory)
         Memory.set(out_image, 0, 8)
         Memory.set(out_memory, 0, 8)
-        if gpu_make_image_usage(self.device, self.phys_device, width, height, FROG_HDR_COLOR_FORMAT, 22, out_image, out_memory) == 0:
+        if gpu_make_image_usage(self.device, self.phys_device, width, height, KOBIC_HDR_COLOR_FORMAT, 22, out_image, out_memory) == 0:
             return 0
         self.history_image0 = Memory.read_ptr(out_image)
         self.history_memory0 = Memory.read_ptr(out_memory)
         Memory.set(out_image, 0, 8)
         Memory.set(out_memory, 0, 8)
-        if gpu_make_image_usage(self.device, self.phys_device, width, height, FROG_HDR_COLOR_FORMAT, 22, out_image, out_memory) == 0:
+        if gpu_make_image_usage(self.device, self.phys_device, width, height, KOBIC_HDR_COLOR_FORMAT, 22, out_image, out_memory) == 0:
             return 0
         self.history_image1 = Memory.read_ptr(out_image)
         self.history_memory1 = Memory.read_ptr(out_memory)
         Memory.free(out_memory)
         Memory.free(out_image)
 
-        self.gtao_view = gpu_make_image_view_aspect(self.device, self.gtao_image, FROG_GTAO_FORMAT, 1)
-        self.history_view0 = gpu_make_image_view_aspect(self.device, self.history_image0, FROG_HDR_COLOR_FORMAT, 1)
-        self.history_view1 = gpu_make_image_view_aspect(self.device, self.history_image1, FROG_HDR_COLOR_FORMAT, 1)
+        self.gtao_view = gpu_make_image_view_aspect(self.device, self.gtao_image, KOBIC_GTAO_FORMAT, 1)
+        self.history_view0 = gpu_make_image_view_aspect(self.device, self.history_image0, KOBIC_HDR_COLOR_FORMAT, 1)
+        self.history_view1 = gpu_make_image_view_aspect(self.device, self.history_image1, KOBIC_HDR_COLOR_FORMAT, 1)
         if self.gtao_view == 0 or self.history_view0 == 0 or self.history_view1 == 0:
             self.destroy_targets()
             return 0
-        self.gtao_framebuffer = frog_temporal_framebuffer(self.device, self.gtao_render_pass, self.gtao_view, ao_width, ao_height)
-        self.history_framebuffer0 = frog_temporal_framebuffer(self.device, self.temporal_render_pass, self.history_view0, width, height)
-        self.history_framebuffer1 = frog_temporal_framebuffer(self.device, self.temporal_render_pass, self.history_view1, width, height)
+        self.gtao_framebuffer = kobic_temporal_framebuffer(self.device, self.gtao_render_pass, self.gtao_view, ao_width, ao_height)
+        self.history_framebuffer0 = kobic_temporal_framebuffer(self.device, self.temporal_render_pass, self.history_view0, width, height)
+        self.history_framebuffer1 = kobic_temporal_framebuffer(self.device, self.temporal_render_pass, self.history_view1, width, height)
         if self.gtao_framebuffer == 0 or self.history_framebuffer0 == 0 or self.history_framebuffer1 == 0:
             self.destroy_targets()
             return 0
 
-        frog_temporal_update_image(self.device, self.gtao_set, 0, depth_view, self.point_sampler)
-        frog_temporal_update_image(self.device, self.gtao_set, 1, geometry_view, self.point_sampler)
-        frog_temporal_update_image(self.device, self.temporal_set0, 0, color_view, self.sampler)
-        frog_temporal_update_image(self.device, self.temporal_set0, 1, depth_view, self.point_sampler)
-        frog_temporal_update_image(self.device, self.temporal_set0, 2, geometry_view, self.point_sampler)
-        frog_temporal_update_image(self.device, self.temporal_set0, 3, self.gtao_view, self.sampler)
-        frog_temporal_update_image(self.device, self.temporal_set0, 4, self.history_view1, self.sampler)
-        frog_temporal_update_image(self.device, self.temporal_set1, 0, color_view, self.sampler)
-        frog_temporal_update_image(self.device, self.temporal_set1, 1, depth_view, self.point_sampler)
-        frog_temporal_update_image(self.device, self.temporal_set1, 2, geometry_view, self.point_sampler)
-        frog_temporal_update_image(self.device, self.temporal_set1, 3, self.gtao_view, self.sampler)
-        frog_temporal_update_image(self.device, self.temporal_set1, 4, self.history_view0, self.sampler)
+        kobic_temporal_update_image(self.device, self.gtao_set, 0, depth_view, self.point_sampler)
+        kobic_temporal_update_image(self.device, self.gtao_set, 1, geometry_view, self.point_sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set0, 0, color_view, self.sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set0, 1, depth_view, self.point_sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set0, 2, geometry_view, self.point_sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set0, 3, self.gtao_view, self.sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set0, 4, self.history_view1, self.sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set1, 0, color_view, self.sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set1, 1, depth_view, self.point_sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set1, 2, geometry_view, self.point_sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set1, 3, self.gtao_view, self.sampler)
+        kobic_temporal_update_image(self.device, self.temporal_set1, 4, self.history_view0, self.sampler)
         self.bloom_desc0 = rp.make_texture_descriptor(self.device, self.history_view0, self.sampler)
         self.bloom_desc1 = rp.make_texture_descriptor(self.device, self.history_view1, self.sampler)
         if self.bloom_desc0 == 0 or self.bloom_desc1 == 0:
@@ -579,7 +579,7 @@ attach GpuTemporal:
         gpu_tex_barrier(cmd, color_image, 2, 5, 256, 32, 1024, 128)
         gpu_tex_barrier(cmd, geometry_image, 2, 5, 256, 32, 1024, 128)
         if depth_is_sampled == 0:
-            frog_temporal_depth_barrier(cmd, depth_image, 3, 5, 1024, 32, 512, 128)
+            kobic_temporal_depth_barrier(cmd, depth_image, 3, 5, 1024, 32, 512, 128)
         self._initialize_history(cmd)
 
         ao_width: i32 = (self.width + 1) / 2
@@ -622,7 +622,7 @@ attach GpuTemporal:
 
         gpu_tex_barrier(cmd, color_image, 5, 2, 32, 256, 128, 1024)
         gpu_tex_barrier(cmd, geometry_image, 5, 2, 32, 256, 128, 1024)
-        frog_temporal_depth_barrier(cmd, depth_image, 5, 3, 32, 1024, 128, 512)
+        kobic_temporal_depth_barrier(cmd, depth_image, 5, 3, 32, 1024, 128, 512)
         return 1
 
     fun output_image(self) -> i64:

@@ -54,14 +54,14 @@ attach Skeleton3D:
                 pose = skeleton_matrix_read(self.model_poses + parent * 64).mul(pose)
             pose.write_to_ptr(self.model_poses + i * 64)
             if self.palette != 0:
-                pose.mul(skeleton_matrix_read(self.inverse_binds + i * 64)).write_to_ptr(g_frog_skin_cpu + self.palette + i * 64)
+                pose.mul(skeleton_matrix_read(self.inverse_binds + i * 64)).write_to_ptr(g_kobic_skin_cpu + self.palette + i * 64)
             i = i + 1
 
     # IK/procedural controllers can publish an already solved model-space
     # deformation matrix (jointModel * inverseBind), without CPU vertex work.
     fun set_deformation(self, joint: i32, deformation: Mat4):
         if joint >= 0 and joint < self.joint_count and self.palette != 0:
-            deformation.write_to_ptr(g_frog_skin_cpu + self.palette + joint * 64)
+            deformation.write_to_ptr(g_kobic_skin_cpu + self.palette + joint * 64)
 
     fun destroy(self):
         Memory.free(self.parents)
@@ -146,12 +146,12 @@ fun skin_validate(data: i64, size: i64) -> i32:
 attach SkinnedMesh3D:
     static fun load(path: str) -> SkinnedMesh3D:
         mesh: SkinnedMesh3D = SkinnedMesh3D()
-        file: File = File.open_cwd(Assets.resolve(path), "r")
+        file: File = File.open_cwd(Assets.resolve(kobic_cooked_or_legacy(path, ".kobicskin", ".frogskin")), "r")
         if file.is_valid() == false:
             mesh.error = "skin asset not found"
             return mesh
         size: i64 = file.get_size()
-        if size < 48 or size > FROG_SKIN_BYTES:
+        if size < 48 or size > KOBIC_SKIN_BYTES:
             file.close()
             mesh.error = "invalid skin asset size"
             return mesh
@@ -183,7 +183,7 @@ attach SkinnedMesh3D:
         geometry: GpuMeshData = GpuMeshData(vertices=data + 48, vertex_count=nv, indices=data + (Memory.read_i32(data + 28) as i64), index_count=ni)
         id: i32 = Engine.upload_mesh_data(geometry)
         if id >= 0:
-            rig.palette = frog_skin_reserve(id, data + (Memory.read_i32(data + 24) as i64), nv, nj)
+            rig.palette = kobic_skin_reserve(id, data + (Memory.read_i32(data + 24) as i64), nv, nj)
         Memory.free(data)
         if id < 0 or rig.palette == 0:
             if id >= 0:
@@ -207,7 +207,7 @@ attach SkinnedMesh3D:
     fun destroy(self):
         if self.mesh_id >= 0:
             Engine.set_instance_visible(self.mesh_id, 0)
-            frog_skin_release(self.mesh_id)
+            kobic_skin_release(self.mesh_id)
         if self.skeleton_ptr != 0:
             rig: Skeleton3D = self.skeleton_ptr as Skeleton3D
             rig.destroy()

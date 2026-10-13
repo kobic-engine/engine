@@ -1,6 +1,6 @@
 # CPU-only atlas preparation. Source cells are entirely authored pixels;
 # wrapped filtering gutters live in a separate upload image, never in the PNG.
-fun frog_texture_pad_atlas(source: Image, columns: i32, rows: i32, core_pixels: i32, gutter_pixels: i32) -> Image:
+fun kobic_texture_pad_atlas(source: Image, columns: i32, rows: i32, core_pixels: i32, gutter_pixels: i32) -> Image:
     if source.is_valid() == 0:
         return Image.empty()
     if columns <= 0 or rows <= 0 or columns > 256 or rows > 256:

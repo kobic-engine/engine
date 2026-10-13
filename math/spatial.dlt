@@ -1,4 +1,4 @@
-# Optional sector/local coordinates: import frog.spatial.
+# Optional sector/local coordinates: import kobic.spatial.
 # CPU-only; no renderer, scene graph or game policy dependencies.
 # This does NOT automatically rebase Camera3D, render meshes or physics.
 # SpatialFrame stores caller-managed frame metadata, not a scene hierarchy.

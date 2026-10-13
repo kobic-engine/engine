@@ -1,8 +1,8 @@
 [info]
-name = frog
+name = kobic
 version = 0.1.0-alpha
 layer = composition
-description = Frog Engine - OOP 3D game engine for Dolet. No ECS.
+description = Kobic Engine - OOP 3D game engine for Dolet. No ECS.
 author = xRo0t
 license = MIT
 

@@ -1,7 +1,7 @@
 ##############################
-# Frog Cooker executable entrypoint
+# Kobic Cooker executable entrypoint
 ##############################
 
-import frog_cooker_lib
+import kobic_cooker_lib
 
 cook_main()

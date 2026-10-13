@@ -1,4 +1,4 @@
-# Texture System for Frog Engine — Updated Plan
+# Texture System for Kobic Engine — Updated Plan
 
 ## ✅ حالة التنفيذ (مكتمل)
 
@@ -7,7 +7,7 @@
 - **compiler** (`f56d4fe`): إصلاح bug تهيئة الـ global initializers تحت `main()` معرّف من المستخدم.
 - **image** (`3cca55e`): PNG decoder كامل (inflate + كل الفلاتر + كل color types) — `PNG.load`.
 - **vulkan** (`8bdbfbe`): إضافة دوال الـ texture/descriptor للـ import lib (`vulkan-1.def`/`.lib`).
-- **frog**:
+- **kobic**:
   - `c79d6a4`: vertex format صار 32 byte (pos+color+UV) + شيدرات SPIR-V جديدة (sampler2D).
   - `626d4b3`: رفع الصور للـ GPU، descriptor sets، 1×1 white fallback، والـ API العام.
 
@@ -82,9 +82,9 @@ Engine.bind_texture(inst, tex_id)                        # يربط texture با
 
 ---
 
-### Step 2: إعادة استخدام `Image` struct في Frog
+### Step 2: إعادة استخدام `Image` struct في Kobic
 
-#### [MODIFY] `packages/frog/assets/types.dlt`
+#### [MODIFY] `packages/kobic/assets/types.dlt`
 تحديث `Texture2D` ليحمل `Image`:
 ```
 struct Texture2D:
@@ -100,7 +100,7 @@ struct Texture2D:
     error: str = ""
 ```
 
-#### [MODIFY] `packages/frog/assets/assets.dlt`
+#### [MODIFY] `packages/kobic/assets/assets.dlt`
 تحسين `AssetTextures.load()`:
 ```
 static fun load(path: str) -> Texture2D:
@@ -111,14 +111,14 @@ static fun load(path: str) -> Texture2D:
     return Texture2D(path, resolved, img.width, img.height, 4, -1, img, 1, 0, "")
 ```
 
-#### [MODIFY] `packages/frog/mod.dlt`
-إضافة `import image` للـ frog module
+#### [MODIFY] `packages/kobic/mod.dlt`
+إضافة `import image` للـ kobic module
 
 ---
 
 ### Step 3: GPU Texture Upload
 
-#### [NEW] `packages/frog/render/gpu_texture.dlt`
+#### [NEW] `packages/kobic/render/gpu_texture.dlt`
 
 ملف جديد يتعامل مع رفع الصور على GPU عبر Vulkan:
 
@@ -153,7 +153,7 @@ mesh_textures:   i64 = 0    # mesh_id → texture_id (-1 = none)
 
 ### Step 4: Descriptor Sets
 
-#### [MODIFY] `packages/frog/render/gpu_render_pass.dlt`
+#### [MODIFY] `packages/kobic/render/gpu_render_pass.dlt`
 
 إضافات لـ `RenderPass`:
 ```
@@ -178,7 +178,7 @@ desc_sets:       i64 = 0    # VkDescriptorSet[] — one per texture
 
 ### Step 5: Shaders جديدة
 
-#### [MODIFY] `packages/frog/render/gpu_shaders.dlt`
+#### [MODIFY] `packages/kobic/render/gpu_shaders.dlt`
 
 **Vertex Shader — GLSL المطلوب:**
 ```glsl
@@ -236,20 +236,20 @@ void main() {
 
 ### Step 6: Vertex Format + Pipeline
 
-#### [MODIFY] `packages/frog/render/gpu_mesh.dlt`
+#### [MODIFY] `packages/kobic/render/gpu_mesh.dlt`
 
 - `gpu_wv()` يصير stride **32 bytes**: `pos(3f) + color(3f) + uv(2f)`
 - `gltf_write_position_vertex()` يقرأ UV من glTF TEXCOORD_0 accessor
 - `gpu_make_cube_vertices()` / `gpu_make_plane_vertices()` يحطوا default UVs (0-1 mapping)
 
-#### [MODIFY] `packages/frog/render/gpu_render_pass.dlt`
+#### [MODIFY] `packages/kobic/render/gpu_render_pass.dlt`
 
 Pipeline vertex input:
 - Binding 0: stride **32** (بدل 24)
 - Attributes: إضافة UV attr (location=6, format=R32G32_SFLOAT=103, offset=24)
 - Total attributes: **7** (بدل 6)
 
-#### [MODIFY] `packages/frog/render/gpu_renderer_core.dlt`
+#### [MODIFY] `packages/kobic/render/gpu_renderer_core.dlt`
 
 - `upload_mesh()`: data_size يتغير `vertex_count * 32` (بدل 24)
 - `_record_commands()`: قبل كل draw call → `vkCmdBindDescriptorSets()` بالـ texture المربوط بالـ mesh
@@ -259,7 +259,7 @@ Pipeline vertex input:
 
 ### Step 7: Public API — يدوي
 
-#### [MODIFY] `packages/frog/render/gpu.dlt`
+#### [MODIFY] `packages/kobic/render/gpu.dlt`
 
 على `Renderer`:
 ```
@@ -267,7 +267,7 @@ fun upload_texture(path: str) -> i32         # loads PNG, uploads to GPU, return
 fun bind_texture(mesh_id: i32, tex_id: i32)  # assigns texture to mesh
 ```
 
-#### [MODIFY] `packages/frog/core/engine.dlt`
+#### [MODIFY] `packages/kobic/core/engine.dlt`
 
 على `Engine` (static facade):
 ```
@@ -275,7 +275,7 @@ static fun upload_texture(path: str) -> i32
 static fun bind_texture(mesh_id: i32, texture_id: i32)
 ```
 
-#### [MODIFY] `packages/frog/core/runtime.dlt`
+#### [MODIFY] `packages/kobic/core/runtime.dlt`
 
 Passthrough functions.
 
@@ -283,13 +283,13 @@ Passthrough functions.
 
 ### Step 8: Module Wiring
 
-#### [MODIFY] `packages/frog/mod.dlt`
+#### [MODIFY] `packages/kobic/mod.dlt`
 ```
 import image                           # NEW
-load frog/render/gpu_texture           # NEW
+load kobic/render/gpu_texture           # NEW
 ```
 
-#### [MODIFY] `packages/frog/mod.dlt` exports
+#### [MODIFY] `packages/kobic/mod.dlt` exports
 ```
 export Texture2D, GpuTexture           # types
 ```
@@ -324,10 +324,10 @@ Engine.set_transform(inst2, 5.0, 0.0, 0.0, ...)
 | # | الخطوة | ملفات | الحجم | تبعيات |
 |---|--------|------|-------|--------|
 | 1 | PNG Decoder (inflate + unfilter) | `image/codecs/png_decoder.dlt` [NEW] | **كبير جداً** | لا شيء |
-| 2 | ربط PNG.load + Texture2D | `image/codecs/png.dlt` + `frog/assets/*` [MODIFY] | صغير | Step 1 |
-| 3 | GPU texture upload + registry | `frog/render/gpu_texture.dlt` [NEW] | كبير | Step 2 |
-| 4 | Descriptor sets | `frog/render/gpu_render_pass.dlt` [MODIFY] | كبير | Step 3 |
-| 5 | New SPIR-V shaders (UV support) | `frog/render/gpu_shaders.dlt` [MODIFY] | كبير | — |
+| 2 | ربط PNG.load + Texture2D | `image/codecs/png.dlt` + `kobic/assets/*` [MODIFY] | صغير | Step 1 |
+| 3 | GPU texture upload + registry | `kobic/render/gpu_texture.dlt` [NEW] | كبير | Step 2 |
+| 4 | Descriptor sets | `kobic/render/gpu_render_pass.dlt` [MODIFY] | كبير | Step 3 |
+| 5 | New SPIR-V shaders (UV support) | `kobic/render/gpu_shaders.dlt` [MODIFY] | كبير | — |
 | 6 | Vertex format + pipeline changes | `gpu_mesh.dlt` + `gpu_render_pass.dlt` + `gpu_renderer_core.dlt` [MODIFY] | كبير | Steps 4,5 |
 | 7 | Public API | `gpu.dlt` + `engine.dlt` + `runtime.dlt` [MODIFY] | صغير | Step 6 |
 | 8 | Module wiring | `mod.dlt` [MODIFY] | صغير | كل شي |

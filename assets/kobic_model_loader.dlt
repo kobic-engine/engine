@@ -1,0 +1,160 @@
+##############################
+# Kobic - Cooked Model Loader
+# Binary runtime geometry for glTF source assets.
+##############################
+
+imm KOBIC_MODEL_MAGIC: i32 = 0x4D475246
+imm KOBIC_MODEL_VERSION: i32 = 2
+imm KOBIC_MODEL_HEADER_SIZE: i64 = 16
+imm KOBIC_MODEL_LOD_ENTRY_SIZE: i64 = 8
+imm KOBIC_MODEL_PART_ENTRY_SIZE: i64 = 32
+
+struct KobicModelLoader:
+    _placeholder: i32 = 0
+
+attach KobicModelLoader:
+
+    static fun validate_lod_parts(data: i64, size: i64, part_count: i32, part_table: i64) -> i32:
+        if data == 0:
+            return 0
+        if size <= 0:
+            return 0
+        if part_count <= 0:
+            return 0
+        if part_table <= 0:
+            return 0
+        part_table_end: i64 = part_table + ((part_count as i64) * KOBIC_MODEL_PART_ENTRY_SIZE)
+        if part_table_end > size:
+            return 0
+        i: i32 = 0
+        while i < part_count:
+            entry: i64 = part_table + ((i as i64) * KOBIC_MODEL_PART_ENTRY_SIZE)
+            vertex_count: i32 = Memory.read_i32(data + entry)
+            index_count: i32 = Memory.read_i32(data + entry + 4)
+            vertex_offset: i64 = Memory.read_i32(data + entry + 16) as i64
+            index_offset: i64 = Memory.read_i32(data + entry + 20) as i64
+            vertex_bytes: i64 = Memory.read_i32(data + entry + 24) as i64
+            index_bytes: i64 = Memory.read_i32(data + entry + 28) as i64
+            if vertex_count <= 0:
+                return 0
+            if index_count <= 0:
+                return 0
+            if vertex_bytes != ((vertex_count as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)):
+                return 0
+            if index_bytes != ((index_count as i64) * 4):
+                return 0
+            if vertex_offset < part_table_end:
+                return 0
+            if index_offset < part_table_end:
+                return 0
+            if vertex_offset + vertex_bytes > size:
+                return 0
+            if index_offset + index_bytes > size:
+                return 0
+            i = i + 1
+        return 1
+
+    static fun load(path: str, resolved_path: str) -> Model3D:
+        if PathOps.exists(resolved_path) == false:
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=0, parsed=0, ready=0, error="cooked model file not found")
+
+        file: File = File.open_cwd(resolved_path, "r")
+        if file.is_valid() == false:
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="could not open cooked model")
+        size: i64 = file.get_size()
+        if size < KOBIC_MODEL_HEADER_SIZE:
+            file.close()
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model header is invalid")
+        data: i64 = Memory.malloc_zeroed(size + 1)
+        if data == 0:
+            file.close()
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="could not allocate cooked model buffer")
+        read: i32 = file.read_bytes(data, size as i32)
+        file.close()
+        if (read as i64) != size:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="could not read cooked model")
+        if Memory.read_i32(data) != KOBIC_MODEL_MAGIC:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="invalid cooked model magic")
+        if Memory.read_i32(data + 4) != KOBIC_MODEL_VERSION:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="unsupported cooked model version")
+        lod_count: i32 = Memory.read_i32(data + 8)
+        lod_table_offset: i64 = Memory.read_i32(data + 12) as i64
+        if lod_count <= 0:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model has no LODs")
+        if lod_table_offset < KOBIC_MODEL_HEADER_SIZE:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model LOD table is invalid")
+        lod_table_end: i64 = lod_table_offset + ((lod_count as i64) * KOBIC_MODEL_LOD_ENTRY_SIZE)
+        if lod_table_end > size:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model LOD table is truncated")
+
+        part_count: i32 = Memory.read_i32(data + lod_table_offset)
+        part_table_offset: i64 = Memory.read_i32(data + lod_table_offset + 4) as i64
+        if part_count <= 0:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model LOD0 has no mesh parts")
+        part_table_end: i64 = part_table_offset + ((part_count as i64) * KOBIC_MODEL_PART_ENTRY_SIZE)
+        if part_table_offset < lod_table_end:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model part table is invalid")
+        if part_table_end > size:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model part table is truncated")
+        if KobicModelLoader.validate_lod_parts(data, size, part_count, part_table_offset) == 0:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model vertex layout is incompatible")
+
+        return Model3D(
+            path=path,
+            resolved_path=resolved_path,
+            format="kobicmodel",
+            mesh_id=-1,
+            mesh_count=1,
+            node_count=0,
+            material_count=part_count,
+            found=1,
+            parsed=1,
+            ready=0,
+            error="",
+            kobic_data=data,
+            kobic_size=size,
+            kobic_lod=0,
+            kobic_lod_count=lod_count,
+            kobic_part_count=part_count,
+            kobic_part_table=part_table_offset
+        )
+
+    static fun select_lod(model: Model3D, level: i32) -> Model3D:
+        if Str.equals(model.format, "kobicmodel") == false:
+            return Model3D(path=model.path, resolved_path=model.resolved_path, format=model.format, mesh_id=-1, found=0, parsed=0, ready=0, error="model is not cooked")
+        if level < 0:
+            return Model3D(path=model.path, resolved_path=model.resolved_path, format=model.format, mesh_id=-1, found=0, parsed=0, ready=0, error="LOD level is invalid")
+        if level >= model.kobic_lod_count:
+            return Model3D(path=model.path, resolved_path=model.resolved_path, format=model.format, mesh_id=-1, found=0, parsed=0, ready=0, error="LOD level is unavailable")
+        lod_table_offset: i64 = Memory.read_i32(model.kobic_data + 12) as i64
+        lod_entry: i64 = lod_table_offset + ((level as i64) * KOBIC_MODEL_LOD_ENTRY_SIZE)
+        part_count: i32 = Memory.read_i32(model.kobic_data + lod_entry)
+        part_table_offset: i64 = Memory.read_i32(model.kobic_data + lod_entry + 4) as i64
+        part_table_end: i64 = part_table_offset + ((part_count as i64) * KOBIC_MODEL_PART_ENTRY_SIZE)
+        if part_count <= 0:
+            return Model3D(path=model.path, resolved_path=model.resolved_path, format=model.format, mesh_id=-1, found=0, parsed=0, ready=0, error="LOD has no mesh parts")
+        if part_table_end > model.kobic_size:
+            return Model3D(path=model.path, resolved_path=model.resolved_path, format=model.format, mesh_id=-1, found=0, parsed=0, ready=0, error="LOD part table is truncated")
+        if KobicModelLoader.validate_lod_parts(model.kobic_data, model.kobic_size, part_count, part_table_offset) == 0:
+            return Model3D(path=model.path, resolved_path=model.resolved_path, format=model.format, mesh_id=-1, found=0, parsed=0, ready=0, error="LOD vertex layout is incompatible")
+        selected: Model3D = model
+        selected.kobic_lod = level
+        selected.kobic_part_count = part_count
+        selected.kobic_part_table = part_table_offset
+        selected.material_count = part_count
+        return selected
+
+attach Model3D:
+
+    fun lod(self, level: i32) -> Model3D:
+        return KobicModelLoader.select_lod(self, level)

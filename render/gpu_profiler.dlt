@@ -1,5 +1,5 @@
 ##############################
-# Frog Engine — GPU Profiler
+# Kobic Engine — GPU Profiler
 # Per-frame GPU timing via VK_QUERY_TYPE_TIMESTAMP. Measures the GPU wall
 # time of the shadow pass, the main pass, and the post/bloom pass, then
 # prints a rolling average. Zero effect on the rendered image — it only
@@ -15,14 +15,14 @@
 # Indices 4..7 split the main pass: [4] after sky, [5] after static-batch
 # draws, [6] after GPU-driven per-group draws, [7] before the render pass
 # ends. [2] then also covers the HZB/end-of-pass work.
-imm FROG_GPU_TS_PER_FRAME: i32 = 8
-imm FROG_GPU_TS_SLOTS: i32 = 4
-imm FROG_GPU_TS_TOTAL: i32 = 32   # FROG_GPU_TS_PER_FRAME * FROG_GPU_TS_SLOTS
+imm KOBIC_GPU_TS_PER_FRAME: i32 = 8
+imm KOBIC_GPU_TS_SLOTS: i32 = 4
+imm KOBIC_GPU_TS_TOTAL: i32 = 32   # KOBIC_GPU_TS_PER_FRAME * KOBIC_GPU_TS_SLOTS
 
 struct GpuProfiler:
     device:        i64 = 0
     query_pool:    i64 = 0
-    readback:      i64 = 0    # u64[FROG_GPU_TS_TOTAL] scratch for results
+    readback:      i64 = 0    # u64[KOBIC_GPU_TS_TOTAL] scratch for results
     ts_period_ns:  f32 = 1.0  # nanoseconds per timestamp tick (device limit)
     valid_bits:    i32 = 0
     enabled:       i32 = 0    # user opt-in
@@ -72,16 +72,16 @@ attach GpuProfiler:
             return 0
         Memory.write_i32(qp_ci, 11)                  # QUERY_POOL_CREATE_INFO
         Memory.write_i32(qp_ci + 20, 2)              # VK_QUERY_TYPE_TIMESTAMP = 2
-        Memory.write_i32(qp_ci + 24, FROG_GPU_TS_TOTAL)
+        Memory.write_i32(qp_ci + 24, KOBIC_GPU_TS_TOTAL)
         qp_out: i64 = Memory.malloc_zeroed(8)
         r: i32 = vkCreateQueryPool(self.device, qp_ci, 0, qp_out)
         self.query_pool = Memory.read_ptr(qp_out)
         Memory.free(qp_out)
         Memory.free(qp_ci)
         if r != 0:
-            print(@"[frog.gpu_timer] query pool creation failed r={r}")
+            print(@"[kobic.gpu_timer] query pool creation failed r={r}")
             return 0
-        self.readback = Memory.malloc_zeroed((FROG_GPU_TS_TOTAL as i64) * 8)
+        self.readback = Memory.malloc_zeroed((KOBIC_GPU_TS_TOTAL as i64) * 8)
         if self.readback == 0:
             return 0
         self.ready = 1
@@ -106,8 +106,8 @@ attach GpuProfiler:
 
     # First query index of the current frame's slot.
     fun _slot_base(self) -> i32:
-        slot: i32 = self.frame - (self.frame / FROG_GPU_TS_SLOTS) * FROG_GPU_TS_SLOTS
-        return slot * FROG_GPU_TS_PER_FRAME
+        slot: i32 = self.frame - (self.frame / KOBIC_GPU_TS_SLOTS) * KOBIC_GPU_TS_SLOTS
+        return slot * KOBIC_GPU_TS_PER_FRAME
 
     # Begin-of-frame: reset this slot's queries and write the start timestamp.
     # Must be called inside the command buffer, before the shadow pass.
@@ -115,7 +115,7 @@ attach GpuProfiler:
         if self.is_active() == 0:
             return
         base: i32 = self._slot_base()
-        vkCmdResetQueryPool(cmd, self.query_pool, base, FROG_GPU_TS_PER_FRAME)
+        vkCmdResetQueryPool(cmd, self.query_pool, base, KOBIC_GPU_TS_PER_FRAME)
         # Write at TOP_OF_PIPE (stage bit 1) for the frame-start marker.
         vkCmdWriteTimestamp(cmd, 1, self.query_pool, base)
         self.written_mask = 1
@@ -127,13 +127,13 @@ attach GpuProfiler:
             return
         if stage_index < 1:
             return
-        if stage_index >= FROG_GPU_TS_PER_FRAME:
+        if stage_index >= KOBIC_GPU_TS_PER_FRAME:
             return
         base: i32 = self._slot_base()
         if stage_index == 2:
             # Fill any main-pass sub-mark this frame skipped (same instant).
             sub: i32 = 4
-            while sub < FROG_GPU_TS_PER_FRAME:
+            while sub < KOBIC_GPU_TS_PER_FRAME:
                 if (self.written_mask >> sub) % 2 == 0:
                     vkCmdWriteTimestamp(cmd, 4096, self.query_pool, base + sub)
                     self.written_mask = self.written_mask | (1 << sub)
@@ -157,16 +157,16 @@ attach GpuProfiler:
             self.frame = self.frame + 1
             return
 
-        # Read back a slot that completed several frames ago (FROG_GPU_TS_SLOTS
+        # Read back a slot that completed several frames ago (KOBIC_GPU_TS_SLOTS
         # rotation means the GPU is long done with it). No WAIT flag: a frame
         # that ended early (resize/scale change) leaves queries unwritten, and
         # waiting on those can stall; NOT_READY just skips that sample.
-        if self.frame >= FROG_GPU_TS_SLOTS:
-            old_frame: i32 = self.frame - (FROG_GPU_TS_SLOTS - 1)
-            prev_slot: i32 = old_frame - (old_frame / FROG_GPU_TS_SLOTS) * FROG_GPU_TS_SLOTS
-            prev_base: i32 = prev_slot * FROG_GPU_TS_PER_FRAME
+        if self.frame >= KOBIC_GPU_TS_SLOTS:
+            old_frame: i32 = self.frame - (KOBIC_GPU_TS_SLOTS - 1)
+            prev_slot: i32 = old_frame - (old_frame / KOBIC_GPU_TS_SLOTS) * KOBIC_GPU_TS_SLOTS
+            prev_base: i32 = prev_slot * KOBIC_GPU_TS_PER_FRAME
             # flags: 64BIT(8). Read all u64 results of the slot.
-            r: i32 = vkGetQueryPoolResults(self.device, self.query_pool, prev_base, FROG_GPU_TS_PER_FRAME, (FROG_GPU_TS_PER_FRAME as i64) * 8, self.readback, 8, 8)
+            r: i32 = vkGetQueryPoolResults(self.device, self.query_pool, prev_base, KOBIC_GPU_TS_PER_FRAME, (KOBIC_GPU_TS_PER_FRAME as i64) * 8, self.readback, 8, 8)
             if r == 0:
                 t0: i64 = Memory.read_i64(self.readback + 0)
                 t1: i64 = Memory.read_i64(self.readback + 8)
@@ -204,14 +204,14 @@ attach GpuProfiler:
                     mn: f32 = self.acc_main_ms / n
                     po: f32 = self.acc_post_ms / n
                     tot: f32 = self.acc_total_ms / n
-                    print(@"[frog.gpu_timer] gpu_ms total={tot} shadow={sh} main={mn} post={po} (avg/{self.acc_count})")
+                    print(@"[kobic.gpu_timer] gpu_ms total={tot} shadow={sh} main={mn} post={po} (avg/{self.acc_count})")
                     sky_ms: f32 = self.acc_sky_ms / n
                     static_ms: f32 = self.acc_static_ms / n
                     groups_ms: f32 = self.acc_groups_ms / n
                     inst_ms: f32 = self.acc_inst_ms / n
                     tail_ms: f32 = self.acc_tail_ms / n
                     groups_per_frame: i64 = self.acc_groups / (self.acc_count as i64)
-                    print(@"[frog.gpu_timer] main split: sky={sky_ms} staticBatches={static_ms} perGroupDraws={groups_ms} (groups/frame={groups_per_frame}) instances={inst_ms} endPassHzb={tail_ms}")
+                    print(@"[kobic.gpu_timer] main split: sky={sky_ms} staticBatches={static_ms} perGroupDraws={groups_ms} (groups/frame={groups_per_frame}) instances={inst_ms} endPassHzb={tail_ms}")
                     self.acc_sky_ms = 0.0
                     self.acc_static_ms = 0.0
                     self.acc_groups_ms = 0.0

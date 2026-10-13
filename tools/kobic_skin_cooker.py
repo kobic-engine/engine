@@ -1,4 +1,4 @@
-"""Strict glTF -> Frog FRSK v1 offline skin cooker (requires NumPy).
+"""Strict glTF -> Kobic FRSK v1 offline skin cooker (requires NumPy).
 
 Supported: one indexed TRIANGLES primitive, one skin, ordered joints whose
 ancestors belong to the skin, identity mesh node, external buffer, four weights.

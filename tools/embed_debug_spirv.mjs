@@ -27,7 +27,7 @@ function emitShader(prefix, getterName, compiled) {
   const chunks = [];
   for (let start = 0; start < compiled.words.length; start += CHUNK_WORDS) {
     const index = chunks.length;
-    const lines = [`fun _frog_init_${prefix}_shader_p${index}(buf: i64) -> void:`];
+    const lines = [`fun _kobic_init_${prefix}_shader_p${index}(buf: i64) -> void:`];
     const end = Math.min(start + CHUNK_WORDS, compiled.words.length);
     for (let wordIndex = start; wordIndex < end; wordIndex += 1) {
       lines.push(`    Memory.write_i32(buf + ${wordIndex * 4}, ${compiled.words[wordIndex]})`);
@@ -35,9 +35,9 @@ function emitShader(prefix, getterName, compiled) {
     chunks.push(lines.join("\n"));
   }
 
-  const init = [`fun _frog_init_${prefix}_shader(buf: i64) -> void:`];
+  const init = [`fun _kobic_init_${prefix}_shader(buf: i64) -> void:`];
   for (let index = 0; index < chunks.length; index += 1) {
-    init.push(`    _frog_init_${prefix}_shader_p${index}(buf)`);
+    init.push(`    _kobic_init_${prefix}_shader_p${index}(buf)`);
   }
 
   const getter = [
@@ -46,7 +46,7 @@ function emitShader(prefix, getterName, compiled) {
     `    buf: i64 = Memory.malloc_zeroed(${compiled.byteLength})`,
     "    if buf == 0:",
     "        return shader",
-    `    _frog_init_${prefix}_shader(buf)`,
+    `    _kobic_init_${prefix}_shader(buf)`,
     "    shader.data = buf",
     `    shader.size = ${compiled.byteLength}`,
     "    return shader",

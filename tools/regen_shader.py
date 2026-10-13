@@ -2,7 +2,7 @@
 """Regenerate a single embedded shader block in gpu_shaders.dlt from a .spv.
 
 Compiles nothing — takes an existing .spv and rewrites (or appends) the
-`_frog_init_<name>_shader_pN` part functions plus the `get_<getter>()`
+`_kobic_init_<name>_shader_pN` part functions plus the `get_<getter>()`
 function, matching the embedding style already used in gpu_shaders.dlt.
 
 The block for a shader is delimited by markers we insert:
@@ -38,7 +38,7 @@ def emit_block(spv_path, name, getter):
 
     part_count = (len(words) + WRITES_PER_PART - 1) // WRITES_PER_PART
     for p in range(part_count):
-        lines.append(f"fun _frog_init_{name}_shader_p{p}(buf: i64) -> void:")
+        lines.append(f"fun _kobic_init_{name}_shader_p{p}(buf: i64) -> void:")
         start = p * WRITES_PER_PART
         end = min(start + WRITES_PER_PART, len(words))
         for i in range(start, end):
@@ -48,9 +48,9 @@ def emit_block(spv_path, name, getter):
         lines.append("")
 
     # dispatcher init that calls every part
-    lines.append(f"fun _frog_init_{name}_shader(buf: i64) -> void:")
+    lines.append(f"fun _kobic_init_{name}_shader(buf: i64) -> void:")
     for p in range(part_count):
-        lines.append(f"    _frog_init_{name}_shader_p{p}(buf)")
+        lines.append(f"    _kobic_init_{name}_shader_p{p}(buf)")
     lines.append("")
 
     lines.append(f"fun {getter}() -> EmbeddedShader:")
@@ -58,7 +58,7 @@ def emit_block(spv_path, name, getter):
     lines.append(f"    buf: i64 = Memory.malloc_zeroed({len(data)})")
     lines.append("    if buf == 0:")
     lines.append("        return shader")
-    lines.append(f"    _frog_init_{name}_shader(buf)")
+    lines.append(f"    _kobic_init_{name}_shader(buf)")
     lines.append("    shader.data = buf")
     lines.append(f"    shader.size = {len(data)}")
     lines.append("    return shader")
@@ -84,7 +84,7 @@ def main():
     # Older generated files predate the EMBED markers. Migrate that legacy
     # block in place instead of appending a second copy of the getter and all
     # SPIR-V writes (which can also push Dolet over its token limit).
-    legacy_begin = f"fun _frog_init_{name}_shader_p0"
+    legacy_begin = f"fun _kobic_init_{name}_shader_p0"
     marker_pos = src.find(begin)
     legacy_pos = src.find(legacy_begin)
     if legacy_pos >= 0 and (marker_pos < 0 or legacy_pos < marker_pos):

@@ -1,13 +1,13 @@
 ##############################
-# Frog - Conservative GPU Occlusion Buffer
+# Kobic - Conservative GPU Occlusion Buffer
 # Builds a coarse farthest-depth buffer after the main pass. The next frame's
 # static-arena cull consumes it without CPU readback or queue stalls.
 ##############################
 
-FROG_HZB_FORMAT: i32 = 100 # VK_FORMAT_R32_SFLOAT
-FROG_HZB_PUSH_SIZE: i32 = 80
+KOBIC_HZB_FORMAT: i32 = 100 # VK_FORMAT_R32_SFLOAT
+KOBIC_HZB_PUSH_SIZE: i32 = 80
 
-fun frog_hzb_format_supported(phys_device: i64) -> i32:
+fun kobic_hzb_format_supported(phys_device: i64) -> i32:
     # Scene depth must be sampleable. The coarse R32 image must support both
     # sampled and storage-image access; otherwise the renderer keeps its
     # ordinary GPU-frustum/CPU fallback paths without weakening compatibility.
@@ -16,7 +16,7 @@ fun frog_hzb_format_supported(phys_device: i64) -> i32:
     properties: i64 = Memory.malloc_zeroed(12)
     if properties == 0:
         return 0
-    vkGetPhysicalDeviceFormatProperties(phys_device, FROG_HZB_FORMAT as i64, properties)
+    vkGetPhysicalDeviceFormatProperties(phys_device, KOBIC_HZB_FORMAT as i64, properties)
     optimal_features: i32 = Memory.read_i32(properties + 4)
     Memory.free(properties)
     if (optimal_features & 3) != 3:
@@ -49,7 +49,7 @@ fun frog_hzb_format_supported(phys_device: i64) -> i32:
     layout_ready: i32 = 0
     ready: i32 = 0
 
-fun _frog_hzb_depth_barrier(cmd: i64, image: i64, old_layout: i32, new_layout: i32, src_access: i32, dst_access: i32, src_stage: i64, dst_stage: i64):
+fun _kobic_hzb_depth_barrier(cmd: i64, image: i64, old_layout: i32, new_layout: i32, src_access: i32, dst_access: i32, src_stage: i64, dst_stage: i64):
     barrier: i64 = Memory.malloc_zeroed(72)
     if barrier == 0:
         return
@@ -74,7 +74,7 @@ attach GpuHzb:
     fun init(self, device: i64, phys_device: i64) -> i32:
         self.device = device
         self.phys_device = phys_device
-        if frog_hzb_format_supported(phys_device) == 0:
+        if kobic_hzb_format_supported(phys_device) == 0:
             return 0
 
         # Previous-frame view-projection + dimensions/valid/bias. It is
@@ -82,7 +82,7 @@ attach GpuHzb:
         state_out: i64 = Memory.malloc_zeroed(8)
         state_mem_out: i64 = Memory.malloc_zeroed(8)
         state_map_out: i64 = Memory.malloc_zeroed(8)
-        if _frog_cull_make_buffer(device, phys_device, 80, 32, state_out, state_mem_out, state_map_out) == 0:
+        if _kobic_cull_make_buffer(device, phys_device, 80, 32, state_out, state_mem_out, state_map_out) == 0:
             Memory.free(state_out)
             Memory.free(state_mem_out)
             Memory.free(state_map_out)
@@ -137,7 +137,7 @@ attach GpuHzb:
 
         push_range: i64 = Memory.malloc_zeroed(12)
         Memory.write_i32(push_range, 32)
-        Memory.write_i32(push_range + 8, FROG_HZB_PUSH_SIZE)
+        Memory.write_i32(push_range + 8, KOBIC_HZB_PUSH_SIZE)
         set_layout_ptr: i64 = Memory.malloc_zeroed(8)
         Memory.write_ptr(set_layout_ptr, self.desc_set_layout)
         pipeline_layout_info: i64 = Memory.malloc_zeroed(56)
@@ -236,7 +236,7 @@ attach GpuHzb:
             return 0
 
         self.ready = 1
-        print("[frog.hzb] conservative GPU occlusion ready")
+        print("[kobic.hzb] conservative GPU occlusion ready")
         return 1
 
     fun ensure_target(self, source_width: i32, source_height: i32, source_depth_view: i64) -> i32:
@@ -259,7 +259,7 @@ attach GpuHzb:
 
         image_out: i64 = Memory.malloc_zeroed(8)
         memory_out: i64 = Memory.malloc_zeroed(8)
-        if gpu_make_image_usage(self.device, self.phys_device, target_width, target_height, FROG_HZB_FORMAT, 12, image_out, memory_out) == 0:
+        if gpu_make_image_usage(self.device, self.phys_device, target_width, target_height, KOBIC_HZB_FORMAT, 12, image_out, memory_out) == 0:
             Memory.free(image_out)
             Memory.free(memory_out)
             return 0
@@ -267,7 +267,7 @@ attach GpuHzb:
         self.image_memory = Memory.read_ptr(memory_out)
         Memory.free(image_out)
         Memory.free(memory_out)
-        self.image_view = gpu_make_image_view_aspect(self.device, self.image, FROG_HZB_FORMAT, 1)
+        self.image_view = gpu_make_image_view_aspect(self.device, self.image, KOBIC_HZB_FORMAT, 1)
         if self.image_view == 0:
             self.destroy_target()
             return 0
@@ -330,7 +330,7 @@ attach GpuHzb:
     fun record_build(self, cmd: i64, source_depth_image: i64, view_projection: i64, source_width: i32, source_height: i32) -> i32:
         if self.ready == 0 or self.image == 0 or source_depth_image == 0 or view_projection == 0:
             return 0
-        _frog_hzb_depth_barrier(cmd, source_depth_image, 3, 5, 1024, 32, 512, 2048)
+        _kobic_hzb_depth_barrier(cmd, source_depth_image, 3, 5, 1024, 32, 512, 2048)
         if self.layout_ready == 0:
             gpu_tex_barrier(cmd, self.image, 0, 1, 0, 64, 1, 2048)
             self.layout_ready = 1
@@ -342,13 +342,13 @@ attach GpuHzb:
         Memory.write_ptr(set_ptr, self.desc_set)
         vkCmdBindDescriptorSets(cmd, 1, self.pipeline_layout, 0, 1, set_ptr, 0, 0)
         Memory.free(set_ptr)
-        push: i64 = Memory.malloc_zeroed(FROG_HZB_PUSH_SIZE)
+        push: i64 = Memory.malloc_zeroed(KOBIC_HZB_PUSH_SIZE)
         Memory.copy(push, view_projection, 64)
         Memory.write_i32(push + 64, source_width)
         Memory.write_i32(push + 68, source_height)
         Memory.write_i32(push + 72, self.width)
         Memory.write_i32(push + 76, self.height)
-        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, FROG_HZB_PUSH_SIZE, push)
+        vkCmdPushConstants(cmd, self.pipeline_layout, 32, 0, KOBIC_HZB_PUSH_SIZE, push)
         Memory.free(push)
         vkCmdDispatch(cmd, (self.width + 7) / 8, (self.height + 7) / 8, 1)
 
@@ -364,7 +364,7 @@ attach GpuHzb:
         Memory.write_i64(state_barrier + 48, 80)
         vkCmdPipelineBarrier(cmd, 2048, 2048, 0, 0, 0, 1, state_barrier, 0, 0)
         Memory.free(state_barrier)
-        _frog_hzb_depth_barrier(cmd, source_depth_image, 5, 3, 32, 1024, 2048, 256)
+        _kobic_hzb_depth_barrier(cmd, source_depth_image, 5, 3, 32, 1024, 2048, 256)
         self.initialized = 1
         self.history_valid = 1
         return 1

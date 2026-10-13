@@ -1,5 +1,5 @@
 ##############################
-# Frog Engine — VulkanContext
+# Kobic Engine — VulkanContext
 # VkInstance, physical device, logical device, queues
 # Adapted from qubic/core/window.dlt
 ##############################
