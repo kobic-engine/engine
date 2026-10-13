@@ -17,11 +17,11 @@ load frog/math/quat
 load frog/math/color
 
 # Phase 2: Core OOP shell
-load frog/core/platform/{platform}/time
+load frog/core/platform/{os}/time
 load frog/core/time
 load frog/core/window
 load frog/core/app
-load frog/core/platform/{platform}/input
+load frog/core/platform/{os}/input
 
 # Assets
 load frog/assets/types
@@ -49,7 +49,7 @@ load frog/render/software_renderer
 # Phase 4: Independent Vulkan GPU rendering
 load frog/render/gpu_shaders
 load frog/render/gpu_culling
-load frog/render/platform/{platform}/gpu_vulkan_context
+load frog/render/platform/{os}/gpu_vulkan_context
 load frog/render/gpu_swapchain
 load frog/render/gpu_texture
 load frog/render/gpu_hzb
