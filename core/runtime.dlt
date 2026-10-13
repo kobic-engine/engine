@@ -133,6 +133,7 @@ attach EngineRuntime:
         # (tasks 1.5/1.6 wire the draw). If the device lacks descriptor
         # indexing or creation fails, bindless_enabled stays 0 -> classic path.
         bcaps: GpuCaps = ctx.caps
+        runtime.renderer.core.draw_indirect_count_supported = bcaps.draw_indirect_count
         runtime.renderer.core.set_bindless_caps(bcaps.descriptor_indexing, bcaps.max_descriptor_array, g_engine_bindless_flag)
         if runtime.renderer.core._bindless_init() == 1:
             # Build the bindless graphics pipeline variant now that the table
@@ -255,6 +256,9 @@ attach EngineRuntime:
     fun set_mesh_static_batch(self, mesh_id: i32, on: i32) -> i32:
         return self.renderer.set_mesh_static_batch(mesh_id, on)
 
+    fun set_mesh_late_occlusion(self, mesh_id: i32, on: i32) -> i32:
+        return self.renderer.set_mesh_late_occlusion(mesh_id, on)
+
     fun replace_mesh_data(self, mesh_id: i32, mesh: GpuMeshData) -> i32:
         return self.renderer.replace_mesh_data(mesh_id, mesh)
 
@@ -364,6 +368,12 @@ attach EngineRuntime:
 
     fun gpu_last_serial(self) -> i32:
         return self.renderer.gpu_last_serial()
+
+    fun late_occlusion_stat(self, stat: i32) -> i32:
+        return self.renderer.late_occlusion_stat(stat)
+
+    fun capture_frame(self, path: str) -> i32:
+        return self.renderer.capture_frame(path)
 
     fun render_window_stat(self, stat: i32) -> i64:
         return self.renderer.render_window_stat(stat)

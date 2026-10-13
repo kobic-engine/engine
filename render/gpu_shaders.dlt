@@ -3723,7 +3723,7 @@ fun get_debug_collision_frag_shader() -> EmbeddedShader:
 # END GENERATED DEBUG COLLISION SHADERS
 
 # >>> EMBED cull BEGIN
-# Generated from viewmodel-cull.spv: 15452 bytes (3863 i32 words). Do not edit by hand.
+# Generated from cull_new.spv: 15452 bytes (3863 i32 words). Do not edit by hand.
 fun _frog_init_cull_shader_p0(buf: i64) -> void:
     Memory.write_i32(buf + 0, 119734787)
     Memory.write_i32(buf + 4, 65536)
@@ -4727,7 +4727,7 @@ fun _frog_init_cull_shader_p8(buf: i64) -> void:
     Memory.write_i32(buf + 3932, 262187)
     Memory.write_i32(buf + 3936, 18)
     Memory.write_i32(buf + 3940, 215)
-    Memory.write_i32(buf + 3944, 128)
+    Memory.write_i32(buf + 3944, 4096)
     Memory.write_i32(buf + 3948, 589849)
     Memory.write_i32(buf + 3952, 246)
     Memory.write_i32(buf + 3956, 6)

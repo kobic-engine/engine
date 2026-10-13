@@ -8,6 +8,11 @@ imm FROG_HDR_COLOR_FORMAT: i32 = 97
 
 struct RenderPass:
     vk_render_pass:       i64 = 0
+    # Same attachments/formats as vk_render_pass but LOAD instead of CLEAR,
+    # so a frame can end the main pass (e.g. to build a depth pyramid) and
+    # resume drawing into the same images. Render-pass compatible with every
+    # main pipeline and framebuffer (load/store ops do not affect it).
+    vk_render_pass_resume: i64 = 0
     vk_present_render_pass: i64 = 0
     vk_pipeline_layout:   i64 = 0
     vk_pipeline:          i64 = 0
@@ -121,14 +126,14 @@ fun frog_create_color_depth_render_pass(device: i64, color_format: i32) -> i64:
     Memory.write_i32(att_descs + 8, 1)
     Memory.write_i32(att_descs + 12, 1)
     Memory.write_i32(att_descs + 20, 2)
-    Memory.write_i32(att_descs + 24, 2)
+    Memory.write_i32(att_descs + 24, 1)   # stencil STORE_OP_DONT_CARE
     Memory.write_i32(att_descs + 32, 2)
     Memory.write_i32(att_descs + 40, 126)
     Memory.write_i32(att_descs + 44, 1)
     Memory.write_i32(att_descs + 48, 1)
-    Memory.write_i32(att_descs + 52, 2)
+    Memory.write_i32(att_descs + 52, 1)   # depth STORE_OP_DONT_CARE (present pass)
     Memory.write_i32(att_descs + 56, 2)
-    Memory.write_i32(att_descs + 60, 2)
+    Memory.write_i32(att_descs + 60, 1)
     Memory.write_i32(att_descs + 68, 3)
 
     Memory.write_i32(color_ref, 0)
@@ -305,7 +310,7 @@ attach RenderPass:
         Memory.write_i32(att_descs + 12, 1)
         Memory.write_i32(att_descs + 16, 0)
         Memory.write_i32(att_descs + 20, 2)
-        Memory.write_i32(att_descs + 24, 2)
+        Memory.write_i32(att_descs + 24, 1)   # stencil STORE_OP_DONT_CARE
         Memory.write_i32(att_descs + 28, 0)
         Memory.write_i32(att_descs + 32, 2)
         # Normal/roughness attachment (index 1), RGBA8_UNORM = 37.
@@ -315,7 +320,7 @@ attach RenderPass:
         Memory.write_i32(att_descs + 48, 1)
         Memory.write_i32(att_descs + 52, 0)
         Memory.write_i32(att_descs + 56, 2)
-        Memory.write_i32(att_descs + 60, 2)
+        Memory.write_i32(att_descs + 60, 1)
         Memory.write_i32(att_descs + 64, 0)
         Memory.write_i32(att_descs + 68, 2)
         # Depth attachment (index 2) — VK_FORMAT_D32_SFLOAT = 126.
@@ -323,9 +328,9 @@ attach RenderPass:
         Memory.write_i32(att_descs + 76, 126)
         Memory.write_i32(att_descs + 80, 1)
         Memory.write_i32(att_descs + 84, 1)
-        Memory.write_i32(att_descs + 88, 2)
+        Memory.write_i32(att_descs + 88, 0)   # depth STORE_OP_STORE: HZB/temporal/resume read it
         Memory.write_i32(att_descs + 92, 2)
-        Memory.write_i32(att_descs + 96, 2)
+        Memory.write_i32(att_descs + 96, 1)
         Memory.write_i32(att_descs + 100, 0)
         Memory.write_i32(att_descs + 104, 3)
 
@@ -388,6 +393,18 @@ attach RenderPass:
             return 0
         rp_result: i32 = vkCreateRenderPass(device, rp_ci, 0, rp_ptr)
         self.vk_render_pass = Memory.read_ptr(rp_ptr)
+        if rp_result == 0:
+            # Resume variant: LOAD all three attachments from the layouts the
+            # main pass leaves them in (colour 2, geometry 2, depth 3).
+            Memory.write_i32(att_descs + 12, 0)
+            Memory.write_i32(att_descs + 28, 2)
+            Memory.write_i32(att_descs + 48, 0)
+            Memory.write_i32(att_descs + 64, 2)
+            Memory.write_i32(att_descs + 84, 0)
+            Memory.write_i32(att_descs + 100, 3)
+            Memory.write_ptr(rp_ptr, 0)
+            if vkCreateRenderPass(device, rp_ci, 0, rp_ptr) == 0:
+                self.vk_render_pass_resume = Memory.read_ptr(rp_ptr)
         Memory.free(rp_ptr)
         Memory.free(att_descs)
         Memory.free(att_ref)
@@ -1963,6 +1980,9 @@ attach RenderPass:
                     vkDestroyFramebuffer(device, fb, 0)
                 fi = fi + 1
             Memory.free(self.framebuffers)
+        if self.vk_render_pass_resume != 0:
+            vkDestroyRenderPass(device, self.vk_render_pass_resume, 0)
+            self.vk_render_pass_resume = 0
         if self.vk_render_pass != 0:
             vkDestroyRenderPass(device, self.vk_render_pass, 0)
         if self.vk_present_render_pass != 0:

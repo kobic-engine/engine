@@ -117,8 +117,10 @@ bool sphereOccluded(vec4 sphere) {
     ivec2 pixelMax = clamp(ivec2(floor(uvMax * vec2(size))) + ivec2(1), ivec2(0), size - ivec2(1));
     ivec2 span = pixelMax - pixelMin + ivec2(1);
 
-    // Large/near bounds are inexpensive to draw but expensive to scan.
-    if (span.x * span.y > 128) {
+    // Exact max-depth scan of every covered pyramid texel (conservative).
+    // Up to 64x64 texels: near/large buried geometry (late occlusion) is
+    // the expensive part to draw, and the scan is cheap compute.
+    if (span.x * span.y > 4096) {
         return false;
     }
 

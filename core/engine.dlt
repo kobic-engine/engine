@@ -298,6 +298,20 @@ attach Debug:
             return 0.0 - 1.0
         return g_engine_runtime.gpu_last_segment_ms(segment)
 
+    # Late-occlusion meshes (set_mesh_late_occlusion) of a recent frame:
+    # 0 = drawn after the same-frame depth test, 1 = tested.
+    static fun late_occlusion_stat(stat: i32) -> i32:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.late_occlusion_stat(stat)
+
+    # Writes the next presented frame to `path` as a top-down 32-bit BMP
+    # (written after that frame's submit; the frame waits for the GPU).
+    static fun capture_frame(path: str) -> i32:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.capture_frame(path)
+
     # Increments once per GPU readback; lets tools sample each frame once.
     static fun gpu_last_serial() -> i32:
         if g_engine_runtime.ready() == 0:
@@ -604,6 +618,13 @@ attach Engine:
 
     static fun set_mesh_static_batch(mesh_id: i32, on: i32) -> i32:
         return g_engine_runtime.set_mesh_static_batch(mesh_id, on)
+
+    # Late occlusion for static-batch meshes that are usually hidden behind
+    # other geometry (e.g. buried cave surfaces). They are drawn after the
+    # rest of the opaque scene, only if they pass an exact test against a
+    # depth pyramid of THAT frame (no history, no disocclusion lag).
+    static fun set_mesh_late_occlusion(mesh_id: i32, on: i32) -> i32:
+        return g_engine_runtime.set_mesh_late_occlusion(mesh_id, on)
 
     static fun replace_mesh_data(mesh_id: i32, mesh: GpuMeshData) -> i32:
         return g_engine_runtime.replace_mesh_data(mesh_id, mesh)

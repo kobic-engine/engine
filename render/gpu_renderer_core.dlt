@@ -662,6 +662,37 @@ struct GpuRendererCore:
     gpu_static_slot_counts: i64 = 0      # i32[FROG_CULL_SLOTS]
     gpu_static_slot_xform: i64 = 0       # i32[FROG_CULL_SLOTS] serial seen
     gpu_static_xform_serial: i32 = 0
+    # Late-occlusion static meshes (set_mesh_late_occlusion): flag array with
+    # its own capacity, their own page ranges after the normal candidates,
+    # and the per-rebuild cursors shared by both page builds.
+    mesh_late_flags: i64 = 0
+    mesh_late_capacity: i32 = 0
+    gpu_late_page_bases: i64 = 0
+    gpu_late_page_counts: i64 = 0
+    gpu_late_page_reps: i64 = 0
+    gpu_late_page_cmds: i64 = 0
+    gpu_late_page_capacity: i32 = 0
+    gpu_late_candidate_count: i32 = 0
+    gpu_build_cursor: i32 = 0
+    gpu_build_cmd_cursor: i32 = 0
+    # Previous cull of the same frame slot: late candidates the GPU kept
+    # visible, and how many were submitted (read back before reuse).
+    gpu_late_last_visible: i32 = 0
+    # Device has vkCmdDrawIndexedIndirectCount (VK_KHR_draw_indirect_count).
+    draw_indirect_count_supported: i32 = 0
+    gpu_late_last_total: i32 = 0
+    # Frame capture (Engine.debug.capture_frame): the next presented image is
+    # copied into a host buffer and written as a BMP once its submit is done.
+    capture_path: str = ""
+    capture_requested: i32 = 0
+    capture_recorded: i32 = 0
+    capture_swap_transfer: i32 = 0
+    capture_swap_format: i32 = 0
+    capture_buffer: i64 = 0
+    capture_memory: i64 = 0
+    capture_mapped: i64 = 0
+    capture_width: i32 = 0
+    capture_height: i32 = 0
     debug_render_stats_enabled: i32 = 0
     debug_frame_count: i32 = 0
     debug_draw_calls: i32 = 0
@@ -1681,13 +1712,44 @@ attach GpuRendererCore:
 
     # Repack static arena slices page-by-page into the compute input. Page
     # contiguity lets the render pass issue exactly one MDI call per page.
-    fun _gpu_static_rebuild(self, cull: GpuCullPipeline, slot: i32) -> i32:
-        if self._ensure_gpu_static_page_capacity(self.arena_page_count) == 0:
+    fun _ensure_gpu_late_page_capacity(self, pages: i32) -> i32:
+        if pages <= self.gpu_late_page_capacity and self.gpu_late_page_bases != 0:
+            return 1
+        capacity: i32 = 16
+        while capacity < pages:
+            capacity = capacity * 2
+        bases: i64 = Memory.malloc_zeroed((capacity as i64) * 4)
+        counts: i64 = Memory.malloc_zeroed((capacity as i64) * 4)
+        reps: i64 = Memory.malloc_zeroed((capacity as i64) * 4)
+        cmds: i64 = Memory.malloc_zeroed((capacity as i64) * 4)
+        if bases == 0 or counts == 0 or reps == 0 or cmds == 0:
             return 0
-        if self._ensure_gpu_static_cand_capacity(cull.capacity) == 0:
-            return 0
-        cursor: i32 = 0
-        command_cursor: i32 = 0
+        if self.gpu_late_page_bases != 0:
+            Memory.free(self.gpu_late_page_bases)
+            Memory.free(self.gpu_late_page_counts)
+            Memory.free(self.gpu_late_page_reps)
+            Memory.free(self.gpu_late_page_cmds)
+        self.gpu_late_page_bases = bases
+        self.gpu_late_page_counts = counts
+        self.gpu_late_page_reps = reps
+        self.gpu_late_page_cmds = cmds
+        self.gpu_late_page_capacity = capacity
+        return 1
+
+    # Append one page set (normal or late static meshes) to the candidate
+    # buffer at gpu_build_cursor and its commands at gpu_build_cmd_cursor.
+    fun _gpu_static_build_pages(self, cull: GpuCullPipeline, slot: i32, late: i32) -> i32:
+        bases: i64 = self.gpu_static_page_bases
+        counts: i64 = self.gpu_static_page_counts
+        reps: i64 = self.gpu_static_page_reps
+        cmds: i64 = self.gpu_static_page_cmds
+        if late == 1:
+            bases = self.gpu_late_page_bases
+            counts = self.gpu_late_page_counts
+            reps = self.gpu_late_page_reps
+            cmds = self.gpu_late_page_cmds
+        cursor: i32 = self.gpu_build_cursor
+        command_cursor: i32 = self.gpu_build_cmd_cursor
         page: i32 = 0
         while page < self.arena_page_count:
             page_base: i32 = cursor
@@ -1695,12 +1757,11 @@ attach GpuRendererCore:
             mi: i32 = 0
             while mi < self.vb_count:
                 if Memory.read_i32(self.mesh_static_batches + mi * 4) == 1:
-                    if Memory.read_i32(self.mesh_arena_pages + mi * 4) == page:
+                    if Memory.read_i32(self.mesh_arena_pages + mi * 4) == page and self._mesh_is_late(mi) == late:
                         if Memory.read_i32(self.vb_visible + mi * 4) != 0:
                             index_count: i32 = Memory.read_i32(self.ib_index_counts + mi * 4)
                             if index_count > 0:
-                                if cursor >= FROG_CULL_MAX_GROUPS:
-                                    self.gpu_static_candidate_count = 0
+                                if cursor >= FROG_CULL_MAX_GROUPS or cursor >= cull.slot_cap:
                                     return 0
                                 if rep < 0:
                                     rep = mi
@@ -1716,16 +1777,39 @@ attach GpuRendererCore:
                                 Memory.write_i32(self.gpu_static_cand_meshes + ((slot * cull.slot_cap + cursor) as i64) * 4, mi)
                                 cursor = cursor + 1
                 mi = mi + 1
-            Memory.write_i32(self.gpu_static_page_bases + page * 4, page_base)
+            Memory.write_i32(bases + page * 4, page_base)
             page_count: i32 = cursor - page_base
             if command_cursor + page_count + 1 > FROG_CULL_MAX_GROUPS:
-                self.gpu_static_candidate_count = 0
                 return 0
-            Memory.write_i32(self.gpu_static_page_counts + page * 4, page_count)
-            Memory.write_i32(self.gpu_static_page_reps + page * 4, rep)
-            Memory.write_i32(self.gpu_static_page_cmds + page * 4, command_cursor)
+            Memory.write_i32(counts + page * 4, page_count)
+            Memory.write_i32(reps + page * 4, rep)
+            Memory.write_i32(cmds + page * 4, command_cursor)
             command_cursor = command_cursor + page_count + 1
             page = page + 1
+        self.gpu_build_cursor = cursor
+        self.gpu_build_cmd_cursor = command_cursor
+        return 1
+
+    fun _gpu_static_rebuild(self, cull: GpuCullPipeline, slot: i32) -> i32:
+        if self._ensure_gpu_static_page_capacity(self.arena_page_count) == 0:
+            return 0
+        if self._ensure_gpu_late_page_capacity(self.arena_page_count) == 0:
+            return 0
+        if self._ensure_gpu_static_cand_capacity(cull.capacity) == 0:
+            return 0
+        self.gpu_build_cursor = 0
+        self.gpu_build_cmd_cursor = 0
+        if self._gpu_static_build_pages(cull, slot, 0) == 0:
+            self.gpu_static_candidate_count = 0
+            self.gpu_late_candidate_count = 0
+            return 0
+        normal_count: i32 = self.gpu_build_cursor
+        if self._gpu_static_build_pages(cull, slot, 1) == 0:
+            self.gpu_static_candidate_count = 0
+            self.gpu_late_candidate_count = 0
+            return 0
+        cursor: i32 = self.gpu_build_cursor
+        self.gpu_late_candidate_count = cursor - normal_count
         self.gpu_static_candidate_count = cursor
         Memory.write_i32(self.gpu_static_slot_counts + slot * 4, cursor)
         self._gpu_static_refresh_models(cull, slot)
@@ -1745,11 +1829,163 @@ attach GpuRendererCore:
     # Record static-arena frustum culling before the graphics render pass.
     # On any unsupported/failed condition the caller transparently keeps the
     # existing CPU-cull + CPU-command MDI fallback.
+    # Cull the late-occlusion pages of this frame slot against the depth
+    # pyramid that was just built from the same frame (occlusion = 1) or by
+    # frustum only (occlusion = 0). Outside any render pass.
+    fun gpu_late_cull(self, cmd: i64, vp_mat: i64, slot: i32, occlusion: i32) -> i32:
+        if self.gpu_static_active == 0 or self.gpu_late_candidate_count <= 0:
+            return 0
+        if self.gpu_cull_ptr == 0 or vp_mat == 0 or self.gpu_late_page_bases == 0:
+            return 0
+        cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
+        push: i64 = self.gpu_cull_push
+        Memory.set(push, 0, FROG_CULL_PUSH_SIZE)
+        frog_cull_extract_planes(vp_mat, push)
+        mode: f32 = 0.0 - 1.0
+        if occlusion == 1:
+            mode = 0.0 - 2.0
+        Memory.write_f32(push + 124, mode)
+        cmd_base: i32 = cull.slot_cmd_base(slot)
+        # The slot's previous use has completed (frame fence): its page
+        # headers still hold how many late commands survived the test.
+        if cull.count_mapped != 0:
+            survived: i32 = 0
+            submitted: i32 = 0
+            scan_page: i32 = 0
+            while scan_page < self.arena_page_count:
+                scan_count: i32 = Memory.read_i32(self.gpu_late_page_counts + scan_page * 4)
+                if scan_count > 0:
+                    scan_header: i32 = cmd_base + Memory.read_i32(self.gpu_late_page_cmds + scan_page * 4)
+                    survived = survived + Memory.read_i32(cull.count_mapped + cull.group_cmd_offset(scan_header) + 4)
+                    submitted = submitted + scan_count
+                scan_page = scan_page + 1
+            self.gpu_late_last_visible = survived
+            self.gpu_late_last_total = submitted
+        cull.barrier_before_dispatches(cmd)
+        page: i32 = 0
+        while page < self.arena_page_count:
+            page_count: i32 = Memory.read_i32(self.gpu_late_page_counts + page * 4)
+            if page_count > 0:
+                slot_in_base: i32 = slot * cull.slot_cap + Memory.read_i32(self.gpu_late_page_bases + page * 4)
+                page_header: i32 = cmd_base + Memory.read_i32(self.gpu_late_page_cmds + page * 4)
+                cull.prepare_group_cmd(page_header, 0, 1, 0, 0)
+                cull.dispatch_group(cmd, page_count, slot_in_base, 0, page_header, push)
+            page = page + 1
+        cull.barrier_after_dispatches(cmd)
+        return 1
+
+    # Draw the late pages' compacted commands (inside the resumed pass).
+    # Mirrors the static page draw: one representative instance record per
+    # page, indirect-count MDI. Returns the advanced instance_write.
+    fun _record_late_pages(self, cmd: i64, rp: RenderPass, active_layout: i64, use_bindless: i32, mapped_instances: i64, instance_write_in: i32, frame_inst_buf: i64, slot: i32) -> i32:
+        instance_write: i32 = instance_write_in
+        if self.gpu_cull_ptr == 0 or mapped_instances == 0:
+            return instance_write
+        cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
+        ind_buf: i64 = cull.indirect_handle()
+        if ind_buf == 0:
+            return instance_write
+        cmd_base: i32 = cull.slot_cmd_base(slot)
+        page: i32 = 0
+        while page < self.arena_page_count:
+            count: i32 = Memory.read_i32(self.gpu_late_page_counts + page * 4)
+            rep: i32 = Memory.read_i32(self.gpu_late_page_reps + page * 4)
+            if count > 0 and rep >= 0:
+                model: i64 = Memory.read_ptr(self.model_matrices + rep * 8)
+                dst: i64 = mapped_instances + ((instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                if model != 0:
+                    Memory.copy(dst, model, 64)
+                if self.mesh_material_params != 0:
+                    Memory.copy(dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET, self.mesh_material_params + (rep as i64) * (FROG_GPU_MESH_MATERIAL_STRIDE as i64), 32)
+                receive_shadow: i32 = 1
+                if self.mesh_shadow_flags != 0:
+                    shadow_flags: i32 = Memory.read_i32(self.mesh_shadow_flags + rep * 4)
+                    receive_shadow = (shadow_flags / 2) - (shadow_flags / 4) * 2
+                if receive_shadow == 1:
+                    packed: f32 = Memory.read_f32(dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12)
+                    Memory.write_f32(dst + FROG_GPU_INSTANCE_MATERIAL_OFFSET + 12, packed + 65536.0)
+                self._write_record_texidx(dst, rep)
+                Memory.write_ptr(self.scratch_vb_arr, Memory.read_ptr(self.arena_page_vbs + page * 8))
+                vkCmdBindVertexBuffers(cmd, 0, 1, self.scratch_vb_arr, self.scratch_off_arr)
+                Memory.write_ptr(self.scratch_inst_vb_arr, frame_inst_buf)
+                Memory.write_i64(self.scratch_inst_off_arr, (instance_write as i64) * (FROG_GPU_INSTANCE_STRIDE as i64))
+                vkCmdBindVertexBuffers(cmd, 1, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
+                vkCmdBindIndexBuffer(cmd, Memory.read_ptr(self.arena_page_ibs + page * 8), 0, 1)
+                if use_bindless == 0:
+                    desc: i64 = self.mesh_descriptor_set(rp, rep)
+                    if desc != 0:
+                        Memory.write_ptr(self.scratch_desc_arr, desc)
+                        vkCmdBindDescriptorSets(cmd, 0, active_layout, 0, 1, self.scratch_desc_arr, 0, 0)
+                header: i32 = cmd_base + Memory.read_i32(self.gpu_late_page_cmds + page * 4)
+                vkCmdDrawIndexedIndirectCount(cmd, ind_buf, cull.group_cmd_offset(header + 1), ind_buf, cull.group_cmd_offset(header) + 4, count, 20)
+                instance_write = instance_write + 1
+            page = page + 1
+        return instance_write
+
+    # Split the main pass for late-occlusion meshes: end it, build the depth
+    # pyramid from THIS frame's opaque depth, cull the late pages against it,
+    # resume the pass (LOAD), restore graphics state and draw the survivors.
+    # Transparent geometry then continues in the resumed pass as before.
+    fun _late_occlusion_stage(self, cmd: i64, rp: RenderPass, rpi: i64, vp_mat: i64, width: i32, height: i32, active_pipeline: i64, active_layout: i64, use_bindless: i32, point_light_desc: i64, shadow_global_buffer: i64, pc_data: i64, mapped_instances: i64, instance_write: i32, frame_inst_buf: i64, slot: i32) -> i32:
+        if self.gpu_static_active == 0 or self.gpu_late_candidate_count <= 0:
+            return instance_write
+        if rp.vk_render_pass_resume == 0 or rpi == 0 or vp_mat == 0 or mapped_instances == 0:
+            return instance_write
+        vkCmdEndRenderPass(cmd)
+        occlusion: i32 = 0
+        if self.gpu_hzb_ptr != 0:
+            hzb: GpuHzb = self.gpu_hzb_ptr as GpuHzb
+            if hzb.record_build(cmd, self.scale_depth_image, vp_mat, width, height) == 1:
+                occlusion = 1
+        # record_build already returned depth to the attachment layout (3)
+        # with a compute -> fragment-tests dependency.
+        self.gpu_late_cull(cmd, vp_mat, slot, occlusion)
+        # Pass-1 colour/geometry/depth writes before the resumed pass loads them.
+        memory_barrier: i64 = Memory.malloc_zeroed(24)
+        if memory_barrier != 0:
+            Memory.write_i32(memory_barrier, 46)
+            Memory.write_i32(memory_barrier + 16, 256 + 1024)
+            Memory.write_i32(memory_barrier + 20, 128 + 256 + 512 + 1024)
+            vkCmdPipelineBarrier(cmd, 1024 + 512, 1024 + 256 + 512, 0, 1, memory_barrier, 0, 0, 0, 0)
+            Memory.free(memory_barrier)
+        Memory.write_ptr(rpi + 16, rp.vk_render_pass_resume)
+        Memory.write_i32(rpi + 48, 0)
+        Memory.write_ptr(rpi + 56, 0)
+        vkCmdBeginRenderPass(cmd, rpi, 0)
+        Memory.write_ptr(rpi + 16, rp.vk_render_pass)
+        # Command-buffer state survives pass boundaries, but the depth-pyramid
+        # and cull compute use other layouts; rebind everything graphics needs.
+        vkCmdBindPipeline(cmd, 0, active_pipeline)
+        Memory.write_ptr(self.scratch_desc_arr, point_light_desc)
+        vkCmdBindDescriptorSets(cmd, 0, active_layout, 1, 1, self.scratch_desc_arr, 0, 0)
+        if use_bindless == 1:
+            Memory.write_ptr(self.scratch_desc_arr, self.bindless_set)
+            vkCmdBindDescriptorSets(cmd, 0, active_layout, 2, 1, self.scratch_desc_arr, 0, 0)
+            set0: i64 = self.white_desc_set
+            if set0 == 0:
+                set0 = self.mesh_descriptor_set(rp, 0)
+            if set0 != 0:
+                Memory.write_ptr(self.scratch_desc_arr, set0)
+                vkCmdBindDescriptorSets(cmd, 0, active_layout, 0, 1, self.scratch_desc_arr, 0, 0)
+        if shadow_global_buffer != 0:
+            Memory.write_ptr(self.scratch_inst_vb_arr, shadow_global_buffer)
+            Memory.write_i64(self.scratch_inst_off_arr, 0)
+            vkCmdBindVertexBuffers(cmd, 2, 1, self.scratch_inst_vb_arr, self.scratch_inst_off_arr)
+        if self.scratch_viewport != 0:
+            vkCmdSetViewport(cmd, 0, 1, self.scratch_viewport)
+        if self.scratch_scissor != 0:
+            vkCmdSetScissor(cmd, 0, 1, self.scratch_scissor)
+        if pc_data != 0:
+            vkCmdPushConstants(cmd, active_layout, 17, 0, 128, pc_data)
+        return self._record_late_pages(cmd, rp, active_layout, use_bindless, mapped_instances, instance_write, frame_inst_buf, slot)
+
     fun gpu_precull_static(self, cmd: i64, vp_mat: i64, slot: i32) -> i32:
         self.gpu_static_active = 0
         # The compact path requires indirect-count. Devices without it keep
-        # the proven CPU-compacted static MDI fallback.
-        if self.ssbo_draw_enabled == 0:
+        # the proven CPU-compacted static MDI fallback. (It always draws with
+        # firstInstance = 0, so it does not depend on the disabled SSBO batch
+        # path or its ssbo_draw_enabled flag.)
+        if self.draw_indirect_count_supported == 0:
             return 0
         if self.gpu_cull_ptr == 0 or vp_mat == 0:
             return 0
@@ -1786,6 +2022,9 @@ attach GpuRendererCore:
         Memory.write_f32(push + 124, static_mode)
         cmd_base: i32 = cull.slot_cmd_base(slot)
         self.gpu_static_cmd_base = cmd_base
+        if self.gpu_hzb_ptr != 0:
+            static_hzb: GpuHzb = self.gpu_hzb_ptr as GpuHzb
+            static_hzb.ensure_layout(cmd)
         cull.barrier_before_dispatches(cmd)
         page: i32 = 0
         while page < self.arena_page_count:
@@ -2326,6 +2565,103 @@ attach GpuRendererCore:
 
     fun gpu_last_serial(self) -> i32:
         return self.profiler.last_serial
+
+    # 0 late meshes left visible by the last same-slot cull, 1 tested.
+    fun late_occlusion_stat(self, stat: i32) -> i32:
+        if stat == 0:
+            return self.gpu_late_last_visible
+        return self.gpu_late_last_total
+
+    fun capture_frame(self, path: str) -> i32:
+        self.capture_path = path
+        self.capture_requested = 1
+        return 1
+
+    # Copies the presented swapchain image into a host-visible buffer; the
+    # BMP is written by _finish_capture after the frame's submit completes.
+    fun _record_capture_copy(self, cmd: i64, swap_image: i64, width: i32, height: i32):
+        self.capture_requested = 0
+        if self.capture_swap_transfer == 0 or swap_image == 0 or width <= 0 or height <= 0:
+            print("[frog.capture] swapchain images do not allow transfer reads; frame not captured")
+            return
+        buf: GpuBufferUpload = self._create_mapped_buffer((width as i64) * (height as i64) * 4, 2)
+        if buf.ok == 0:
+            print("[frog.capture] could not allocate the readback buffer")
+            return
+        region: i64 = Memory.malloc_zeroed(56)
+        barrier: i64 = Memory.malloc_zeroed(24)
+        if region == 0 or barrier == 0:
+            if region != 0:
+                Memory.free(region)
+            if barrier != 0:
+                Memory.free(barrier)
+            vkDestroyBuffer(self.device, buf.handle, 0)
+            vkFreeMemory(self.device, buf.memory, 0)
+            return
+        self.capture_buffer = buf.handle
+        self.capture_memory = buf.memory
+        self.capture_mapped = buf.mapped
+        self.capture_width = width
+        self.capture_height = height
+        # PRESENT_SRC -> TRANSFER_SRC after every earlier write, copy, back.
+        gpu_tex_barrier(cmd, swap_image, 1000001002, 6, 256, 2048, 65536, 4096)
+        Memory.write_i32(region + 16, 1)
+        Memory.write_i32(region + 28, 1)
+        Memory.write_i32(region + 44, width)
+        Memory.write_i32(region + 48, height)
+        Memory.write_i32(region + 52, 1)
+        vkCmdCopyImageToBuffer(cmd, swap_image, 6, buf.handle, 1, region)
+        gpu_tex_barrier(cmd, swap_image, 6, 1000001002, 0, 0, 4096, 8192)
+        # Transfer write -> host read of the readback buffer.
+        Memory.write_i32(barrier, 46)
+        Memory.write_i32(barrier + 16, 4096)
+        Memory.write_i32(barrier + 20, 8192)
+        vkCmdPipelineBarrier(cmd, 4096, 16384, 0, 1, barrier, 0, 0, 0, 0)
+        Memory.free(region)
+        Memory.free(barrier)
+        self.capture_recorded = 1
+
+    # Writes the read-back frame as a top-down 32-bit BMP and frees the buffer.
+    fun _finish_capture(self, gfx_queue: i64):
+        self.capture_recorded = 0
+        vkQueueWaitIdle(gfx_queue)
+        width: i32 = self.capture_width
+        height: i32 = self.capture_height
+        pixels: i64 = self.capture_mapped
+        pixel_bytes: i64 = (width as i64) * (height as i64) * 4
+        # R8G8B8A8 formats (37..43) store red first; BMP wants blue first.
+        if self.capture_swap_format >= 37 and self.capture_swap_format <= 43:
+            p: i64 = 0
+            while p < pixel_bytes:
+                r: i32 = Memory.read_i8(pixels + p) as i32
+                Memory.write_i8(pixels + p, Memory.read_i8(pixels + p + 2))
+                Memory.write_i8(pixels + p + 2, r as i8)
+                p = p + 4
+        header: i64 = Memory.malloc_zeroed(56)
+        if header != 0:
+            Memory.write_i32(header, 19778)
+            Memory.write_i32(header + 2, (pixel_bytes + 54) as i32)
+            Memory.write_i32(header + 10, 54)
+            Memory.write_i32(header + 14, 40)
+            Memory.write_i32(header + 18, width)
+            Memory.write_i32(header + 22, 0 - height)
+            Memory.write_i32(header + 26, 1 + 32 * 65536)
+            Memory.write_i32(header + 34, pixel_bytes as i32)
+            Memory.write_i32(header + 38, 2835)
+            Memory.write_i32(header + 42, 2835)
+            file: File = File.open(self.capture_path, "w")
+            if file.is_valid():
+                file.write_bytes(header, 54)
+                file.write_bytes(pixels, pixel_bytes as i32)
+                file.close()
+            else:
+                print("[frog.capture] could not open " + self.capture_path)
+            Memory.free(header)
+        vkDestroyBuffer(self.device, self.capture_buffer, 0)
+        vkFreeMemory(self.device, self.capture_memory, 0)
+        self.capture_buffer = 0
+        self.capture_memory = 0
+        self.capture_mapped = 0
 
     # 0 serial, 1 triangles, 2 vertices, 3 draws, 4 instances (per 120 frames).
     fun render_window_stat(self, stat: i32) -> i64:
@@ -4213,6 +4549,34 @@ attach GpuRendererCore:
     # they are emitted as one multi-draw-indirect batch with one identity
     # instance record. This keeps meshes independently replaceable while
     # collapsing hundreds of static terrain draws to a few page submissions.
+    fun set_mesh_late_occlusion(self, mesh_id: i32, on: i32) -> i32:
+        if mesh_id < 0 or mesh_id >= self.vb_count:
+            return 0
+        if mesh_id >= self.mesh_late_capacity:
+            next_capacity: i32 = 1024
+            while next_capacity <= mesh_id:
+                next_capacity = next_capacity * 2
+            next_flags: i64 = Memory.malloc_zeroed((next_capacity as i64) * 4)
+            if next_flags == 0:
+                return 0
+            if self.mesh_late_flags != 0:
+                Memory.copy(next_flags, self.mesh_late_flags, (self.mesh_late_capacity as i64) * 4)
+                Memory.free(self.mesh_late_flags)
+            self.mesh_late_flags = next_flags
+            self.mesh_late_capacity = next_capacity
+        value: i32 = 0
+        if on != 0:
+            value = 1
+        if Memory.read_i32(self.mesh_late_flags + mesh_id * 4) != value:
+            Memory.write_i32(self.mesh_late_flags + mesh_id * 4, value)
+            self._mark_cull_dirty_struct()
+        return 1
+
+    fun _mesh_is_late(self, mesh_id: i32) -> i32:
+        if self.mesh_late_flags == 0 or mesh_id < 0 or mesh_id >= self.mesh_late_capacity:
+            return 0
+        return Memory.read_i32(self.mesh_late_flags + mesh_id * 4)
+
     fun set_mesh_static_batch(self, mesh_id: i32, on: i32) -> i32:
         if self.mesh_static_batches == 0:
             return 0
@@ -5470,6 +5834,8 @@ attach GpuRendererCore:
         if sc.images != 0:
             swap_img = Memory.read_ptr(sc.images + img_idx * 8)
         swap_old_layout = sc.image_layout(img_idx)
+        self.capture_swap_transfer = sc.transfer_src
+        self.capture_swap_format = sc.format
         self._record_commands(cmd_buf, fb, present_fb, rp, cam_view, render_proj, rw, rh, env, use_scaled, self.scale_color_image, swap_img, swap_old_layout, width, height)
         if use_scaled == 1:
             sc.set_image_layout(img_idx, 1000001002)
@@ -5494,6 +5860,8 @@ attach GpuRendererCore:
         Memory.write_ptr(si + 64, rp.frame_signal_sems)
 
         vkQueueSubmit(gfx_queue, 1, si, current_fence)
+        if self.capture_recorded == 1:
+            self._finish_capture(gfx_queue)
 
         # Present
         pi: i64 = rp.frame_present_info
@@ -6473,6 +6841,7 @@ attach GpuRendererCore:
                 # per-mesh path (GPU-driven groups or the CPU registry loop).
                 self.profiler.mark(cmd, 5)
                 draw_pass: i32 = 0
+                late_stage_done: i32 = 0
                 mi: i32 = 0
                 if self.gpu_draw_enabled == 1:
                     # GPU-driven path: the pre-cull pass already compacted
@@ -6656,6 +7025,12 @@ attach GpuRendererCore:
                         mi = gi
 
                     if mi >= self.vb_count:
+                        if draw_pass == 0 and late_stage_done == 0:
+                            late_stage_done = 1
+                            instance_write = self._late_occlusion_stage(cmd, rp, rpi, vp_mat, width, height, active_pipeline, active_layout, use_bindless, point_light_desc, shadow_global_buffer, pc_data, mapped_instances, instance_write, frame_inst_buf, inst_slot)
+                            last_bound = 0
+                            last_index_bound = 0
+                            last_desc = 0
                         if draw_pass == 0 and transparent_supported == 1:
                             draw_pass = 1
                             mi = 0
@@ -6664,6 +7039,9 @@ attach GpuRendererCore:
                             last_desc = 0
                             vkCmdBindPipeline(cmd, 0, transparent_pipeline)
 
+                if late_stage_done == 0 and self.gpu_draw_enabled == 0:
+                    late_stage_done = 1
+                    instance_write = self._late_occlusion_stage(cmd, rp, rpi, vp_mat, width, height, active_pipeline, active_layout, use_bindless, point_light_desc, shadow_global_buffer, pc_data, mapped_instances, instance_write, frame_inst_buf, inst_slot)
                 self.profiler.mark(cmd, 6)
                 if self.gpu_draw_enabled == 0:
                     self.profiler.note_groups(frame_draw_calls)
@@ -6722,6 +7100,8 @@ attach GpuRendererCore:
                     else:
                         temporal.invalidate_history()
                 self._record_bloom_present(cmd, present_framebuffer, rp, post_image, post_desc, post_sampled, swap_image, swap_width, swap_height, env.bloom, env.tone_mapping)
+                if self.capture_requested == 1:
+                    self._record_capture_copy(cmd, swap_image, swap_width, swap_height)
         # GPU-timer: boundary after post/bloom present (end of GPU frame work).
         self.profiler.mark(cmd, 3)
         vkEndCommandBuffer(cmd)

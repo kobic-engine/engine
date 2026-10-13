@@ -18,6 +18,8 @@ struct Swapchain:
     depth_memory:     i64 = 0
     depth_view:       i64 = 0
     present_mode:     i32 = 2
+    # Images allow TRANSFER_SRC, so frames can be read back (frame capture).
+    transfer_src:     i32 = 0
 
 attach Swapchain:
 
@@ -41,7 +43,14 @@ attach Swapchain:
         max_images: i32 = Memory.read_i32(caps + 4)
         current_transform: i32 = Memory.read_i32(caps + 40)
         composite_alpha: i32 = Memory.read_i32(caps + 44)
+        supported_usage: i32 = Memory.read_i32(caps + 48)
         Memory.free(caps)
+        # COLOR_ATTACHMENT, plus TRANSFER_SRC when the surface allows it.
+        image_usage: i32 = 16
+        self.transfer_src = 0
+        if (supported_usage & 1) != 0:
+            image_usage = 17
+            self.transfer_src = 1
         desired_count: i32 = min_images + 1
         if max_images > 0:
             if desired_count > max_images:
@@ -140,7 +149,7 @@ attach Swapchain:
         Memory.write_i32(sc_ci + 44, width)
         Memory.write_i32(sc_ci + 48, height)
         Memory.write_i32(sc_ci + 52, 1)
-        Memory.write_i32(sc_ci + 56, 16)
+        Memory.write_i32(sc_ci + 56, image_usage)
         Memory.write_i32(sc_ci + 60, 0)
         Memory.write_i32(sc_ci + 64, 0)
         Memory.write_ptr(sc_ci + 72, 0)
