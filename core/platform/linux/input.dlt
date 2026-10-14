@@ -2,7 +2,7 @@
 # Kobic - Linux Input
 ##############################
 # The window package owns native Wayland/X11 input collection. Kobic consumes
-# the same target-neutral snapshot used by Eqoi and the standalone input lib.
+# the same target-neutral snapshot used by Sooryn and the standalone input lib.
 
 KEY_A: i32 = 65
 KEY_D: i32 = 68
