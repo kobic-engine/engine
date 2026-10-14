@@ -1,0 +1,150 @@
+##############################
+# Kobic - Asset files
+# The one place the engine reads asset bytes from.
+##############################
+#
+# A program built by obin carries every asset in its pack (`game.dpk` beside
+# the executable, or appended to it). When that pack exists it is the only
+# source: nothing is read from the asset folder, so the build that is run is
+# the build that ships. A program without a pack (built straight with doletc,
+# or a test) reads the files under the mounted root instead.
+#
+# Loaders pass "located" strings between them: "dpk:<entry name>" for a pack
+# entry, an absolute path for a file. They are stable, so they double as the
+# GPU cache key, and read_located() takes either.
+
+KOBIC_DPK_PREFIX: str = "dpk:"
+
+# The kinds the Kobic cooker gives its pack entries ("KTEX", "KMDL"). Loaders
+# go by the bytes' own magic, so a raw .kobicmodel file works the same.
+KOBIC_DPK_KIND_TEXTURE: i32 = 0x5845544B
+KOBIC_DPK_KIND_MODEL: i32 = 0x4C444D4B
+
+static g_asset_pack: DpkPack = DpkPack()
+static g_asset_pack_state: i32 = 0
+
+struct AssetFiles:
+    _placeholder: i32 = 0
+
+attach AssetFiles:
+
+    # Use this pack instead of the program's own: for tools and tests.
+    # An empty path goes back to looking for the program's pack.
+    static fun use_pack(path: str) -> i32:
+        if g_asset_pack_state == 1:
+            g_asset_pack.close()
+        g_asset_pack_state = 0
+        if Memory.strlen(path) == 0:
+            return 1
+        g_asset_pack = DpkPack.open(path)
+        if g_asset_pack.ok == 1:
+            g_asset_pack_state = 1
+            return 1
+        print("kobic: " + g_asset_pack.error)
+        g_asset_pack_state = 2
+        return 0
+
+    # 1 when assets come from a pack. Looks for the program's pack once.
+    static fun packed() -> i32:
+        if g_asset_pack_state == 0:
+            g_asset_pack = dpk_open_program_pack()
+            if g_asset_pack.ok == 1:
+                g_asset_pack_state = 1
+            else:
+                g_asset_pack_state = 2
+                # A pack that is there but unreadable is a broken build, not a
+                # missing one: say so instead of quietly reading loose files.
+                if Memory.strlen(g_asset_pack.error) > 0:
+                    print("kobic: " + g_asset_pack.error)
+        if g_asset_pack_state == 1:
+            return 1
+        return 0
+
+    static fun pack() -> DpkPack:
+        AssetFiles.packed()
+        return g_asset_pack
+
+    # The pack index of `path`, or -1. Names are relative to the asset root;
+    # with several roots obin files each under its folder name, so the
+    # mounted root's name is tried as a prefix too.
+    static fun entry(path: str) -> i32:
+        if AssetFiles.packed() == 0:
+            return -1
+        index: i32 = g_asset_pack.find(path)
+        if index >= 0 or g_assets_mounted == 0:
+            return index
+        root_name: str = PathOps.get_filename(g_assets_root)
+        if Memory.strlen(root_name) == 0 or Str.equals(root_name, ".") or Str.equals(root_name, ".."):
+            return -1
+        return g_asset_pack.find(root_name + "/" + path)
+
+    # Where `path` lives, or "" when it cannot live anywhere (no pack and no
+    # mounted root). A located string does not promise the asset exists.
+    static fun locate(path: str) -> str:
+        if AssetFiles.packed() == 1:
+            index: i32 = AssetFiles.entry(path)
+            if index >= 0:
+                return Str.concat(KOBIC_DPK_PREFIX, g_asset_pack.name_at(index))
+            return Str.concat(KOBIC_DPK_PREFIX, dpk_name_normalize(path))
+        return Assets.resolve(path)
+
+    static fun exists(path: str) -> i32:
+        return AssetFiles.exists_located(AssetFiles.locate(path))
+
+    static fun exists_located(located: str) -> i32:
+        if Memory.strlen(located) == 0:
+            return 0
+        if Str.starts_with(located, KOBIC_DPK_PREFIX):
+            if AssetFiles.packed() == 0:
+                return 0
+            if g_asset_pack.find(AssetFiles.entry_name(located)) >= 0:
+                return 1
+            return 0
+        if PathOps.exists(located):
+            return 1
+        return 0
+
+    static fun entry_name(located: str) -> str:
+        return Str.substring(located, Memory.strlen(KOBIC_DPK_PREFIX), Memory.strlen(located))
+
+    static fun read(path: str) -> DpkBytes:
+        return AssetFiles.read_located(AssetFiles.locate(path))
+
+    # The bytes behind a located string, NUL-terminated past the end. A pack
+    # entry is checked against its hash before it is handed over.
+    static fun read_located(located: str) -> DpkBytes:
+        if Memory.strlen(located) == 0:
+            return DpkBytes()
+        if Str.starts_with(located, KOBIC_DPK_PREFIX):
+            if AssetFiles.packed() == 0:
+                return DpkBytes()
+            bytes: DpkBytes = g_asset_pack.read_named(AssetFiles.entry_name(located))
+            if bytes.ok == 0:
+                print("kobic: " + g_asset_pack.error)
+            return bytes
+        return dpk_read_file(located)
+
+    # A file named relative to another, the way a glTF names its buffers.
+    static fun sibling(located: str, relative: str) -> str:
+        if Str.starts_with(located, KOBIC_DPK_PREFIX):
+            name: str = AssetFiles.entry_name(located)
+            slash: i64 = Memory.strlen(name) - 1
+            while slash >= 0 and Memory.read_i8((name as i64) + slash) != 47:
+                slash = slash - 1
+            joined: str = relative
+            if slash >= 0:
+                joined = Str.substring(name, 0, slash + 1) + relative
+            return Str.concat(KOBIC_DPK_PREFIX, dpk_name_normalize(joined))
+        return PathOps.join_path(PathOps.get_directory(located), relative)
+
+    # A glTF document from wherever it lives. The document owns its text.
+    static fun parse_json(located: str) -> JsonDocument:
+        bytes: DpkBytes = AssetFiles.read_located(located)
+        if bytes.ok == 0:
+            return Json.parse("")
+        doc: JsonDocument = Json.parse_bytes(bytes.data, bytes.size)
+        if doc.valid() == 0:
+            bytes.free()
+            return doc
+        doc.owns_src = 1
+        return doc

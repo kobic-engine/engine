@@ -7,6 +7,7 @@ module kobic
 import window
 import json
 import image
+import dpk
 requires vulkan
 
 # Phase 1: Math
@@ -25,6 +26,7 @@ load kobic/core/platform/{os}/input
 
 # Assets
 load kobic/assets/types
+load kobic/assets/asset_files
 load kobic/assets/gltf_loader
 load kobic/assets/kobic_model_loader
 load kobic/assets/kobic_texture_loader
@@ -89,7 +91,7 @@ export KEY_A, KEY_D, KEY_E, KEY_F, KEY_G, KEY_M, KEY_Q, KEY_S, KEY_W
 export KEY_LEFT, KEY_UP, KEY_RIGHT, KEY_DOWN
 export KEY_ESCAPE, KEY_SPACE, KEY_SHIFT, KEY_CTRL
 export MOUSE_LEFT, MOUSE_RIGHT
-export Assets, AssetModels, AssetTextures, AssetAudio, AssetShaders
+export Assets, AssetFiles, AssetModels, AssetTextures, AssetAudio, AssetShaders
 export Model3D, ModelLods, Texture2D, AudioClip, Shader, Shader3D
 export GpuTexture, TextureSpec, GpuMeshData
 export gpu_tag_interactive_foliage

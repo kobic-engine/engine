@@ -216,14 +216,15 @@ attach Model3D:
 
 attach GltfLoader:
 
+    # `resolved_path` is a located string (see AssetFiles): a pack entry or a file.
     static fun load(path: str, resolved_path: str, format: str) -> Model3D:
-        if PathOps.exists(resolved_path) == false:
+        if AssetFiles.exists_located(resolved_path) == 0:
             return Model3D(path=path, resolved_path=resolved_path, format=format, mesh_id=-1, found=0, parsed=0, ready=0, error="model file not found")
 
         if Str.equals(format, "glb"):
             return Model3D(path=path, resolved_path=resolved_path, format=format, mesh_id=-1, found=1, parsed=0, ready=0, error="GLB loading is not implemented yet")
 
-        doc: JsonDocument = Json.parse_file(resolved_path)
+        doc: JsonDocument = AssetFiles.parse_json(resolved_path)
         if doc.valid() == 0:
             return Model3D(path=path, resolved_path=resolved_path, format=format, mesh_id=-1, found=1, parsed=0, ready=0, error=doc.error)
 

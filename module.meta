@@ -8,6 +8,8 @@ license = MIT
 
 [dependencies]
 json = "*"
+image = "*"
+dpk = "*"
 vulkan = "1.3"
 window = "*"
 input = "*"

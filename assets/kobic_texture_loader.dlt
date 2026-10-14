@@ -168,23 +168,17 @@ struct KobicTextureLoader:
 
 attach KobicTextureLoader:
 
+    # `resolved_path` is a located string (see AssetFiles): a pack entry or a file.
     static fun load(resolved_path: str) -> CookedTexture:
-        if PathOps.exists(resolved_path) == false:
+        bytes: DpkBytes = AssetFiles.read_located(resolved_path)
+        if bytes.ok == 0:
             return CookedTexture()
-        file: File = File.open_cwd(resolved_path, "r")
-        if file.is_valid() == false:
-            return CookedTexture()
-        size: i64 = file.get_size()
+        return KobicTextureLoader.load_bytes(bytes.data, bytes.size)
+
+    # Parse a cooked texture from memory. Takes ownership of `data`: the
+    # texture keeps it, or it is freed on failure.
+    static fun load_bytes(data: i64, size: i64) -> CookedTexture:
         if size < KOBIC_TEXTURE_V1_HEADER_SIZE or size > 2147483647:
-            file.close()
-            return CookedTexture()
-        data: i64 = Memory.malloc(size)
-        if data == 0:
-            file.close()
-            return CookedTexture()
-        read: i32 = file.read_bytes(data, size as i32)
-        file.close()
-        if (read as i64) != size:
             Memory.free(data)
             return CookedTexture()
         if Memory.read_i32(data) != KOBIC_TEXTURE_MAGIC:

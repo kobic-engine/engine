@@ -281,23 +281,25 @@ attach EngineRuntime:
         return self.upload_texture_spec(path, TextureSpec.smooth())
 
     # Same, but with an explicit TextureSpec controlling filtering/wrap/srgb.
+    # The asset is whatever the pack (or the asset folder) holds under that
+    # name: a cooked texture with its full mip chain, or a PNG decoded here.
     fun upload_texture_spec(self, path: str, spec: TextureSpec) -> i32:
-        resolved: str = Assets.resolve(path)
-        cooked_path: str = AssetTextures.runtime_cooked_path(path)
-        if Str.equals(cooked_path, "") == false:
-            cooked_resolved: str = Assets.resolve(cooked_path)
-            if Str.equals(cooked_resolved, "") == false:
-                if PathOps.exists(cooked_resolved):
-                    cooked: CookedTexture = KobicTextureLoader.load(cooked_resolved)
-                    if cooked.valid == 1:
-                        cooked_tid: i32 = self.renderer.upload_texture_cooked_spec(self.render_pass, self.render_pass.vk_command_pool, cooked, spec)
-                        cooked.free()
-                        if cooked_tid >= 0:
-                            return cooked_tid
-                        print(@"Cooked texture format unsupported; using PNG fallback: {cooked_path}")
-                    else:
-                        print(@"Cooked texture load failed; using PNG fallback: {cooked_path}")
-        img: Image = PNG.load(resolved)
+        bytes: DpkBytes = AssetFiles.read(path)
+        if bytes.ok == 0:
+            print(@"Texture not found: {path}")
+            return 0 - 1
+        if bytes.size >= 4 and Memory.read_i32(bytes.data) == KOBIC_TEXTURE_MAGIC:
+            cooked: CookedTexture = KobicTextureLoader.load_bytes(bytes.data, bytes.size)
+            if cooked.valid == 0:
+                print(@"Cooked texture is invalid: {path}")
+                return 0 - 1
+            cooked_tid: i32 = self.renderer.upload_texture_cooked_spec(self.render_pass, self.render_pass.vk_command_pool, cooked, spec)
+            cooked.free()
+            if cooked_tid < 0:
+                print(@"Cooked texture format unsupported by this GPU: {path}")
+            return cooked_tid
+        img: Image = png_decode_bytes(bytes.data, bytes.size)
+        bytes.free()
         if img.is_valid() == 0:
             print(@"Texture load failed: {path}")
             return 0 - 1
@@ -308,24 +310,24 @@ attach EngineRuntime:
     fun bind_texture(self, mesh_id: i32, tex_id: i32):
         self.renderer.bind_texture(mesh_id, tex_id)
 
-    # Prepare/upload once. PNG wins in editable projects; packaged builds
-    # can omit it and use a lossless RGBA8 cooked source instead.
+    # Prepare/upload once. The atlas needs pixels on the CPU to build its
+    # gutters, so its source is a PNG or a lossless RGBA8 cooked texture.
     fun upload_texture_atlas_spec(self, path: str, spec: TextureSpec, columns: i32, rows: i32, core_pixels: i32, gutter_pixels: i32) -> i32:
-        resolved: str = Assets.resolve(path)
-        if Str.equals(resolved, ""):
+        bytes: DpkBytes = AssetFiles.read(path)
+        if bytes.ok == 0:
+            print(@"Tiled atlas not found: {path}")
             return -1
         source: Image = Image.empty()
-        if PathOps.exists(resolved):
-            source = PNG.load(resolved)
         cooked: CookedTexture = CookedTexture()
-        if source.is_valid() == 0:
-            cooked_path: str = AssetTextures.runtime_cooked_path(path)
-            if Str.equals(cooked_path, "") == false:
-                cooked_resolved: str = Assets.resolve(cooked_path)
-                if Str.equals(cooked_resolved, "") == false:
-                    cooked = KobicTextureLoader.load(cooked_resolved)
-                    if cooked.valid != 0 and cooked.format == KOBIC_TEXTURE_FORMAT_RGBA8 and cooked.swizzle == 0:
-                        source = Image.wrap_rgba(cooked.width,cooked.height,cooked.pixels+cooked.level_offset(0))
+        if bytes.size >= 4 and Memory.read_i32(bytes.data) == KOBIC_TEXTURE_MAGIC:
+            cooked = KobicTextureLoader.load_bytes(bytes.data, bytes.size)
+            if cooked.valid != 0 and cooked.format == KOBIC_TEXTURE_FORMAT_RGBA8 and cooked.swizzle == 0:
+                source = Image.wrap_rgba(cooked.width,cooked.height,cooked.pixels+cooked.level_offset(0))
+            else:
+                print(@"Tiled atlas must be a PNG or a lossless RGBA8 texture: {path}")
+        else:
+            source = png_decode_bytes(bytes.data, bytes.size)
+            bytes.free()
         padded: Image = kobic_texture_pad_atlas(source,columns,rows,core_pixels,gutter_pixels)
         source.free()
         cooked.free()

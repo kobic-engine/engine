@@ -5,7 +5,12 @@
 
 imm COOK_KOBIC_MAGIC: i32 = 0x4D475246
 imm COOK_KOBIC_VERSION: i32 = 2
-imm COOK_PROTOCOL_VERSION: i32 = 3
+# 4: every output is a .dpk pack holding one entry; nothing is written
+# beside the source.
+imm COOK_PROTOCOL_VERSION: i32 = 4
+# Pack entry kinds, the four-character codes "KTEX" and "KMDL".
+imm COOK_KIND_TEXTURE: i32 = 0x5845544B
+imm COOK_KIND_MODEL: i32 = 0x4C444D4B
 imm COOK_VERTEX_STRIDE: i64 = 44
 imm COOK_TEMP_VERTEX_STRIDE: i64 = 32
 imm COOK_TRIANGLE_STRIDE: i64 = 96
@@ -71,6 +76,23 @@ g_cook_nodes_processed: i32 = 0
 fun cook_fail(message: str):
     print(@"kobic cooker: {message}")
     Process.exit(1)
+
+# The source is valid but holds what this cooker does not cook (skinning,
+# morph targets, animation). Exit code 3 tells the build to store the source
+# as it is instead of failing; every other failure is exit code 1.
+imm COOK_EXIT_UNSUPPORTED: i32 = 3
+
+fun cook_unsupported(message: str):
+    print(@"kobic cooker: {message}")
+    Process.exit(COOK_EXIT_UNSUPPORTED)
+
+# The cooker's only output: a pack with one entry, written atomically, so a
+# cook that dies halfway leaves no file that looks finished.
+fun cook_emit(output: str, entry: str, kind: i32, data: i64, size: i64):
+    writer: DpkWriter = DpkWriter.create(output)
+    writer.add(entry, data, size, kind)
+    if writer.finish() == 0:
+        cook_fail(writer.error)
 
 fun cook_abs_f64(value: f64) -> f64:
     if value < 0.0:
@@ -771,7 +793,7 @@ fun cook_process_primitive(primitive: JsonValue, world: i64):
     if mode != 4:
         return
     if primitive.get("targets").size() > 0:
-        cook_fail("morph-target primitives require the future animated-model pipeline")
+        cook_unsupported("morph-target primitives require the future animated-model pipeline")
     attributes: JsonValue = primitive.get("attributes")
     position_value: JsonValue = attributes.get("POSITION")
     if position_value.exists() == 0:
@@ -1006,9 +1028,9 @@ fun cook_visit_node(node_index: i32, parent: i64, active: i64, node_count: i32):
     Memory.write_i8(active + (node_index as i64), 1 as i8)
     node: JsonValue = cook_json_cached_at(g_cook_json_nodes, g_cook_node_cache, g_cook_node_count, node_index)
     if node.get("skin").exists() == 1:
-        cook_fail(@"skinned node {node_index} requires the future animated-model pipeline")
+        cook_unsupported(@"skinned node {node_index} requires the future animated-model pipeline")
     if node.get("weights").exists() == 1:
-        cook_fail(@"morph-weighted node {node_index} requires the future animated-model pipeline")
+        cook_unsupported(@"morph-weighted node {node_index} requires the future animated-model pipeline")
     local: i64 = cook_node_local_matrix(node)
     world: i64 = cook_mat_mul(parent, local)
     mesh_value: JsonValue = node.get("mesh")
@@ -1029,7 +1051,7 @@ fun cook_visit_node(node_index: i32, parent: i64, active: i64, node_count: i32):
 
 fun cook_collect_triangles():
     if g_cook_json_animations.size() > 0:
-        cook_fail("animated glTF requires the future animated-model pipeline")
+        cook_unsupported("animated glTF requires the future animated-model pipeline")
     nodes: JsonValue = g_cook_json_nodes
     node_count: i32 = g_cook_node_count
     g_cook_nodes_processed = 0
@@ -1423,28 +1445,10 @@ fun cook_build_kobicmodel() -> i64:
 
 fun cook_usage():
     print("Kobic Cooker - pure Dolet model and texture cooker")
-    print("usage: kobic-cooker <scene.gltf|scene.glb|texture.png> [--out <output>] [--lods|--no-lods] [--lod <ratio>]")
+    print("usage: kobic-cooker <scene.gltf|scene.glb|texture.png> --out <pack.dpk> [--name <entry>] [--lods|--no-lods] [--lod <ratio>]")
     print("textures: --texture-kind auto|color|normal|metallic-roughness|occlusion|data|lossless")
     print("models preserve materials and default to LOD ratios 0.45 and 0.22")
-
-fun cook_default_output(source: str) -> str:
-    source_length: i64 = Memory.strlen(source)
-    if source_length >= 5 and Str.ends_with(source, ".gltf"):
-        base: str = Str.substring(source, 0, source_length - 5)
-        output: str = Str.concat(base, ".kobicmodel")
-        Memory.free(base as i64)
-        return output
-    if source_length >= 4 and Str.ends_with(source, ".glb"):
-        base: str = Str.substring(source, 0, source_length - 4)
-        output: str = Str.concat(base, ".kobicmodel")
-        Memory.free(base as i64)
-        return output
-    if source_length >= 4 and Str.ends_with(source, ".png"):
-        base: str = Str.substring(source, 0, source_length - 4)
-        output: str = Str.concat(base, ".kobictex")
-        Memory.free(base as i64)
-        return output
-    return Str.concat(source, ".kobicmodel")
+    print("the output is a .dpk holding one entry, named --name or after the source file")
 
 fun cook_main():
     argc: i32 = Argv.count()
@@ -1453,6 +1457,7 @@ fun cook_main():
         Process.exit(1)
     source_argument: str = ""
     output_argument: str = ""
+    entry_argument: str = ""
     disable_lods: i32 = 0
     custom_lods: i32 = 0
     texture_kind: i32 = COOK_TEXTURE_KIND_AUTO
@@ -1471,6 +1476,11 @@ fun cook_main():
                 if i >= argc:
                     cook_fail("--out requires a path")
                 output_argument = Argv.get(i)
+            elif Str.equals(argument, "--name"):
+                i = i + 1
+                if i >= argc:
+                    cook_fail("--name requires an entry name")
+                entry_argument = Argv.get(i)
             elif Str.equals(argument, "--texture-kind"):
                 i = i + 1
                 if i >= argc:
@@ -1524,13 +1534,17 @@ fun cook_main():
     Memory.free(source_lower as i64)
     if PathOps.exists(g_cook_source) == false:
         cook_fail(@"source model not found: {g_cook_source}")
-    output: str = ""
-    if Memory.strlen(output_argument) > 0:
-        output = PathOps.resolve_path(output_argument)
-    else:
-        output = cook_default_output(g_cook_source)
+    if Memory.strlen(output_argument) == 0:
+        cook_fail("--out <pack.dpk> is required")
+    output: str = PathOps.resolve_path(output_argument)
+    # A heap copy: the argument strings do not outlive the parsing loop.
+    entry: str = Str.strcpy(entry_argument)
+    if Memory.strlen(entry) == 0:
+        entry = PathOps.get_filename(g_cook_source)
+    if dpk_name_valid(entry) == 0:
+        cook_fail(@"invalid entry name: {entry}")
     if source_is_png == 1:
-        cook_texture_v2(g_cook_source, output, texture_kind)
+        cook_texture_v2(g_cook_source, output, entry, texture_kind)
         Process.exit(0)
     g_cook_source_dir = PathOps.get_directory(g_cook_source)
     if source_is_glb == 1:
@@ -1583,13 +1597,7 @@ fun cook_main():
     print("kobic cooker: serialized model")
     output_data: i64 = Memory.read_i64(cooked)
     output_size: i64 = Memory.read_i64(cooked + 8)
-    file: File = File.open_cwd(output, "w")
-    if file.is_valid() == false:
-        cook_fail(@"could not create output: {output}")
-    written: i32 = file.write_bytes(output_data, output_size as i32)
-    file.close()
-    if (written as i64) != output_size:
-        cook_fail(@"could not write complete output: {output}")
+    cook_emit(output, entry, COOK_KIND_MODEL, output_data, output_size)
     print(@"source: {g_cook_source}")
     print(@"output: {output}")
     print(@"source triangles: {g_cook_total_triangles}")

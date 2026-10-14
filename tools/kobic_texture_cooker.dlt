@@ -596,7 +596,7 @@ fun cook_texture_format_name(format: i32) -> str:
         return "BC4"
     return "RGBA8"
 
-fun cook_texture_v2(source: str, output: str, requested_kind: i32):
+fun cook_texture_v2(source: str, output: str, entry_name: str, requested_kind: i32):
     image: Image = PNG.load(source)
     if image.is_valid() == 0:
         cook_fail(@"could not decode texture: {source}")
@@ -670,15 +670,8 @@ fun cook_texture_v2(source: str, output: str, requested_kind: i32):
             current = next
         level = level + 1
     current.free()
-    file: File = File.open_cwd(output, "w")
-    if file.is_valid() == false:
-        Memory.free(file_data)
-        cook_fail(@"could not create output: {output}")
-    written: i32 = file.write_bytes(file_data, total_size as i32)
-    file.close()
+    cook_emit(output, entry_name, COOK_KIND_TEXTURE, file_data, total_size)
     Memory.free(file_data)
-    if written != (total_size as i32):
-        cook_fail(@"could not write complete output: {output}")
     format_name: str = cook_texture_format_name(format)
     print(@"source: {source}")
     print(@"output: {output}")

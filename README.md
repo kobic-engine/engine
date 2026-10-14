@@ -92,9 +92,10 @@ dependencies. This does not automatically rebase the scene or camera.
 ## Obin workflow
 
 Kobic is an engine package rather than a second project manager. Dolet
-applications use Obin as their single project interface; its optional Kobic
-adapter discovers referenced static glTF/GLB models and PNG textures, builds the
-pure-Dolet cooker, incrementally cooks stale assets, and then invokes `doletc`:
+applications use Obin as their single project interface. Obin packs every file
+under the application's asset roots into one `.dpk` beside the executable on
+every build, debug and release alike, cooking textures and models on the way
+with the pure-Dolet cooker it builds from this package:
 
 ```powershell
 obin build
@@ -102,41 +103,51 @@ obin run
 obin package --profile release
 ```
 
-Enable the adapter in the application manifest:
+Enable cooking in the application manifest:
 
 ```toml
 [tool.kobic]
 enabled = true
 cook-models = true
 cook-textures = true
-texture-roots = ["assets/textures"]
-texture-excludes = ["@channels="]
+texture-excludes = ["@channels="] # stored as PNG instead of cooked
 # Optional overrides; filename inference handles common normal/MR/AO names.
 texture-normal-patterns = ["_n.png", "normal.png"]
 texture-metallic-roughness-patterns = ["metallicRoughness.png"]
 texture-occlusion-patterns = ["_ao.png"]
 texture-lossless-patterns = ["ui/pixel-art/"]
-# keep-source-textures = true # optional PNG fallback in packaged builds
 lods = [0.45, 0.22]
 ```
 
-Static PNG path literals are discovered automatically. `texture-roots` covers
-textures selected dynamically at runtime, while `texture-excludes` avoids
-cooking source files that the application does not use. Each PNG is cooked to
-an adjacent KobicTexture v2 sidecar with a complete offline mip chain. Color and
-general data use BC7, tangent-space normals and glTF metallic-roughness use BC5,
-single-channel occlusion uses BC4, and explicit `lossless` overrides use RGBA8.
-The runtime validates the mip table and GPU format support, uploads the payload
-without CPU decompression or runtime mip generation, and falls back to the PNG
-during development when the sidecar cannot be used. For 3D materials, use
-`TextureSpec.model_color()` for albedo/emission and `TextureSpec.model_data()`
-for normal, metallic-roughness, and occlusion maps.
-Packaged builds omit a PNG only when its cooked sidecar validates; set
-`keep-source-textures = true` when a release must retain both representations.
+Each PNG enters the pack as KobicTexture v2 with a complete offline mip chain,
+under its own name. Color and general data use BC7, tangent-space normals and
+glTF metallic-roughness use BC5, single-channel occlusion uses BC4, and
+explicit `lossless` overrides use RGBA8. Each glTF/GLB enters as a cooked model
+with its LODs. Nothing is written beside the sources.
 
-`obin build --force` rebuilds and recooks when a clean verification is needed.
-Kobic Cooker remains part of the engine package as an internal Dolet tool; there
-is intentionally no separate `kobic.exe` workflow.
+### Where assets are read from
+
+Every asset read in the engine goes through `AssetFiles`. When the program has
+a pack (`<program>.dpk` beside the executable, or appended to it), the pack is
+the only source: `Assets.textures.load("textures/stone.png")` reads the entry
+named `textures/stone.png`, and every entry is checked against its hash before
+it is used. The working directory and the asset folder play no part, so the
+build that runs is the build that ships. A program without a pack (built with
+`doletc` directly, or a test) reads the files under the root given to
+`Assets.mount`. `AssetFiles.use_pack(path)` selects a pack explicitly.
+
+What a name holds decides how it loads, not its extension: a cooked texture
+uploads its mip chain directly, a PNG is decoded, a cooked model is parsed in
+place, glTF text is read with its buffers. A model the cooker declines
+(skinning, morph targets, animation) is in the pack as its source.
+For 3D materials, use `TextureSpec.model_color()` for albedo/emission and
+`TextureSpec.model_data()` for normal, metallic-roughness, and occlusion maps.
+
+`obin build --force` recooks everything. Kobic Cooker remains part of the
+engine package as an internal Dolet tool; there is intentionally no separate
+`kobic.exe` workflow. Its only output is a one-entry `.dpk`
+(`kobic-cooker <source> --out <pack.dpk> [--name <entry>]`). It exits with
+code 3 for a valid source it does not cook.
 
 `TextureSpec.with_mip_lod_bias(bias)` optionally adjusts sampled mip detail;
 the default is zero and preserves existing materials. Negative values prefer
@@ -155,8 +166,8 @@ UV derivatives too, retaining correct mip selection.
 
 The tiled-atlas loader
   loads complete editable cells and adds wrapped gutters to a separate upload image.
-PNG is preferred while authoring; PNG-free packages require a lossless RGBA8
-cooked sidecar. Packing and mip generation happen once at texture load, never
+Its source is a PNG or a lossless RGBA8 cooked texture; a block-compressed
+one cannot be padded and is refused. Packing and mip generation happen once at texture load, never
 per draw. Material UV padding is `gutter_pixels/(core_pixels+2*gutter_pixels)`.
 The source PNG is not cropped, resized or rewritten. Invalid dimensions fail
 without an upload; the preparation buffer is limited to 64MiB.

@@ -54,26 +54,21 @@ attach KobicModelLoader:
             i = i + 1
         return 1
 
+    # `resolved_path` is a located string (see AssetFiles): a pack entry or a file.
     static fun load(path: str, resolved_path: str) -> Model3D:
-        if PathOps.exists(resolved_path) == false:
-            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=0, parsed=0, ready=0, error="cooked model file not found")
-
-        file: File = File.open_cwd(resolved_path, "r")
-        if file.is_valid() == false:
-            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="could not open cooked model")
-        size: i64 = file.get_size()
-        if size < KOBIC_MODEL_HEADER_SIZE:
-            file.close()
-            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model header is invalid")
-        data: i64 = Memory.malloc_zeroed(size + 1)
-        if data == 0:
-            file.close()
-            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="could not allocate cooked model buffer")
-        read: i32 = file.read_bytes(data, size as i32)
-        file.close()
-        if (read as i64) != size:
-            Memory.free(data)
+        if AssetFiles.exists_located(resolved_path) == 0:
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=0, parsed=0, ready=0, error="cooked model not found")
+        bytes: DpkBytes = AssetFiles.read_located(resolved_path)
+        if bytes.ok == 0:
             return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="could not read cooked model")
+        return KobicModelLoader.load_bytes(path, resolved_path, bytes.data, bytes.size)
+
+    # Parse a cooked model from memory. Takes ownership of `data` (malloc'd,
+    # at least size+1 bytes): the model keeps it, or it is freed on failure.
+    static fun load_bytes(path: str, resolved_path: str, data: i64, size: i64) -> Model3D:
+        if size < KOBIC_MODEL_HEADER_SIZE:
+            Memory.free(data)
+            return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="cooked model header is invalid")
         if Memory.read_i32(data) != KOBIC_MODEL_MAGIC:
             Memory.free(data)
             return Model3D(path=path, resolved_path=resolved_path, format="kobicmodel", mesh_id=-1, found=1, parsed=0, ready=0, error="invalid cooked model magic")

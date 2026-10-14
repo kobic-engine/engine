@@ -146,22 +146,17 @@ fun skin_validate(data: i64, size: i64) -> i32:
 attach SkinnedMesh3D:
     static fun load(path: str) -> SkinnedMesh3D:
         mesh: SkinnedMesh3D = SkinnedMesh3D()
-        file: File = File.open_cwd(Assets.resolve(kobic_cooked_or_legacy(path, ".kobicskin", ".frogskin")), "r")
-        if file.is_valid() == false:
+        asset: DpkBytes = AssetFiles.read(path)
+        if asset.ok == 0:
             mesh.error = "skin asset not found"
             return mesh
-        size: i64 = file.get_size()
+        size: i64 = asset.size
         if size < 48 or size > KOBIC_SKIN_BYTES:
-            file.close()
+            asset.free()
             mesh.error = "invalid skin asset size"
             return mesh
-        data: i64 = Memory.malloc(size)
-        if data == 0:
-            file.close()
-            return mesh
-        bytes: i32 = file.read_bytes(data, size as i32)
-        file.close()
-        if bytes as i64 != size or skin_validate(data, size) == 0:
+        data: i64 = asset.data
+        if skin_validate(data, size) == 0:
             Memory.free(data)
             mesh.error = "invalid skin asset data"
             return mesh

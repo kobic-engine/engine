@@ -213,25 +213,16 @@ fun gltf_load_binary_buffer(gltf_path: str, root: JsonValue) -> i64:
     uri: str = first.get_str("uri")
     if Memory.strlen(uri) == 0:
         return 0
-    dir: str = PathOps.get_directory(gltf_path)
-    bin_path: str = PathOps.join_path(dir, uri)
+    bin_path: str = AssetFiles.sibling(gltf_path, uri)
     # Cache hit: same .bin already resident -> reuse (no disk I/O).
     if g_gltf_bin_cache_data != 0:
         if Str.equals(g_gltf_bin_cache_path, bin_path):
             return g_gltf_bin_cache_data
-    file: File = File.open_cwd(bin_path, "r")
-    if file.is_valid() == false:
+    bytes: DpkBytes = AssetFiles.read_located(bin_path)
+    if bytes.ok == 0 or bytes.size <= 0:
+        bytes.free()
         return 0
-    size: i64 = file.get_size()
-    if size <= 0:
-        file.close()
-        return 0
-    data: i64 = Memory.malloc_zeroed(size)
-    if data == 0:
-        file.close()
-        return 0
-    file.read_bytes(data, size as i32)
-    file.close()
+    data: i64 = bytes.data
     # Install into the single-entry cache (freeing any previous buffer).
     if g_gltf_bin_cache_data != 0:
         Memory.free(g_gltf_bin_cache_data)
@@ -342,7 +333,7 @@ fun gpu_make_gltf_primitive_vertices(model: Model3D, mesh_index: i32, primitive_
 
     doc: JsonDocument = model.doc
     if doc.valid() == 0:
-        doc = Json.parse_file(model.resolved_path)
+        doc = AssetFiles.parse_json(model.resolved_path)
     if doc.valid() == 0:
         return GpuMeshData()
 
@@ -454,7 +445,7 @@ fun gpu_make_gltf_model_vertices(model: Model3D) -> GpuMeshData:
 
     doc: JsonDocument = model.doc
     if doc.valid() == 0:
-        doc = Json.parse_file(model.resolved_path)
+        doc = AssetFiles.parse_json(model.resolved_path)
     if doc.valid() == 0:
         return GpuMeshData()
 
