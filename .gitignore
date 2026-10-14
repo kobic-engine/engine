@@ -4,6 +4,7 @@
 node_modules/
 
 # Build artifacts
+.build/
 *.exe
 *.obj
 *.o

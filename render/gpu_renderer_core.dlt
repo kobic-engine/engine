@@ -25,7 +25,7 @@ struct GpuMeshBounds:
     radius: f32 = 1.0
 
 imm KOBIC_POINT_LIGHT_SLOTS: i32 = 8
-imm KOBIC_POINT_LIGHT_DATA_SIZE: i64 = 336
+imm KOBIC_POINT_LIGHT_DATA_SIZE: i64 = 384
 
 # Shadow caster size-cull threshold (angular: worldRadius / |clipW|).
 # 0.0 disables (default = prior behavior). The engine raises it for dense
@@ -3851,17 +3851,34 @@ attach GpuRendererCore:
         if out == 0:
             return
         Memory.set(out, 0, KOBIC_POINT_LIGHT_DATA_SIZE)
-        if env.lighting.enabled == 1:
-            if env.sky.enabled() == 1:
-                Memory.write_f32(out + 272, env.sky.zenith_color.r)
-                Memory.write_f32(out + 276, env.sky.zenith_color.g)
-                Memory.write_f32(out + 280, env.sky.zenith_color.b)
-                Memory.write_f32(out + 288, env.sky.horizon_color.r)
-                Memory.write_f32(out + 292, env.sky.horizon_color.g)
-                Memory.write_f32(out + 296, env.sky.horizon_color.b)
-                Memory.write_f32(out + 304, env.sky.lower_color.r)
-                Memory.write_f32(out + 308, env.sky.lower_color.g)
-                Memory.write_f32(out + 312, env.sky.lower_color.b)
+        # Sky data is also consumed by directional fog when indirect lighting
+        # is disabled. Keep the original 336-byte lighting prefix unchanged.
+        # A zero curve means no active sky; authored curves are at least 0.2.
+        Memory.write_f32(out + 340, 1.0)
+        if env.sky.enabled() == 1:
+            Memory.write_f32(out + 272, env.sky.zenith_color.r)
+            Memory.write_f32(out + 276, env.sky.zenith_color.g)
+            Memory.write_f32(out + 280, env.sky.zenith_color.b)
+            Memory.write_f32(out + 288, env.sky.horizon_color.r)
+            Memory.write_f32(out + 292, env.sky.horizon_color.g)
+            Memory.write_f32(out + 296, env.sky.horizon_color.b)
+            Memory.write_f32(out + 304, env.sky.lower_color.r)
+            Memory.write_f32(out + 308, env.sky.lower_color.g)
+            Memory.write_f32(out + 312, env.sky.lower_color.b)
+            up: Vec3 = env.sky.up_direction()
+            Memory.write_f32(out + 336, up.x)
+            Memory.write_f32(out + 340, up.y)
+            Memory.write_f32(out + 344, up.z)
+            Memory.write_f32(out + 348, env.sky.gradient_power)
+            Memory.write_f32(out + 352, env.sky.horizon_glow_dir_x)
+            Memory.write_f32(out + 356, env.sky.horizon_glow_dir_y)
+            Memory.write_f32(out + 360, env.sky.horizon_glow_dir_z)
+            Memory.write_f32(out + 364, env.sky.horizon_glow_strength)
+            Memory.write_f32(out + 368, env.sky.horizon_glow_color.r)
+            Memory.write_f32(out + 372, env.sky.horizon_glow_color.g)
+            Memory.write_f32(out + 376, env.sky.horizon_glow_color.b)
+            Memory.write_f32(out + 380, env.sky.horizon_glow_extent)
+            if env.lighting.enabled == 1:
                 Memory.write_f32(out + 320, env.lighting.diffuse_strength)
                 Memory.write_f32(out + 324, env.lighting.reflection_strength)
                 Memory.write_f32(out + 328, 1.0)
@@ -5200,6 +5217,31 @@ attach GpuRendererCore:
         Memory.write_f32(output + 36, view_forward_y)
         Memory.write_f32(output + 40, view_forward_z)
 
+    # Base-gradient mode only: unused matrix slots carry a horizon-glow ray
+    # in the SAME up-aligned frame used by sky.frag. Object/cloud modes keep
+    # their separate packing and the Vulkan push-constant size stays 128.
+    fun _sky_write_gradient_parameters(self, output: i64, cam_view: i64, sky: Sky):
+        dx: f32 = sky.horizon_glow_dir_x
+        dy: f32 = sky.horizon_glow_dir_y
+        dz: f32 = sky.horizon_glow_dir_z
+        view_x: f32 = Memory.read_f32(cam_view) * dx + Memory.read_f32(cam_view + 16) * dy + Memory.read_f32(cam_view + 32) * dz
+        view_y: f32 = Memory.read_f32(cam_view + 4) * dx + Memory.read_f32(cam_view + 20) * dy + Memory.read_f32(cam_view + 36) * dz
+        view_z: f32 = Memory.read_f32(cam_view + 8) * dx + Memory.read_f32(cam_view + 24) * dy + Memory.read_f32(cam_view + 40) * dz
+        # transpose(up-aligned view 3x3) * camera-view direction.
+        local_x: f32 = Memory.read_f32(output) * view_x + Memory.read_f32(output + 4) * view_y + Memory.read_f32(output + 8) * view_z
+        local_y: f32 = Memory.read_f32(output + 16) * view_x + Memory.read_f32(output + 20) * view_y + Memory.read_f32(output + 24) * view_z
+        local_z: f32 = Memory.read_f32(output + 32) * view_x + Memory.read_f32(output + 36) * view_y + Memory.read_f32(output + 40) * view_z
+        Memory.write_f32(output + 12, local_x)
+        Memory.write_f32(output + 28, local_y)
+        Memory.write_f32(output + 44, local_z)
+        Memory.write_f32(output + 48, sky.horizon_glow_color.r)
+        Memory.write_f32(output + 52, sky.horizon_glow_color.g)
+        Memory.write_f32(output + 56, sky.horizon_glow_color.b)
+        Memory.write_f32(output + 60, 0.0)
+        Memory.write_f32(output + 76, sky.gradient_power)
+        Memory.write_f32(output + 92, sky.horizon_glow_strength)
+        Memory.write_f32(output + 108, sky.horizon_glow_extent)
+
     fun _sky_draw_clear_rect(self, cmd: i64, att: i64, rect: i64, x: i32, y: i32, w: i32, h: i32, color: Color):
         if w <= 0:
             return
@@ -5683,47 +5725,16 @@ attach GpuRendererCore:
 
                     Memory.set(push_data, 0, 128)
                     self._sky_write_up_aligned_view(push_data, cam_view, sky)
-                    sun_enabled: i32 = 0
-                    sun_dir_x: f32 = 0.0
-                    sun_dir_y: f32 = 1.0
-                    sun_dir_z: f32 = 0.0
-                    if sky.sun_enabled == 1:
-                        if sky.sun_light_ptr != 0:
-                            sun_light: DirectionalLight3D = sky.sun_light_ptr as DirectionalLight3D
-                            if sun_light.active != 0:
-                                sun_enabled = 1
-                                sun_dir_x = 0.0 - sun_light.dir_x
-                                sun_dir_y = 0.0 - sun_light.dir_y
-                                sun_dir_z = 0.0 - sun_light.dir_z
-                        else:
-                            if sky.sun_has_direction != 0:
-                                sun_enabled = 1
-                                sun_dir_x = sky.sun_dir_x
-                                sun_dir_y = sky.sun_dir_y
-                                sun_dir_z = sky.sun_dir_z
-                    # The sky shader only needs the top-left 3x3 of the view
-                    # matrix. Pack the primary sky object into unused matrix
-                    # slots to keep
-                    # the sky push constants within Vulkan's 128-byte minimum.
-                    Memory.write_f32(push_data + 12, sun_dir_x)
-                    Memory.write_f32(push_data + 28, sun_dir_y)
-                    Memory.write_f32(push_data + 44, sun_dir_z)
-                    Memory.write_f32(push_data + 48, sky.sun_color.r)
-                    Memory.write_f32(push_data + 52, sky.sun_color.g)
-                    Memory.write_f32(push_data + 56, sky.sun_color.b)
-                    Memory.write_f32(push_data + 60, 0.0)
+                    self._sky_write_gradient_parameters(push_data, cam_view, sky)
                     Memory.write_f32(push_data + 64, sky.zenith_color.r)
                     Memory.write_f32(push_data + 68, sky.zenith_color.g)
                     Memory.write_f32(push_data + 72, sky.zenith_color.b)
-                    Memory.write_f32(push_data + 76, sky.sun_size)
                     Memory.write_f32(push_data + 80, sky.horizon_color.r)
                     Memory.write_f32(push_data + 84, sky.horizon_color.g)
                     Memory.write_f32(push_data + 88, sky.horizon_color.b)
-                    Memory.write_f32(push_data + 92, sky.sun_glow)
                     Memory.write_f32(push_data + 96, sky.lower_color.r)
                     Memory.write_f32(push_data + 100, sky.lower_color.g)
                     Memory.write_f32(push_data + 104, sky.lower_color.b)
-                    Memory.write_f32(push_data + 108, sky.sun_softness)
                     Memory.write_f32(push_data + 112, Memory.read_f32(cam_proj))
                     Memory.write_f32(push_data + 116, Memory.read_f32(cam_proj + 20))
                     Memory.write_f32(push_data + 120, width as f32)

@@ -18,6 +18,9 @@ layout(set = 1, binding = 0) uniform PointLightBlock {
     vec4 skyHorizon;
     vec4 skyLower;
     vec4 environmentLighting;
+    vec4 skyUpCurve;
+    vec4 horizonGlowDirection;
+    vec4 horizonGlowColor;
 } pointLights;
 
 layout(location = 0) in vec3 fragmentColor;
@@ -262,12 +265,15 @@ vec3 evaluatePbrLight(vec3 normal, vec3 viewDirection, vec3 lightDirection, vec3
     return (diffuse + specular) * radiance * normalLight;
 }
 
+vec3 evaluateSkyGradient(vec3 direction, vec3 localUp, vec3 zenith, vec3 horizon,
+    vec3 lower, float curve, vec3 glowDirection, vec3 glowColor,
+    float glowStrength, float glowExtent);
+
 vec3 sampleSkyLighting(vec3 direction) {
-    float vertical = clamp(normalize(direction).y, -1.0, 1.0);
-    if (vertical >= 0.0) {
-        return mix(pointLights.skyHorizon.rgb, pointLights.skyZenith.rgb, vertical);
-    }
-    return mix(pointLights.skyHorizon.rgb, pointLights.skyLower.rgb, -vertical);
+    return evaluateSkyGradient(direction, pointLights.skyUpCurve.xyz,
+        pointLights.skyZenith.rgb, pointLights.skyHorizon.rgb, pointLights.skyLower.rgb,
+        pointLights.skyUpCurve.w, pointLights.horizonGlowDirection.xyz,
+        pointLights.horizonGlowColor.rgb, pointLights.horizonGlowDirection.w, pointLights.horizonGlowColor.w);
 }
 
 vec3 evaluateSkyLighting(vec3 normal, vec3 viewDirection, vec3 albedo, float metallic, float roughness) {
@@ -568,6 +574,32 @@ float sampleShadow(vec3 normal, vec3 lightDirection) {
     return mix(1.0, selected, distanceFade);
 }
 
+// Shared by the sky pass and both material paths. Only the authored colors,
+// frame, and two cheap directional controls differ between callers.
+vec3 evaluateSkyGradient(vec3 direction, vec3 localUp, vec3 zenith, vec3 horizon,
+    vec3 lower, float curve, vec3 glowDirection, vec3 glowColor,
+    float glowStrength, float glowExtent) {
+    vec3 ray = direction * inversesqrt(max(dot(direction, direction), 0.000001));
+    float vertical = clamp(dot(ray, localUp), -1.0, 1.0);
+    float blend = abs(vertical);
+    float gradientPower = clamp(curve, 0.20, 4.0);
+    if (gradientPower != 1.0) {
+        blend = pow(blend, gradientPower);
+    }
+    vec3 color = vertical >= 0.0 ? mix(horizon, zenith, blend) : mix(horizon, lower, blend);
+    if (glowStrength <= 0.0) {
+        return color;
+    }
+    vec3 rayHorizontal = ray - localUp * vertical;
+    vec3 glowHorizontal = glowDirection - localUp * dot(glowDirection, localUp);
+    float alignment = max(dot(rayHorizontal, glowHorizontal)
+        * inversesqrt(max(dot(rayHorizontal, rayHorizontal), 0.000001))
+        * inversesqrt(max(dot(glowHorizontal, glowHorizontal), 0.000001)), 0.0);
+    alignment *= alignment;
+    float horizonBand = 1.0 - smoothstep(0.0, clamp(glowExtent, 0.05, 1.0), abs(vertical));
+    return mix(color, glowColor, clamp(glowStrength, 0.0, 1.0) * alignment * horizonBand);
+}
+
 void main() {
     if (isDoubleSided() < 0.5 && !gl_FrontFacing) {
         discard;
@@ -738,7 +770,10 @@ void main() {
 
     float fogDistance = fogDistanceForFragment();
 
-    if (fogMode == 1 || fogMode == 4) {
+    if (fogMode == 5) {
+        fogFactor = smoothstep(fogStart, max(fogEnd, fogStart + 0.0001), fogDistance)
+            * clamp(fogDensity, 0.0, 1.0);
+    } else if (fogMode == 1 || fogMode == 4) {
         float fogRange = max(fogEnd - fogStart, 0.0001);
         fogFactor = clamp((fogDistance - fogStart) / fogRange, 0.0, 1.0);
     } else if (fogMode == 2) {
@@ -749,6 +784,12 @@ void main() {
     }
 
     vec3 resolvedFogColor = pushConstants.fogColor.rgb;
+    if (fogMode == 5 && fogFactor > 0.0 && pointLights.skyUpCurve.w > 0.0) {
+        resolvedFogColor = evaluateSkyGradient(fragmentWorldPosition - cameraPosition,
+            pointLights.skyUpCurve.xyz, pointLights.skyZenith.rgb, pointLights.skyHorizon.rgb,
+            pointLights.skyLower.rgb, pointLights.skyUpCurve.w, pointLights.horizonGlowDirection.xyz,
+            pointLights.horizonGlowColor.rgb, pointLights.horizonGlowDirection.w, pointLights.horizonGlowColor.w);
+    }
     if (fogMode == 4) {
         vec3 cameraToFragment = fragmentWorldPosition - cameraPosition;
         float rayLength = max(fogDistance, 0.0001);

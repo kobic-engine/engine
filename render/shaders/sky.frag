@@ -24,6 +24,32 @@ vec2 skyObjectUv(vec3 worldDirection, vec3 objectDirection, float radius) {
     return vec2(dot(worldDirection, right), dot(worldDirection, up)) / scale * 0.5 + 0.5;
 }
 
+// Shared by the sky pass and both material paths. Only the authored colors,
+// frame, and two cheap directional controls differ between callers.
+vec3 evaluateSkyGradient(vec3 direction, vec3 localUp, vec3 zenith, vec3 horizon,
+    vec3 lower, float curve, vec3 glowDirection, vec3 glowColor,
+    float glowStrength, float glowExtent) {
+    vec3 ray = direction * inversesqrt(max(dot(direction, direction), 0.000001));
+    float vertical = clamp(dot(ray, localUp), -1.0, 1.0);
+    float blend = abs(vertical);
+    float gradientPower = clamp(curve, 0.20, 4.0);
+    if (gradientPower != 1.0) {
+        blend = pow(blend, gradientPower);
+    }
+    vec3 color = vertical >= 0.0 ? mix(horizon, zenith, blend) : mix(horizon, lower, blend);
+    if (glowStrength <= 0.0) {
+        return color;
+    }
+    vec3 rayHorizontal = ray - localUp * vertical;
+    vec3 glowHorizontal = glowDirection - localUp * dot(glowDirection, localUp);
+    float alignment = max(dot(rayHorizontal, glowHorizontal)
+        * inversesqrt(max(dot(rayHorizontal, rayHorizontal), 0.000001))
+        * inversesqrt(max(dot(glowHorizontal, glowHorizontal), 0.000001)), 0.0);
+    alignment *= alignment;
+    float horizonBand = 1.0 - smoothstep(0.0, clamp(glowExtent, 0.05, 1.0), abs(vertical));
+    return mix(color, glowColor, clamp(glowStrength, 0.0, 1.0) * alignment * horizonBand);
+}
+
 void main() {
     vec2 size = max(sky.projectionAndSize.zw, vec2(1.0));
     vec2 ndc = (gl_FragCoord.xy / size) * 2.0 - 1.0;
@@ -49,6 +75,12 @@ void main() {
     }
 
     float objectMode = sky.view[3][3];
+    if (objectMode < 0.5) {
+        color = evaluateSkyGradient(worldDirection, vec3(0.0, 1.0, 0.0),
+            sky.zenithColor.rgb, sky.horizonColor.rgb, sky.lowerColor.rgb,
+            sky.zenithColor.a, vec3(sky.view[0][3], sky.view[1][3], sky.view[2][3]),
+            sky.view[3].xyz, sky.horizonColor.a, sky.lowerColor.a);
+    }
     if (objectMode > 3.5) {
         if (worldY <= 0.025) {
             discard;

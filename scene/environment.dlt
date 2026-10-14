@@ -8,6 +8,7 @@ imm FOG_MODE_LINEAR: i32 = 1
 imm FOG_MODE_EXPONENTIAL: i32 = 2
 imm FOG_MODE_EXPONENTIAL_SQUARED: i32 = 3
 imm FOG_MODE_ATMOSPHERIC: i32 = 4
+imm FOG_MODE_SKY: i32 = 5
 
 imm FOG_SHAPE_DEPTH: i32 = 0
 imm FOG_SHAPE_SPHERICAL: i32 = 1
@@ -169,6 +170,14 @@ struct Sky:
     up_dir_x: f32 = 0.0
     up_dir_y: f32 = 1.0
     up_dir_z: f32 = 0.0
+    # Opt-in art direction. Defaults preserve the original linear gradient.
+    gradient_power: f32 = 1.0
+    horizon_glow_dir_x: f32 = 0.0
+    horizon_glow_dir_y: f32 = 1.0
+    horizon_glow_dir_z: f32 = 0.0
+    horizon_glow_color: Color = Color()
+    horizon_glow_strength: f32 = 0.0
+    horizon_glow_extent: f32 = 0.25
 
 struct EnvironmentLighting:
     enabled: i32 = 0
@@ -483,6 +492,16 @@ attach Fog:
         fog.density = clamp(intensity, 0.0, 2.0)
         return fog
 
+    # Finite-distance aerial perspective using the visible sky's directional
+    # gradient. The supplied color is the fallback when no sky is enabled.
+    # Uses the regular material pass: no volume, texture, or extra draw pass.
+    static fun sky(color: Color, start_distance: f32, end_distance: f32, strength: f32) -> Fog:
+        fog: Fog = Fog.linear(color, start_distance, end_distance)
+        fog.mode = FOG_MODE_SKY
+        fog.shape = FOG_SHAPE_SPHERICAL
+        fog.density = clamp(strength, 0.0, 1.0)
+        return fog
+
     static fun exponential(color: Color, density: f32) -> Fog:
         fog: Fog = Fog.none()
         fog.mode = FOG_MODE_EXPONENTIAL
@@ -621,6 +640,32 @@ attach Sky:
         self.up_dir_x = 0.0
         self.up_dir_y = 1.0
         self.up_dir_z = 0.0
+        return self
+
+    fun set_gradient_curve(self, power: f32) -> Sky:
+        self.gradient_power = clamp(power, 0.20, 4.0)
+        return self
+
+    # World-space direction, projected onto the local horizon by the shader.
+    # A zero direction disables the glow instead of creating an invalid ray.
+    fun set_horizon_glow(self, direction: Vec3, color: Color, strength: f32, extent: f32) -> Sky:
+        self.horizon_glow_color = color
+        self.horizon_glow_strength = clamp(strength, 0.0, 1.0)
+        self.horizon_glow_extent = clamp(extent, 0.05, 1.0)
+        if direction.length_sq() <= 0.000001:
+            self.horizon_glow_dir_x = 0.0
+            self.horizon_glow_dir_y = 1.0
+            self.horizon_glow_dir_z = 0.0
+            self.horizon_glow_strength = 0.0
+            return self
+        unit_direction: Vec3 = direction.normalize()
+        self.horizon_glow_dir_x = unit_direction.x
+        self.horizon_glow_dir_y = unit_direction.y
+        self.horizon_glow_dir_z = unit_direction.z
+        return self
+
+    fun clear_horizon_glow(self) -> Sky:
+        self.horizon_glow_strength = 0.0
         return self
 
     fun set_clouds(self, clouds: SkyClouds) -> Sky:

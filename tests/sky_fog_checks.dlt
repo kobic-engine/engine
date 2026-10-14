@@ -1,0 +1,74 @@
+# Headless: validates real public APIs and CPU GPU-data packing only.
+# No window, Vulkan initialization, game, world files, or input.
+import std
+import kobic
+
+fun sky_fog_require(ok: bool, label: str):
+    if ok == false:
+        print("FAIL sky/fog: " + label)
+        Command.exit(1)
+
+fun sky_fog_close(value: f32, expected: f32) -> bool:
+    return value >= expected - 0.00001 and value <= expected + 0.00001
+
+fun run_sky_fog_checks():
+    sky: Sky = Sky.gradient(Color.rgb(0.10, 0.20, 0.30), Color.rgb(0.40, 0.50, 0.60), Color.rgb(0.70, 0.80, 0.90))
+    sky_fog_require(sky.gradient_power == 1.0 and sky.horizon_glow_strength == 0.0, "legacy linear/no-glow defaults")
+    sky.set_gradient_curve(0.01)
+    sky_fog_require(sky_fog_close(sky.gradient_power, 0.20), "curve lower bound")
+    sky.set_gradient_curve(10.0)
+    sky_fog_require(sky.gradient_power == 4.0, "curve upper bound")
+    sky.set_gradient_curve(0.55)
+    glow: Color = Color.rgb(0.90, 0.30, 0.05)
+    sky.set_horizon_glow(Vec3.make(0.0, 0.0, 9.0), glow, 4.0, 0.001)
+    sky_fog_require(sky.horizon_glow_dir_z == 1.0 and sky.horizon_glow_strength == 1.0 and sky_fog_close(sky.horizon_glow_extent, 0.05), "normalization and parameter bounds")
+    sky.set_horizon_glow(Vec3.make(0.0, 0.0, 0.0), glow, 1.0, 2.0)
+    sky_fog_require(sky.horizon_glow_strength == 0.0 and sky.horizon_glow_dir_y == 1.0 and sky.horizon_glow_extent == 1.0, "zero direction safely disables glow")
+    sky.set_horizon_glow(Vec3.make(0.0, 0.0, 1.0), glow, 0.75, 0.36)
+    sky.clear_horizon_glow()
+    sky_fog_require(sky.horizon_glow_strength == 0.0, "explicit clear")
+    sky.set_horizon_glow(Vec3.make(0.0, 0.0, 1.0), glow, 0.75, 0.36)
+
+    fog: Fog = Fog.sky(glow, -2.0, -3.0, 2.0)
+    sky_fog_require(fog.mode == FOG_MODE_SKY and fog.shape == FOG_SHAPE_SPHERICAL, "new mode is explicit and spherical")
+    sky_fog_require(fog.start_distance == 0.0 and fog.end_distance == 1.0 and fog.density == 1.0, "fog finite-distance/strength bounds")
+    fog = Fog.sky(glow, 64.0, 560.0, -1.0)
+    sky_fog_require(fog.start_distance == 64.0 and fog.end_distance == 560.0 and fog.density == 0.0, "zero strength supported")
+    sky_fog_require(Fog.none().mode == FOG_MODE_NONE and Fog.linear(glow, 10.0, 20.0).mode == FOG_MODE_LINEAR and Fog.atmospheric(glow, 100.0, 1.0).mode == FOG_MODE_ATMOSPHERIC, "old constructors unchanged")
+
+    renderer: GpuRendererCore = GpuRendererCore()
+    data: i64 = Memory.malloc_zeroed(KOBIC_POINT_LIGHT_DATA_SIZE + 16)
+    Memory.write_i32(data + 384, 0x13572468)
+    env: Environment = Environment.create()
+    env.set_sky(sky)
+    env.set_lighting(EnvironmentLighting.none())
+    renderer._write_point_light_data(data, env)
+    sky_fog_require(KOBIC_POINT_LIGHT_DATA_SIZE == 384 and Memory.read_i32(data + 384) == 0x13572468, "384-byte bounded write")
+    sky_fog_require(sky_fog_close(Memory.read_f32(data + 272), 0.10) and sky_fog_close(Memory.read_f32(data + 288), 0.40) and sky_fog_close(Memory.read_f32(data + 304), 0.70), "sky colors available without environment lighting")
+    sky_fog_require(Memory.read_f32(data + 320) == 0.0 and Memory.read_f32(data + 328) == 0.0, "indirect lighting stays disabled")
+    sky_fog_require(Memory.read_f32(data + 340) == 1.0 and sky_fog_close(Memory.read_f32(data + 348), 0.55) and Memory.read_f32(data + 360) == 1.0 and Memory.read_f32(data + 364) == 0.75, "new sky frame/direction fields")
+    sky_fog_require(sky_fog_close(Memory.read_f32(data + 368), 0.90) and sky_fog_close(Memory.read_f32(data + 380), 0.36), "glow color and vertical extent")
+    env.clear_sky()
+    renderer._write_point_light_data(data, env)
+    sky_fog_require(Memory.read_f32(data + 348) == 0.0, "no-sky fallback marker")
+
+    camera: i64 = Memory.malloc_zeroed(64)
+    push: i64 = Memory.malloc_zeroed(128)
+    camera_matrix: Mat4 = Mat4.rotation_x(31.0).mul(Mat4.rotation_y(57.0))
+    camera_matrix.write_to_ptr(camera)
+    sky.set_up_direction(1.0, 0.0, 0.0)
+    renderer._sky_write_up_aligned_view(push, camera, sky)
+    renderer._sky_write_gradient_parameters(push, camera, sky)
+    sky_fog_require(sky_fog_close(Memory.read_f32(push + 12), 0.0) and sky_fog_close(Memory.read_f32(push + 28), 0.0) and sky_fog_close(Memory.read_f32(push + 44), 1.0), "world glow transformed into same rotated local-up sky frame")
+    sky_fog_require(Memory.read_f32(push + 60) == 0.0 and sky_fog_close(Memory.read_f32(push + 76), 0.55) and Memory.read_f32(push + 92) == 0.75 and sky_fog_close(Memory.read_f32(push + 108), 0.36), "base-gradient mode preserves 128-byte push ABI")
+    sky.set_up_direction(0.0, 0.0, 1.0)
+    sky.set_horizon_glow(Vec3.make(0.0, 0.0, 1.0), glow, 0.75, 0.36)
+    renderer._sky_write_up_aligned_view(push, camera, sky)
+    renderer._sky_write_gradient_parameters(push, camera, sky)
+    sky_fog_require(sky_fog_close(Memory.read_f32(push + 28), 1.0), "glow parallel to local zenith stays vertical, not accidentally horizon-aligned")
+    Memory.free(camera)
+    Memory.free(push)
+    Memory.free(data)
+    print("PASS sky/fog: public API bounds, defaults, spherical mode, 384-byte UBO, no-lighting sky data, rotated local frame, 128-byte sky push")
+
+run_sky_fog_checks()
