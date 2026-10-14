@@ -20,9 +20,6 @@ KOBIC_DPK_PREFIX: str = "dpk:"
 KOBIC_DPK_KIND_TEXTURE: i32 = 0x5845544B
 KOBIC_DPK_KIND_MODEL: i32 = 0x4C444D4B
 
-static g_asset_pack: DpkPack = DpkPack()
-static g_asset_pack_state: i32 = 0
-
 struct AssetFiles:
     _placeholder: i32 = 0
 
@@ -31,52 +28,31 @@ attach AssetFiles:
     # Use this pack instead of the program's own: for tools and tests.
     # An empty path goes back to looking for the program's pack.
     static fun use_pack(path: str) -> i32:
-        if g_asset_pack_state == 1:
-            g_asset_pack.close()
-        g_asset_pack_state = 0
-        if Memory.strlen(path) == 0:
-            return 1
-        g_asset_pack = DpkPack.open(path)
-        if g_asset_pack.ok == 1:
-            g_asset_pack_state = 1
-            return 1
-        print("kobic: " + g_asset_pack.error)
-        g_asset_pack_state = 2
-        return 0
+        return dpk_use_program_pack(path)
 
-    # 1 when assets come from a pack. Looks for the program's pack once.
+    # 1 when assets come from a pack (the program's, shared with every other
+    # package that loads assets).
     static fun packed() -> i32:
-        if g_asset_pack_state == 0:
-            g_asset_pack = dpk_open_program_pack()
-            if g_asset_pack.ok == 1:
-                g_asset_pack_state = 1
-            else:
-                g_asset_pack_state = 2
-                # A pack that is there but unreadable is a broken build, not a
-                # missing one: say so instead of quietly reading loose files.
-                if Memory.strlen(g_asset_pack.error) > 0:
-                    print("kobic: " + g_asset_pack.error)
-        if g_asset_pack_state == 1:
-            return 1
-        return 0
+        return dpk_program_has_pack()
 
     static fun pack() -> DpkPack:
-        AssetFiles.packed()
-        return g_asset_pack
+        return dpk_program_pack()
 
-    # The pack index of `path`, or -1. Names are relative to the asset root;
-    # with several roots obin files each under its folder name, so the
-    # mounted root's name is tried as a prefix too.
+    # The pack index of an asset. Entries are named by their path in the
+    # project ("assets/models/tree.gltf") and games name assets from the
+    # mounted root ("models/tree.gltf"), so the root comes first; a name
+    # that is already complete is tried as it is.
     static fun entry(path: str) -> i32:
-        if AssetFiles.packed() == 0:
+        pack: DpkPack = dpk_program_pack()
+        if pack.ok == 0:
             return -1
-        index: i32 = g_asset_pack.find(path)
-        if index >= 0 or g_assets_mounted == 0:
-            return index
-        root_name: str = PathOps.get_filename(g_assets_root)
-        if Memory.strlen(root_name) == 0 or Str.equals(root_name, ".") or Str.equals(root_name, ".."):
-            return -1
-        return g_asset_pack.find(root_name + "/" + path)
+        if g_assets_mounted == 1 and PathOps.is_absolute(g_assets_root) == false and PathOps.is_absolute(path) == false:
+            rooted: str = dpk_name_normalize(g_assets_root + "/" + path)
+            index: i32 = pack.find(rooted)
+            Memory.free(rooted as i64)
+            if index >= 0:
+                return index
+        return pack.find(path)
 
     # Where `path` lives, or "" when it cannot live anywhere (no pack and no
     # mounted root). A located string does not promise the asset exists.
@@ -84,7 +60,8 @@ attach AssetFiles:
         if AssetFiles.packed() == 1:
             index: i32 = AssetFiles.entry(path)
             if index >= 0:
-                return Str.concat(KOBIC_DPK_PREFIX, g_asset_pack.name_at(index))
+                pack: DpkPack = dpk_program_pack()
+                return Str.concat(KOBIC_DPK_PREFIX, pack.name_at(index))
             return Str.concat(KOBIC_DPK_PREFIX, dpk_name_normalize(path))
         return Assets.resolve(path)
 
@@ -95,9 +72,8 @@ attach AssetFiles:
         if Memory.strlen(located) == 0:
             return 0
         if Str.starts_with(located, KOBIC_DPK_PREFIX):
-            if AssetFiles.packed() == 0:
-                return 0
-            if g_asset_pack.find(AssetFiles.entry_name(located)) >= 0:
+            pack: DpkPack = dpk_program_pack()
+            if pack.ok == 1 and pack.find(AssetFiles.entry_name(located)) >= 0:
                 return 1
             return 0
         if PathOps.exists(located):
@@ -116,11 +92,12 @@ attach AssetFiles:
         if Memory.strlen(located) == 0:
             return DpkBytes()
         if Str.starts_with(located, KOBIC_DPK_PREFIX):
-            if AssetFiles.packed() == 0:
+            pack: DpkPack = dpk_program_pack()
+            if pack.ok == 0:
                 return DpkBytes()
-            bytes: DpkBytes = g_asset_pack.read_named(AssetFiles.entry_name(located))
+            bytes: DpkBytes = pack.read_named(AssetFiles.entry_name(located))
             if bytes.ok == 0:
-                print("kobic: " + g_asset_pack.error)
+                print("kobic: " + pack.error)
             return bytes
         return dpk_read_file(located)
 

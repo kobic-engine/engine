@@ -129,8 +129,10 @@ with its LODs. Nothing is written beside the sources.
 
 Every asset read in the engine goes through `AssetFiles`. When the program has
 a pack (`<program>.dpk` beside the executable, or appended to it), the pack is
-the only source: `Assets.textures.load("textures/stone.png")` reads the entry
-named `textures/stone.png`, and every entry is checked against its hash before
+the only source: after `Assets.mount("assets")`,
+`Assets.textures.load("textures/stone.png")` reads the entry named
+`assets/textures/stone.png` (obin names entries by their path in the
+project), and every entry is checked against its hash before
 it is used. The working directory and the asset folder play no part, so the
 build that runs is the build that ships. A program without a pack (built with
 `doletc` directly, or a test) reads the files under the root given to
