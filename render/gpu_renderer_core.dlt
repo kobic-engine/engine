@@ -53,6 +53,9 @@ static g_kobic_shadow_cascade0_margin: f32 = 0.0
 # wall-clock ticks spent building the shadow instance buffer vs the rest of
 # command recording, to find the real CPU bottleneck. Printed every 120 frames.
 static g_kobic_cpu_prof_enabled: i32 = 0
+# Static-batch rebuild time/count inside the recording window (cpu_rec line).
+static g_kobic_cpu_prof_static_ticks: i64 = 0
+static g_kobic_cpu_prof_static_rebuilds: i32 = 0
 static g_kobic_cpu_prof_shadow_ticks: i64 = 0
 static g_kobic_cpu_prof_total_ticks: i64 = 0
 static g_kobic_cpu_prof_frames: i32 = 0
@@ -1694,6 +1697,20 @@ attach GpuRendererCore:
     # Mark the persistent GPU cull input as needing a FULL rebuild (scene
     # STRUCTURE changed: instance added/removed, visibility/material change),
     # so the next precull regroups + repacks the candidate buffer.
+    # A change to one mesh. Static batches only hold static-batch meshes, so
+    # anything else (animated/rebuilt models, held items, previews) must not
+    # force their rebuild; at 8k meshes that rebuild cost ~1 ms every frame.
+    fun _mark_mesh_dirty(self, mesh_id: i32):
+        static_member: i32 = 1
+        if self.mesh_static_batches != 0 and mesh_id >= 0 and mesh_id < self.vb_count:
+            static_member = Memory.read_i32(self.mesh_static_batches + mesh_id * 4)
+        if static_member != 0:
+            self._mark_cull_dirty_struct()
+            return
+        if self.gpu_cull_ptr != 0:
+            cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
+            cull.mark_dirty()
+
     fun _mark_cull_dirty_struct(self):
         self.gpu_static_dirty = 1
         if self.gpu_static_slot_dirty != 0:
@@ -1782,44 +1799,83 @@ attach GpuRendererCore:
             counts = self.gpu_late_page_counts
             reps = self.gpu_late_page_reps
             cmds = self.gpu_late_page_cmds
+        # Counting sort by page: two passes over the meshes instead of one
+        # pass per page (O(pages * meshes) made every rebuild ~1.6 ms with
+        # 12.8k meshes on 9 pages). Output order is unchanged: pages
+        # ascending, mesh ids ascending within a page.
+        page_total: i32 = self.arena_page_count
+        if page_total <= 0:
+            return 1
+        page_fill: i64 = Memory.malloc_zeroed((page_total as i64) * 4)
+        if page_fill == 0:
+            return 0
+        # Pass 1 also records each eligible mesh's page (or -1) so pass 2
+        # does not repeat the checks.
+        mesh_pages: i64 = Memory.malloc_zeroed((self.vb_count as i64) * 4 + 4)
+        if mesh_pages == 0:
+            Memory.free(page_fill)
+            return 0
+        late_flags: i64 = self.mesh_late_flags
+        mi: i32 = 0
+        while mi < self.vb_count:
+            eligible_page: i32 = 0 - 1
+            if Memory.read_i32(self.mesh_static_batches + mi * 4) == 1:
+                if Memory.read_i32(self.vb_visible + mi * 4) != 0:
+                    mesh_late: i32 = 0
+                    if late_flags != 0 and mi < self.mesh_late_capacity:
+                        mesh_late = Memory.read_i32(late_flags + mi * 4)
+                    if mesh_late == late and Memory.read_i32(self.ib_index_counts + mi * 4) > 0:
+                        mesh_page: i32 = Memory.read_i32(self.mesh_arena_pages + mi * 4)
+                        if mesh_page >= 0 and mesh_page < page_total:
+                            eligible_page = mesh_page
+                            Memory.write_i32(page_fill + mesh_page * 4, Memory.read_i32(page_fill + mesh_page * 4) + 1)
+            Memory.write_i32(mesh_pages + mi * 4, eligible_page)
+            mi = mi + 1
         cursor: i32 = self.gpu_build_cursor
         command_cursor: i32 = self.gpu_build_cmd_cursor
         page: i32 = 0
-        while page < self.arena_page_count:
-            page_base: i32 = cursor
-            rep: i32 = 0 - 1
-            mi: i32 = 0
-            while mi < self.vb_count:
-                if Memory.read_i32(self.mesh_static_batches + mi * 4) == 1:
-                    if Memory.read_i32(self.mesh_arena_pages + mi * 4) == page and self._mesh_is_late(mi) == late:
-                        if Memory.read_i32(self.vb_visible + mi * 4) != 0:
-                            index_count: i32 = Memory.read_i32(self.ib_index_counts + mi * 4)
-                            if index_count > 0:
-                                if cursor >= KOBIC_CULL_MAX_GROUPS or cursor >= cull.slot_cap:
-                                    return 0
-                                if rep < 0:
-                                    rep = mi
-                                cx: f32 = Memory.read_f32(self.mesh_bound_xs + mi * 4)
-                                cy: f32 = Memory.read_f32(self.mesh_bound_ys + mi * 4)
-                                cz: f32 = Memory.read_f32(self.mesh_bound_zs + mi * 4)
-                                radius: f32 = Memory.read_f32(self.mesh_bound_rs + mi * 4)
-                                if radius <= 0.0:
-                                    radius = 8.0
-                                first_index: i32 = Memory.read_i32(self.ib_first_indices + mi * 4)
-                                vertex_offset: i32 = Memory.read_i32(self.vb_first_vertices + mi * 4)
-                                cull.write_static_draw(slot, cursor, index_count, first_index, vertex_offset, cx, cy, cz, radius)
-                                Memory.write_i32(self.gpu_static_cand_meshes + ((slot * cull.slot_cap + cursor) as i64) * 4, mi)
-                                cursor = cursor + 1
-                mi = mi + 1
-            Memory.write_i32(bases + page * 4, page_base)
-            page_count: i32 = cursor - page_base
-            if command_cursor + page_count + 1 > KOBIC_CULL_MAX_GROUPS:
+        while page < page_total:
+            page_count: i32 = Memory.read_i32(page_fill + page * 4)
+            if cursor + page_count > KOBIC_CULL_MAX_GROUPS or cursor + page_count > cull.slot_cap:
+                Memory.free(page_fill)
+                Memory.free(mesh_pages)
                 return 0
+            if command_cursor + page_count + 1 > KOBIC_CULL_MAX_GROUPS:
+                Memory.free(page_fill)
+                Memory.free(mesh_pages)
+                return 0
+            Memory.write_i32(bases + page * 4, cursor)
             Memory.write_i32(counts + page * 4, page_count)
-            Memory.write_i32(reps + page * 4, rep)
+            Memory.write_i32(reps + page * 4, 0 - 1)
             Memory.write_i32(cmds + page * 4, command_cursor)
+            # page_fill now holds the next write position of the page.
+            Memory.write_i32(page_fill + page * 4, cursor)
+            cursor = cursor + page_count
             command_cursor = command_cursor + page_count + 1
             page = page + 1
+        mi = 0
+        while mi < self.vb_count:
+            mesh_page2: i32 = Memory.read_i32(mesh_pages + mi * 4)
+            if mesh_page2 >= 0:
+                if mesh_page2 < page_total:
+                    at: i32 = Memory.read_i32(page_fill + mesh_page2 * 4)
+                    Memory.write_i32(page_fill + mesh_page2 * 4, at + 1)
+                    if Memory.read_i32(reps + mesh_page2 * 4) < 0:
+                        Memory.write_i32(reps + mesh_page2 * 4, mi)
+                    cx: f32 = Memory.read_f32(self.mesh_bound_xs + mi * 4)
+                    cy: f32 = Memory.read_f32(self.mesh_bound_ys + mi * 4)
+                    cz: f32 = Memory.read_f32(self.mesh_bound_zs + mi * 4)
+                    radius: f32 = Memory.read_f32(self.mesh_bound_rs + mi * 4)
+                    if radius <= 0.0:
+                        radius = 8.0
+                    index_count: i32 = Memory.read_i32(self.ib_index_counts + mi * 4)
+                    first_index: i32 = Memory.read_i32(self.ib_first_indices + mi * 4)
+                    vertex_offset: i32 = Memory.read_i32(self.vb_first_vertices + mi * 4)
+                    cull.write_static_draw(slot, at, index_count, first_index, vertex_offset, cx, cy, cz, radius)
+                    Memory.write_i32(self.gpu_static_cand_meshes + ((slot * cull.slot_cap + at) as i64) * 4, mi)
+            mi = mi + 1
+        Memory.free(page_fill)
+        Memory.free(mesh_pages)
         self.gpu_build_cursor = cursor
         self.gpu_build_cmd_cursor = command_cursor
         return 1
@@ -2041,7 +2097,14 @@ attach GpuRendererCore:
         if self.gpu_static_slot_dirty != 0:
             slot_dirty = Memory.read_i32(self.gpu_static_slot_dirty + slot * 4)
         if slot_dirty == 1:
-            if self._gpu_static_rebuild(cull, slot) == 0:
+            rebuild_t0: i64 = 0
+            if g_kobic_cpu_prof_enabled == 1:
+                rebuild_t0 = kobic_time_now_ticks()
+            rebuilt: i32 = self._gpu_static_rebuild(cull, slot)
+            if g_kobic_cpu_prof_enabled == 1:
+                g_kobic_cpu_prof_static_ticks = g_kobic_cpu_prof_static_ticks + (kobic_time_now_ticks() - rebuild_t0)
+                g_kobic_cpu_prof_static_rebuilds = g_kobic_cpu_prof_static_rebuilds + 1
+            if rebuilt == 0:
                 return 0
         elif self.gpu_static_slot_xform != 0 and Memory.read_i32(self.gpu_static_slot_xform + slot * 4) != self.gpu_static_xform_serial:
             self._gpu_static_refresh_models(cull, slot)
@@ -2721,6 +2784,10 @@ attach GpuRendererCore:
             return self.debug_window_draws
         if stat == 4:
             return self.debug_window_instances
+        if stat == 5:
+            return self.vb_count as i64
+        if stat == 6:
+            return self.arena_page_count as i64
         return 0
 
     # Shadow caster size-cull threshold (shadow LOD). Casters whose angular
@@ -4660,7 +4727,7 @@ attach GpuRendererCore:
         Memory.write_ptr(self.model_matrices + idx * 8, 0)
         self._write_mesh_bounds(idx, mesh.vertices, mesh.vertex_count)
         self.vb_count = idx + 1
-        self._mark_cull_dirty_struct()
+        self._mark_mesh_dirty(idx)
         return idx
 
     fun replace_dynamic_mesh_data(self, mesh_id: i32, mesh: GpuMeshData) -> i32:
@@ -4700,7 +4767,7 @@ attach GpuRendererCore:
         Memory.write_i64(self.mesh_arena_vb_caps + mesh_id * 8, slice.vertex_capacity)
         Memory.write_i64(self.mesh_arena_ib_caps + mesh_id * 8, slice.index_capacity)
         self._write_mesh_bounds(mesh_id, mesh.vertices, mesh.vertex_count)
-        self._mark_cull_dirty_struct()
+        self._mark_mesh_dirty(mesh_id)
         return mesh_id
 
     fun replace_mesh_data(self, mesh_id: i32, mesh: GpuMeshData) -> i32:
@@ -4771,7 +4838,7 @@ attach GpuRendererCore:
         Memory.write_i32(self.ib_index_counts + mesh_id * 4, mesh.index_count)
         Memory.write_i32(self.ib_first_indices + mesh_id * 4, 0)
         self._write_mesh_bounds(mesh_id, mesh.vertices, mesh.vertex_count)
-        self._mark_cull_dirty_struct()
+        self._mark_mesh_dirty(mesh_id)
         return mesh_id
 
     # Register an instance that shares VkBuffer with source but gets own model matrix
@@ -4834,7 +4901,7 @@ attach GpuRendererCore:
                         self.transparent_visible_count = self.transparent_visible_count + 1
         self._copy_mesh_bounds(idx, src_vb_idx)
         self.vb_count = idx + 1
-        self._mark_cull_dirty_struct()
+        self._mark_mesh_dirty(idx)
         return idx
 
     fun set_instance_visible(self, mesh_id: i32, on: i32):
@@ -4848,6 +4915,11 @@ attach GpuRendererCore:
         if on == 0:
             v = 0
         old_visible: i32 = Memory.read_i32(self.vb_visible + mesh_id * 4)
+        # Games re-assert visibility every frame (held items, terrain section
+        # visibility passes). Only a real change may invalidate the culling
+        # structures: this used to rebuild every static batch every frame.
+        if old_visible == v:
+            return
         if old_visible != v:
             if self.mesh_transparent != 0:
                 if Memory.read_i32(self.mesh_transparent + mesh_id * 4) != 0:
@@ -4858,7 +4930,7 @@ attach GpuRendererCore:
                         if self.transparent_visible_count < 0:
                             self.transparent_visible_count = 0
         Memory.write_i32(self.vb_visible + mesh_id * 4, v)
-        self._mark_cull_dirty_struct()
+        self._mark_mesh_dirty(mesh_id)
 
     # Mark a dynamic-arena mesh whose vertices are already in world space.
     # Eligible meshes on the same arena page must share opaque material state;
@@ -4885,7 +4957,7 @@ attach GpuRendererCore:
             value = 1
         if Memory.read_i32(self.mesh_late_flags + mesh_id * 4) != value:
             Memory.write_i32(self.mesh_late_flags + mesh_id * 4, value)
-            self._mark_cull_dirty_struct()
+            self._mark_mesh_dirty(mesh_id)
         return 1
 
     fun _mesh_is_late(self, mesh_id: i32) -> i32:
@@ -4903,7 +4975,10 @@ attach GpuRendererCore:
         v: i32 = 0
         if on != 0:
             v = 1
-        Memory.write_i32(self.mesh_static_batches + mesh_id * 4, v)
+        if Memory.read_i32(self.mesh_static_batches + mesh_id * 4) != v:
+            Memory.write_i32(self.mesh_static_batches + mesh_id * 4, v)
+            # Joining or leaving a batch changes the batch itself.
+            self._mark_cull_dirty_struct()
         return 1
 
     fun set_model_matrix(self, vb_idx: i32, mat_ptr: i64) -> void:
@@ -4923,7 +4998,7 @@ attach GpuRendererCore:
         # changed: full rebuild. If it already had one, only the transform
         # binding changed: the cheap refresh suffices.
         if old_ptr == 0:
-            self._mark_cull_dirty_struct()
+            self._mark_mesh_dirty(vb_idx)
         else:
             self._mark_cull_dirty()
 
@@ -5005,7 +5080,7 @@ attach GpuRendererCore:
         if old_tex_id != tex_id:
             if self.mesh_desc_sets != 0:
                 Memory.write_ptr(self.mesh_desc_sets + mesh_id * 8, 0)
-            self._mark_cull_dirty_struct()
+            self._mark_mesh_dirty(mesh_id)
 
     fun bind_material(self, mesh_id: i32, material: Material3D):
         if mesh_id < 0:
@@ -5115,7 +5190,7 @@ attach GpuRendererCore:
             if self.mesh_desc_sets != 0:
                 Memory.write_ptr(self.mesh_desc_sets + mesh_id * 8, 0)
         if grouping_changed == 1:
-            self._mark_cull_dirty_struct()
+            self._mark_mesh_dirty(mesh_id)
 
     fun set_shadow_flags(self, mesh_id: i32, cast_shadows: i32, receive_shadows: i32):
         if mesh_id < 0:
@@ -7429,7 +7504,13 @@ attach GpuRendererCore:
                     freq = 1000000000
                 shadow_us: i64 = (g_kobic_cpu_prof_shadow_ticks * 1000000 as i64) / (freq * 120 as i64)
                 total_us: i64 = (g_kobic_cpu_prof_total_ticks * 1000000 as i64) / (freq * 120 as i64)
-                print(@"[kobic.cpu_rec] avg/120 shadow_build={shadow_us} us  total_record={total_us} us")
+                static_us: i64 = (g_kobic_cpu_prof_static_ticks * 1000000 as i64) / (freq * 120 as i64)
+                rebuilds: i32 = g_kobic_cpu_prof_static_rebuilds
+                meshes: i32 = self.vb_count
+                pages: i32 = self.arena_page_count
+                print(@"[kobic.cpu_rec] avg/120 shadow_build={shadow_us} us  total_record={total_us} us  static_rebuild={static_us} us rebuilds={rebuilds} meshes={meshes} arena_pages={pages}")
+                g_kobic_cpu_prof_static_ticks = 0
+                g_kobic_cpu_prof_static_rebuilds = 0
                 g_kobic_cpu_prof_shadow_ticks = 0
                 g_kobic_cpu_prof_total_ticks = 0
                 g_kobic_cpu_prof_frames = 0
