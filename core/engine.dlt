@@ -318,6 +318,16 @@ attach Debug:
             return 0
         return g_engine_runtime.gpu_last_serial()
 
+    # Pipeline statistics of the static-batch draws of a recent frame, while
+    # gpu_timing is on (-1 when the device lacks pipelineStatisticsQuery):
+    # 0 input primitives, 1 vertex invocations, 2 clipping invocations,
+    # 3 clipping primitives (after clip/cull), 4 fragment invocations,
+    # 5 readback serial (changes once per new sample).
+    static fun gpu_static_stat(stat: i32) -> i64:
+        if g_engine_runtime.ready() == 0:
+            return 0 - 1
+        return g_engine_runtime.gpu_static_stat(stat)
+
     # Sums over the last completed 120-frame window (needs render_stats(1)):
     # 0 window serial, 1 triangles, 2 vertices, 3 draws, 4 instances.
     static fun render_window_stat(stat: i32) -> i64:

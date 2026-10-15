@@ -49,6 +49,16 @@ struct GpuProfiler:
     # slot must be written before readback (WAIT would otherwise block), so
     # missing sub-marks are filled at the main-pass boundary.
     written_mask:  i32 = 0
+    # Pipeline statistics of the static-batch draws (device feature
+    # pipelineStatisticsQuery): one query per slot, read back with the
+    # timestamps. last_stats: input primitives, vertex invocations, clipping
+    # invocations, clipping primitives, fragment invocations.
+    stats_pool:    i64 = 0
+    stats_ready:   i32 = 0
+    stats_open:    i32 = 0
+    stats_readback: i64 = 0
+    last_stats:    i64 = 0
+    stats_serial:  i32 = 0
 
 attach GpuProfiler:
 
@@ -87,6 +97,56 @@ attach GpuProfiler:
         self.ready = 1
         return 1
 
+    # Requires the pipelineStatisticsQuery device feature (GpuCaps).
+    fun init_pipeline_statistics(self) -> i32:
+        if self.device == 0 or self.stats_ready != 0:
+            return self.stats_ready
+        qp_ci: i64 = Memory.malloc_zeroed(32)
+        qp_out: i64 = Memory.malloc_zeroed(8)
+        if qp_ci == 0 or qp_out == 0:
+            Memory.free(qp_ci)
+            Memory.free(qp_out)
+            return 0
+        Memory.write_i32(qp_ci, 11)                  # QUERY_POOL_CREATE_INFO
+        Memory.write_i32(qp_ci + 20, 1)              # VK_QUERY_TYPE_PIPELINE_STATISTICS
+        Memory.write_i32(qp_ci + 24, KOBIC_GPU_TS_SLOTS)
+        # IA primitives 2, VS invocations 4, clipping invocations 32,
+        # clipping primitives 64, FS invocations 128 (results in bit order).
+        Memory.write_i32(qp_ci + 28, 2 + 4 + 32 + 64 + 128)
+        r: i32 = vkCreateQueryPool(self.device, qp_ci, 0, qp_out)
+        self.stats_pool = Memory.read_ptr(qp_out)
+        Memory.free(qp_out)
+        Memory.free(qp_ci)
+        if r != 0:
+            self.stats_pool = 0
+            return 0
+        self.stats_readback = Memory.malloc_zeroed(5 * 8)
+        self.last_stats = Memory.malloc_zeroed(5 * 8)
+        if self.stats_readback == 0 or self.last_stats == 0:
+            return 0
+        self.stats_ready = 1
+        return 1
+
+    # Static-batch draws only; both calls are inside the main render pass.
+    fun begin_static_stats(self, cmd: i64):
+        if self.is_active() == 0 or self.stats_ready == 0 or self.stats_open != 0:
+            return
+        slot: i32 = self.frame - (self.frame / KOBIC_GPU_TS_SLOTS) * KOBIC_GPU_TS_SLOTS
+        vkCmdBeginQuery(cmd, self.stats_pool, slot, 0)
+        self.stats_open = 1
+
+    fun end_static_stats(self, cmd: i64):
+        if self.stats_open == 0:
+            return
+        slot: i32 = self.frame - (self.frame / KOBIC_GPU_TS_SLOTS) * KOBIC_GPU_TS_SLOTS
+        vkCmdEndQuery(cmd, self.stats_pool, slot)
+        self.stats_open = 0
+
+    fun last_pipeline_stat(self, stat: i32) -> i64:
+        if self.last_stats == 0 or stat < 0 or stat > 4:
+            return 0 - 1
+        return Memory.read_i64(self.last_stats + (stat as i64) * 8)
+
     fun set_enabled(self, on: i32):
         if on == 0:
             self.enabled = 0
@@ -116,6 +176,8 @@ attach GpuProfiler:
             return
         base: i32 = self._slot_base()
         vkCmdResetQueryPool(cmd, self.query_pool, base, KOBIC_GPU_TS_PER_FRAME)
+        if self.stats_ready != 0:
+            vkCmdResetQueryPool(cmd, self.stats_pool, base / KOBIC_GPU_TS_PER_FRAME, 1)
         # Write at TOP_OF_PIPE (stage bit 1) for the frame-start marker.
         vkCmdWriteTimestamp(cmd, 1, self.query_pool, base)
         self.written_mask = 1
@@ -165,8 +227,16 @@ attach GpuProfiler:
             old_frame: i32 = self.frame - (KOBIC_GPU_TS_SLOTS - 1)
             prev_slot: i32 = old_frame - (old_frame / KOBIC_GPU_TS_SLOTS) * KOBIC_GPU_TS_SLOTS
             prev_base: i32 = prev_slot * KOBIC_GPU_TS_PER_FRAME
-            # flags: 64BIT(8). Read all u64 results of the slot.
-            r: i32 = vkGetQueryPoolResults(self.device, self.query_pool, prev_base, KOBIC_GPU_TS_PER_FRAME, (KOBIC_GPU_TS_PER_FRAME as i64) * 8, self.readback, 8, 8)
+            # flags: VK_QUERY_RESULT_64_BIT (1). Read all u64 results of the slot.
+            # (8 is PARTIAL: results came back as u32, so timestamps wrapped
+            # every ~4.3 s at 1 ns/tick and produced negative segments.)
+            r: i32 = vkGetQueryPoolResults(self.device, self.query_pool, prev_base, KOBIC_GPU_TS_PER_FRAME, (KOBIC_GPU_TS_PER_FRAME as i64) * 8, self.readback, 8, 1)
+            if self.stats_ready != 0:
+                # No WAIT: a frame that never began the query reports NOT_READY.
+                rs: i32 = vkGetQueryPoolResults(self.device, self.stats_pool, prev_slot, 1, 5 * 8, self.stats_readback, 5 * 8, 1)
+                if rs == 0:
+                    Memory.copy(self.last_stats, self.stats_readback, 5 * 8)
+                    self.stats_serial = self.stats_serial + 1
             if r == 0:
                 t0: i64 = Memory.read_i64(self.readback + 0)
                 t1: i64 = Memory.read_i64(self.readback + 8)
@@ -243,5 +313,15 @@ attach GpuProfiler:
         if self.readback != 0:
             Memory.free(self.readback)
             self.readback = 0
+        if self.stats_pool != 0:
+            vkDestroyQueryPool(self.device, self.stats_pool, 0)
+            self.stats_pool = 0
+        if self.stats_readback != 0:
+            Memory.free(self.stats_readback)
+            self.stats_readback = 0
+        if self.last_stats != 0:
+            Memory.free(self.last_stats)
+            self.last_stats = 0
+        self.stats_ready = 0
         self.ready = 0
         self.enabled = 0

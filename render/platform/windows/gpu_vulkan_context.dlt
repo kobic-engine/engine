@@ -18,6 +18,7 @@ struct GpuCaps:
     dynamic_rendering:    i32 = 0   # vkCmdBeginRendering? (R6)
     max_descriptor_array: i32 = 0   # bindless table size cap
     timestamp_valid_bits: i32 = 0   # GPU timing support (measurement)
+    pipeline_statistics:  i32 = 0   # pipelineStatisticsQuery (debug counters)
 
 struct VulkanContext:
     vk_instance:        i64 = 0
@@ -89,6 +90,8 @@ attach VulkanContext:
         rda2: i32 = Memory.read_i32(idx + 92)      # runtimeDescriptorArray
 
         dyn: i32 = Memory.read_i32(dynr + 16)      # dynamicRendering
+        # VkPhysicalDeviceFeatures starts at +16; pipelineStatisticsQuery @ 96.
+        pstat: i32 = Memory.read_i32(feats2 + 16 + 96)
 
         Memory.free(vk12)
         Memory.free(idx)
@@ -136,6 +139,8 @@ attach VulkanContext:
             c.draw_indirect_count = 1
         if dyn != 0:
             c.dynamic_rendering = 1
+        if pstat != 0:
+            c.pipeline_statistics = 1
         if bindless == 1:
             c.max_descriptor_array = 65536
         self.caps = c
@@ -510,11 +515,14 @@ attach VulkanContext:
         # drawIndirectFirstInstance @ 40. Only set when the device reports
         # drawIndirectCount support (paired capability).
         feat_base: i64 = 0
-        if dcaps.draw_indirect_count == 1:
+        if dcaps.draw_indirect_count == 1 or dcaps.pipeline_statistics == 1:
             feat_base = Memory.malloc_zeroed(232)
             if feat_base != 0:
-                Memory.write_i32(feat_base + 36, 1)   # multiDrawIndirect
-                Memory.write_i32(feat_base + 40, 1)   # drawIndirectFirstInstance
+                if dcaps.draw_indirect_count == 1:
+                    Memory.write_i32(feat_base + 36, 1)   # multiDrawIndirect
+                    Memory.write_i32(feat_base + 40, 1)   # drawIndirectFirstInstance
+                if dcaps.pipeline_statistics == 1:
+                    Memory.write_i32(feat_base + 96, 1)   # pipelineStatisticsQuery
                 Memory.write_ptr(dev_ci + 64, feat_base)
 
         dev_ptr: i64 = Memory.malloc_zeroed(8)

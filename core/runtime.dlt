@@ -134,6 +134,8 @@ attach EngineRuntime:
         # indexing or creation fails, bindless_enabled stays 0 -> classic path.
         bcaps: GpuCaps = ctx.caps
         runtime.renderer.core.draw_indirect_count_supported = bcaps.draw_indirect_count
+        if bcaps.pipeline_statistics == 1:
+            runtime.renderer.core.enable_pipeline_statistics()
         runtime.renderer.core.set_bindless_caps(bcaps.descriptor_indexing, bcaps.max_descriptor_array, g_engine_bindless_flag)
         if runtime.renderer.core._bindless_init() == 1:
             # Build the bindless graphics pipeline variant now that the table
@@ -370,6 +372,9 @@ attach EngineRuntime:
 
     fun gpu_last_serial(self) -> i32:
         return self.renderer.gpu_last_serial()
+
+    fun gpu_static_stat(self, stat: i32) -> i64:
+        return self.renderer.gpu_static_stat(stat)
 
     fun late_occlusion_stat(self, stat: i32) -> i32:
         return self.renderer.late_occlusion_stat(stat)

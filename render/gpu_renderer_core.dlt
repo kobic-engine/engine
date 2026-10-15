@@ -3,6 +3,16 @@
 # Vulkan backend for Kobic's OOP scene/Engine facade.
 ##############################
 
+# Device-local mesh arena uploads go through host staging memory: one region
+# per frame serial modulo this count. It must exceed the frames in flight
+# (RenderPass.max_frames = 2), so a region is rewritten only after the frame
+# that copied from it has completed.
+imm KOBIC_ARENA_STAGE_REGIONS: i32 = 4
+imm KOBIC_ARENA_STAGE_REGION_BYTES: i64 = 16777216
+# Uploads that do not fit a region (streaming bursts) use overflow chunks of
+# at least this size, released once their frame has completed.
+imm KOBIC_ARENA_STAGE_CHUNK_BYTES: i64 = 67108864
+
 struct GpuBufferUpload:
     handle: i64 = 0
     memory: i64 = 0
@@ -813,6 +823,30 @@ struct GpuRendererCore:
     arena_page_icursors: i64 = 0
     arena_page_icaps: i64 = 0
     arena_page_count: i32 = 0
+    # Staged uploads into device-local arena pages (arena_page_vmaps is 0 for
+    # such a page). Copies are recorded at the start of the next frame.
+    arena_stage_buf: i64 = 0
+    arena_stage_mem: i64 = 0
+    arena_stage_map: i64 = 0
+    arena_stage_region: i32 = -1
+    arena_stage_used: i64 = 0
+    arena_stage_chunk_buf: i64 = 0
+    arena_stage_chunk_map: i64 = 0
+    arena_stage_chunk_cap: i64 = 0
+    arena_stage_chunk_used: i64 = 0
+    # Overflow chunks: buffer, memory, frame serial of the frame that copies.
+    arena_stage_chunks: i64 = 0
+    arena_stage_chunk_mems: i64 = 0
+    arena_stage_chunk_frames: i64 = 0
+    arena_stage_chunk_count: i32 = 0
+    arena_stage_chunk_capacity: i32 = 0
+    # Pending copies: src buffer, src offset, dst buffer, dst offset, bytes.
+    arena_copy_records: i64 = 0
+    arena_copy_count: i32 = 0
+    arena_copy_capacity: i32 = 0
+    arena_copy_region: i64 = 0
+    arena_copy_barrier: i64 = 0
+    arena_device_pages: i32 = 0
     arena_page_capacity: i32 = 0
     arena_default_vbytes: i64 = 67108864
     arena_default_ibytes: i64 = 16777216
@@ -1931,6 +1965,7 @@ attach GpuRendererCore:
             return instance_write
         if rp.vk_render_pass_resume == 0 or rpi == 0 or vp_mat == 0 or mapped_instances == 0:
             return instance_write
+        self.profiler.end_static_stats(cmd)
         vkCmdEndRenderPass(cmd)
         occlusion: i32 = 0
         if self.gpu_hzb_ptr != 0:
@@ -2565,6 +2600,17 @@ attach GpuRendererCore:
 
     fun gpu_last_serial(self) -> i32:
         return self.profiler.last_serial
+
+    fun enable_pipeline_statistics(self) -> i32:
+        return self.profiler.init_pipeline_statistics()
+
+    # Static-batch pipeline statistics of a recent frame (-1 unsupported):
+    # 0 input primitives, 1 vertex invocations, 2 clipping invocations,
+    # 3 clipping primitives, 4 fragment invocations. 5 = readback serial.
+    fun gpu_static_stat(self, stat: i32) -> i64:
+        if stat == 5:
+            return self.profiler.stats_serial as i64
+        return self.profiler.last_pipeline_stat(stat)
 
     # 0 late meshes left visible by the last same-slot cull, 1 tested.
     fun late_occlusion_stat(self, stat: i32) -> i32:
@@ -3327,6 +3373,247 @@ attach GpuRendererCore:
         self.arena_page_capacity = new_cap
         return 1
 
+    # Write a mesh into its arena slice: directly into a mapped page, or
+    # staged for a copy at the start of the next frame (device-local page).
+    fun _arena_write_slice(self, slice: GpuArenaSlice, mesh: GpuMeshData, vbytes: i64, ibytes: i64) -> i32:
+        voff: i64 = (slice.first_vertex as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64)
+        ioff: i64 = (slice.first_index as i64) * 4
+        vmap: i64 = Memory.read_ptr(self.arena_page_vmaps + slice.page * 8)
+        imap: i64 = Memory.read_ptr(self.arena_page_imaps + slice.page * 8)
+        if vmap != 0 and imap != 0:
+            Memory.copy(vmap + voff, mesh.vertices, vbytes)
+            Memory.copy(imap + ioff, mesh.indices, ibytes)
+            return 1
+        vb: i64 = Memory.read_ptr(self.arena_page_vbs + slice.page * 8)
+        ib: i64 = Memory.read_ptr(self.arena_page_ibs + slice.page * 8)
+        if vb == 0 or ib == 0:
+            return 0
+        if self._arena_stage_copy(vb, voff, mesh.vertices, vbytes) == 0:
+            return 0
+        return self._arena_stage_copy(ib, ioff, mesh.indices, ibytes)
+
+    # Buffer in DEVICE_LOCAL memory that is not host visible when such a type
+    # exists (the large VRAM heap), else any DEVICE_LOCAL type.
+    fun _create_device_buffer(self, data_size: i64, usage: i32) -> GpuBufferUpload:
+        if data_size <= 0:
+            return GpuBufferUpload()
+        buf_ci: i64 = Memory.malloc_zeroed(56)
+        buf_ptr: i64 = Memory.malloc_zeroed(8)
+        if buf_ci == 0 or buf_ptr == 0:
+            Memory.free(buf_ci)
+            Memory.free(buf_ptr)
+            return GpuBufferUpload()
+        Memory.write_i32(buf_ci, 12)
+        Memory.write_i64(buf_ci + 24, data_size)
+        Memory.write_i32(buf_ci + 32, usage)
+        buf_r: i32 = vkCreateBuffer(self.device, buf_ci, 0, buf_ptr)
+        buf: i64 = Memory.read_ptr(buf_ptr)
+        Memory.free(buf_ptr)
+        Memory.free(buf_ci)
+        if buf_r != 0:
+            return GpuBufferUpload()
+        mem_req: i64 = Memory.malloc_zeroed(24)
+        mem_props: i64 = Memory.malloc_zeroed(520)
+        if mem_req == 0 or mem_props == 0:
+            Memory.free(mem_req)
+            Memory.free(mem_props)
+            vkDestroyBuffer(self.device, buf, 0)
+            return GpuBufferUpload()
+        vkGetBufferMemoryRequirements(self.device, buf, mem_req)
+        req_size: i64 = Memory.read_i64(mem_req)
+        req_bits: i32 = Memory.read_i32(mem_req + 16)
+        Memory.free(mem_req)
+        vkGetPhysicalDeviceMemoryProperties(self.phys_device, mem_props)
+        type_count: i32 = Memory.read_i32(mem_props)
+        mem_type_idx: i32 = -1
+        type_pass: i32 = 0
+        while type_pass < 2 and mem_type_idx < 0:
+            ti: i32 = 0
+            while ti < type_count and mem_type_idx < 0:
+                if ((req_bits >> ti) & 1) == 1:
+                    flags: i32 = Memory.read_i32(mem_props + 4 + ti * 8)
+                    if (flags & 1) == 1:
+                        if type_pass == 1 or (flags & 2) == 0:
+                            mem_type_idx = ti
+                ti = ti + 1
+            type_pass = type_pass + 1
+        Memory.free(mem_props)
+        if mem_type_idx < 0:
+            vkDestroyBuffer(self.device, buf, 0)
+            return GpuBufferUpload()
+        alloc_info: i64 = Memory.malloc_zeroed(32)
+        mem_ptr: i64 = Memory.malloc_zeroed(8)
+        if alloc_info == 0 or mem_ptr == 0:
+            Memory.free(alloc_info)
+            Memory.free(mem_ptr)
+            vkDestroyBuffer(self.device, buf, 0)
+            return GpuBufferUpload()
+        Memory.write_i32(alloc_info, 5)
+        Memory.write_i64(alloc_info + 16, req_size)
+        Memory.write_i32(alloc_info + 24, mem_type_idx)
+        alloc_r: i32 = vkAllocateMemory(self.device, alloc_info, 0, mem_ptr)
+        mem: i64 = Memory.read_ptr(mem_ptr)
+        Memory.free(mem_ptr)
+        Memory.free(alloc_info)
+        if alloc_r != 0:
+            vkDestroyBuffer(self.device, buf, 0)
+            return GpuBufferUpload()
+        vkBindBufferMemory(self.device, buf, mem, 0)
+        return GpuBufferUpload(handle=buf, memory=mem, capacity=data_size, mapped=0, ok=1)
+
+    fun _ensure_arena_staging(self) -> i32:
+        if self.arena_stage_buf != 0:
+            return 1
+        stage: GpuBufferUpload = self._create_mapped_buffer(KOBIC_ARENA_STAGE_REGION_BYTES * (KOBIC_ARENA_STAGE_REGIONS as i64), 1)
+        if stage.ok == 0:
+            return 0
+        self.arena_copy_region = Memory.malloc_zeroed(24)
+        self.arena_copy_barrier = Memory.malloc_zeroed(24)
+        if self.arena_copy_region == 0 or self.arena_copy_barrier == 0:
+            vkUnmapMemory(self.device, stage.memory)
+            vkDestroyBuffer(self.device, stage.handle, 0)
+            vkFreeMemory(self.device, stage.memory, 0)
+            return 0
+        self.arena_stage_buf = stage.handle
+        self.arena_stage_mem = stage.memory
+        self.arena_stage_map = stage.mapped
+        return 1
+
+    # Copy bytes into staging memory and queue a GPU copy to dst/dst_offset.
+    # Region = frame_serial mod KOBIC_ARENA_STAGE_REGIONS: the serial only
+    # advances after a frame recorded its copies, and a region comes round
+    # again only after that frame's fence was waited.
+    fun _arena_stage_copy(self, dst: i64, dst_offset: i64, src: i64, bytes: i64) -> i32:
+        if bytes <= 0:
+            return 1
+        region: i32 = self.frame_serial % KOBIC_ARENA_STAGE_REGIONS
+        if region != self.arena_stage_region:
+            self.arena_stage_region = region
+            self.arena_stage_used = 0
+            self.arena_stage_chunk_buf = 0
+            self.arena_stage_chunk_map = 0
+            self.arena_stage_chunk_cap = 0
+            self.arena_stage_chunk_used = 0
+        aligned: i64 = ((bytes + 15) / 16) * 16
+        src_buf: i64 = 0
+        src_off: i64 = 0
+        if self.arena_stage_used + aligned <= KOBIC_ARENA_STAGE_REGION_BYTES:
+            src_buf = self.arena_stage_buf
+            src_off = (region as i64) * KOBIC_ARENA_STAGE_REGION_BYTES + self.arena_stage_used
+            Memory.copy(self.arena_stage_map + src_off, src, bytes)
+            self.arena_stage_used = self.arena_stage_used + aligned
+        else:
+            if self.arena_stage_chunk_buf == 0 or self.arena_stage_chunk_used + aligned > self.arena_stage_chunk_cap:
+                cap: i64 = KOBIC_ARENA_STAGE_CHUNK_BYTES
+                if aligned > cap:
+                    cap = aligned
+                chunk: GpuBufferUpload = self._create_mapped_buffer(cap, 1)
+                if chunk.ok == 0:
+                    return 0
+                if self._arena_track_chunk(chunk.handle, chunk.memory) == 0:
+                    vkUnmapMemory(self.device, chunk.memory)
+                    vkDestroyBuffer(self.device, chunk.handle, 0)
+                    vkFreeMemory(self.device, chunk.memory, 0)
+                    return 0
+                self.arena_stage_chunk_buf = chunk.handle
+                self.arena_stage_chunk_map = chunk.mapped
+                self.arena_stage_chunk_cap = cap
+                self.arena_stage_chunk_used = 0
+            src_buf = self.arena_stage_chunk_buf
+            src_off = self.arena_stage_chunk_used
+            Memory.copy(self.arena_stage_chunk_map + src_off, src, bytes)
+            self.arena_stage_chunk_used = self.arena_stage_chunk_used + aligned
+        if self.arena_copy_count >= self.arena_copy_capacity:
+            new_cap: i32 = self.arena_copy_capacity * 2
+            if new_cap < 256:
+                new_cap = 256
+            records: i64 = Memory.malloc_zeroed((new_cap as i64) * 40)
+            if records == 0:
+                return 0
+            if self.arena_copy_records != 0:
+                Memory.copy(records, self.arena_copy_records, (self.arena_copy_count as i64) * 40)
+                Memory.free(self.arena_copy_records)
+            self.arena_copy_records = records
+            self.arena_copy_capacity = new_cap
+        rec: i64 = self.arena_copy_records + (self.arena_copy_count as i64) * 40
+        Memory.write_ptr(rec, src_buf)
+        Memory.write_i64(rec + 8, src_off)
+        Memory.write_ptr(rec + 16, dst)
+        Memory.write_i64(rec + 24, dst_offset)
+        Memory.write_i64(rec + 32, bytes)
+        self.arena_copy_count = self.arena_copy_count + 1
+        return 1
+
+    fun _arena_track_chunk(self, buffer: i64, memory: i64) -> i32:
+        if self.arena_stage_chunk_count >= self.arena_stage_chunk_capacity:
+            new_cap: i32 = self.arena_stage_chunk_capacity * 2
+            if new_cap < 16:
+                new_cap = 16
+            nb: i64 = Memory.malloc_zeroed((new_cap as i64) * 8)
+            nm: i64 = Memory.malloc_zeroed((new_cap as i64) * 8)
+            nf: i64 = Memory.malloc_zeroed((new_cap as i64) * 4)
+            if nb == 0 or nm == 0 or nf == 0:
+                Memory.free(nb)
+                Memory.free(nm)
+                Memory.free(nf)
+                return 0
+            if self.arena_stage_chunks != 0:
+                Memory.copy(nb, self.arena_stage_chunks, (self.arena_stage_chunk_count as i64) * 8)
+                Memory.copy(nm, self.arena_stage_chunk_mems, (self.arena_stage_chunk_count as i64) * 8)
+                Memory.copy(nf, self.arena_stage_chunk_frames, (self.arena_stage_chunk_count as i64) * 4)
+                Memory.free(self.arena_stage_chunks)
+                Memory.free(self.arena_stage_chunk_mems)
+                Memory.free(self.arena_stage_chunk_frames)
+            self.arena_stage_chunks = nb
+            self.arena_stage_chunk_mems = nm
+            self.arena_stage_chunk_frames = nf
+            self.arena_stage_chunk_capacity = new_cap
+        i: i32 = self.arena_stage_chunk_count
+        Memory.write_ptr(self.arena_stage_chunks + (i as i64) * 8, buffer)
+        Memory.write_ptr(self.arena_stage_chunk_mems + (i as i64) * 8, memory)
+        Memory.write_i32(self.arena_stage_chunk_frames + (i as i64) * 4, self.frame_serial)
+        self.arena_stage_chunk_count = i + 1
+        return 1
+
+    # Record every queued arena copy, then make them visible to vertex/index
+    # fetch. Called first in each frame's command buffer, before any draw.
+    fun _record_arena_uploads(self, cmd: i64):
+        if self.arena_copy_count > 0:
+            region: i64 = self.arena_copy_region
+            i: i32 = 0
+            while i < self.arena_copy_count:
+                rec: i64 = self.arena_copy_records + (i as i64) * 40
+                Memory.write_i64(region, Memory.read_i64(rec + 8))
+                Memory.write_i64(region + 8, Memory.read_i64(rec + 24))
+                Memory.write_i64(region + 16, Memory.read_i64(rec + 32))
+                vkCmdCopyBuffer(cmd, Memory.read_ptr(rec), Memory.read_ptr(rec + 16), 1, region)
+                i = i + 1
+            barrier: i64 = self.arena_copy_barrier
+            Memory.set(barrier, 0, 24)
+            Memory.write_i32(barrier, 46)
+            Memory.write_i32(barrier + 16, 4096)      # TRANSFER_WRITE
+            Memory.write_i32(barrier + 20, 2 + 4)     # INDEX_READ | VERTEX_ATTRIBUTE_READ
+            vkCmdPipelineBarrier(cmd, 4096, 4, 0, 1, barrier, 0, 0, 0, 0)
+            self.arena_copy_count = 0
+        # Overflow chunks whose copying frame has completed.
+        write_idx: i32 = 0
+        ci: i32 = 0
+        while ci < self.arena_stage_chunk_count:
+            cbuf: i64 = Memory.read_ptr(self.arena_stage_chunks + (ci as i64) * 8)
+            cmem: i64 = Memory.read_ptr(self.arena_stage_chunk_mems + (ci as i64) * 8)
+            cframe: i32 = Memory.read_i32(self.arena_stage_chunk_frames + (ci as i64) * 4)
+            if self.frame_serial - cframe >= KOBIC_ARENA_STAGE_REGIONS:
+                vkUnmapMemory(self.device, cmem)
+                vkDestroyBuffer(self.device, cbuf, 0)
+                vkFreeMemory(self.device, cmem, 0)
+            else:
+                Memory.write_ptr(self.arena_stage_chunks + (write_idx as i64) * 8, cbuf)
+                Memory.write_ptr(self.arena_stage_chunk_mems + (write_idx as i64) * 8, cmem)
+                Memory.write_i32(self.arena_stage_chunk_frames + (write_idx as i64) * 4, cframe)
+                write_idx = write_idx + 1
+            ci = ci + 1
+        self.arena_stage_chunk_count = write_idx
+
     fun _arena_add_page(self, min_vbytes: i64, min_ibytes: i64) -> i32:
         if self._ensure_arena_page_capacity() == 0:
             return -1
@@ -3336,15 +3623,32 @@ attach GpuRendererCore:
             vbytes = min_vbytes
         if ibytes < min_ibytes:
             ibytes = min_ibytes
-        vb: GpuBufferUpload = self._create_mapped_buffer(vbytes, 128)
+        # Device-local pages: every draw reads them, and a host-visible page
+        # lives in system memory on discrete GPUs (each vertex fetch crossed
+        # PCIe; static terrain cost ~5 ns per triangle whatever the shaders
+        # did). Fall back to a mapped page if VRAM or staging is unavailable.
+        vb: GpuBufferUpload = GpuBufferUpload()
+        ib: GpuBufferUpload = GpuBufferUpload()
+        if self._ensure_arena_staging() == 1:
+            vb = self._create_device_buffer(vbytes, 128 + 2)
+            if vb.ok == 1:
+                ib = self._create_device_buffer(ibytes, 64 + 2)
+                if ib.ok == 0:
+                    vkDestroyBuffer(self.device, vb.handle, 0)
+                    vkFreeMemory(self.device, vb.memory, 0)
+                    vb = GpuBufferUpload()
         if vb.ok == 0:
-            return -1
-        ib: GpuBufferUpload = self._create_mapped_buffer(ibytes, 64)
-        if ib.ok == 0:
-            vkUnmapMemory(self.device, vb.memory)
-            vkDestroyBuffer(self.device, vb.handle, 0)
-            vkFreeMemory(self.device, vb.memory, 0)
-            return -1
+            vb = self._create_mapped_buffer(vbytes, 128)
+            if vb.ok == 0:
+                return -1
+            ib = self._create_mapped_buffer(ibytes, 64)
+            if ib.ok == 0:
+                vkUnmapMemory(self.device, vb.memory)
+                vkDestroyBuffer(self.device, vb.handle, 0)
+                vkFreeMemory(self.device, vb.memory, 0)
+                return -1
+        else:
+            self.arena_device_pages = self.arena_device_pages + 1
         page: i32 = self.arena_page_count
         Memory.write_ptr(self.arena_page_vbs + page * 8, vb.handle)
         Memory.write_ptr(self.arena_page_vmems + page * 8, vb.memory)
@@ -3355,7 +3659,10 @@ attach GpuRendererCore:
         Memory.write_ptr(self.arena_page_imaps + page * 8, ib.mapped)
         Memory.write_i64(self.arena_page_icaps + page * 8, ibytes)
         self.arena_page_count = page + 1
-        print(@"[kobic.mesh_arena] page={page} vertex_bytes={vbytes} index_bytes={ibytes}")
+        device_local: i32 = 0
+        if vb.mapped == 0:
+            device_local = 1
+        print(@"[kobic.mesh_arena] page={page} vertex_bytes={vbytes} index_bytes={ibytes} device_local={device_local}")
         return page
 
     fun reserve_dynamic_mesh_arena(self, vertex_bytes: i64, index_bytes: i64) -> i32:
@@ -4333,13 +4640,9 @@ attach GpuRendererCore:
         slice: GpuArenaSlice = self._arena_alloc_slice(vbytes, ibytes, -1)
         if slice.ok == 0:
             return -1
-        vmap: i64 = Memory.read_ptr(self.arena_page_vmaps + slice.page * 8)
-        imap: i64 = Memory.read_ptr(self.arena_page_imaps + slice.page * 8)
-        if vmap == 0 or imap == 0:
+        if self._arena_write_slice(slice, mesh, vbytes, ibytes) == 0:
             self._arena_retire_slice(slice.page, slice.first_vertex, slice.first_index, slice.vertex_capacity, slice.index_capacity)
             return -1
-        Memory.copy(vmap + (slice.first_vertex as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64), mesh.vertices, vbytes)
-        Memory.copy(imap + (slice.first_index as i64) * 4, mesh.indices, ibytes)
         idx: i32 = self.vb_count
         Memory.write_ptr(self.vb_handles + idx * 8, Memory.read_ptr(self.arena_page_vbs + slice.page * 8))
         Memory.write_ptr(self.vb_memories + idx * 8, 0)
@@ -4377,13 +4680,9 @@ attach GpuRendererCore:
         slice: GpuArenaSlice = self._arena_alloc_slice(vbytes, ibytes, old_page)
         if slice.ok == 0:
             return -1
-        vmap: i64 = Memory.read_ptr(self.arena_page_vmaps + slice.page * 8)
-        imap: i64 = Memory.read_ptr(self.arena_page_imaps + slice.page * 8)
-        if vmap == 0 or imap == 0:
+        if self._arena_write_slice(slice, mesh, vbytes, ibytes) == 0:
             self._arena_retire_slice(slice.page, slice.first_vertex, slice.first_index, slice.vertex_capacity, slice.index_capacity)
             return -1
-        Memory.copy(vmap + (slice.first_vertex as i64) * (KOBIC_GPU_VERTEX_STRIDE as i64), mesh.vertices, vbytes)
-        Memory.copy(imap + (slice.first_index as i64) * 4, mesh.indices, ibytes)
 
         old_first_vertex: i32 = Memory.read_i32(self.vb_first_vertices + mesh_id * 4)
         old_first_index: i32 = Memory.read_i32(self.ib_first_indices + mesh_id * 4)
@@ -6494,6 +6793,7 @@ attach GpuRendererCore:
         br: i32 = vkBeginCommandBuffer(cmd, begin_info)
         if br != 0:
             return
+        self._record_arena_uploads(cmd)
         self.profiler.begin_frame(cmd)
 
         cpu_prof_frame_start: i64 = 0
@@ -6576,6 +6876,7 @@ attach GpuRendererCore:
         vkCmdBeginRenderPass(cmd, rpi, 0)
         self._record_sky(cmd, width, height, env.sky, cam_view, cam_proj)
         self.profiler.mark(cmd, 4)
+        self.profiler.begin_static_stats(cmd)
 
         if rp.vk_pipeline != 0:
             # Phase 1 bindless: when enabled, draw with the bindless pipeline
@@ -6850,6 +7151,7 @@ attach GpuRendererCore:
                         transparent_supported = 1
                 # GPU-timer: static batches are done; [5]..[6] is the
                 # per-mesh path (GPU-driven groups or the CPU registry loop).
+                self.profiler.end_static_stats(cmd)
                 self.profiler.mark(cmd, 5)
                 draw_pass: i32 = 0
                 late_stage_done: i32 = 0
@@ -7069,6 +7371,7 @@ attach GpuRendererCore:
                     _kobic_multiply_4x4_into(cam_proj, cam_view, debug_vp)
             self._record_collision_debug(cmd, rp, debug_vp, width, height)
 
+        self.profiler.end_static_stats(cmd)
         self.profiler.mark(cmd, 7)
         vkCmdEndRenderPass(cmd)
         depth_is_sampled: i32 = 0
@@ -7196,6 +7499,19 @@ attach GpuRendererCore:
         self.pooled_capacity = 0
         self.pooled_bytes = 0
         self.pooled_byte_limit = 0
+        if self.arena_stage_buf != 0:
+            vkUnmapMemory(self.device, self.arena_stage_mem)
+            vkDestroyBuffer(self.device, self.arena_stage_buf, 0)
+            vkFreeMemory(self.device, self.arena_stage_mem, 0)
+            self.arena_stage_buf = 0
+        sci: i32 = 0
+        while sci < self.arena_stage_chunk_count:
+            scm: i64 = Memory.read_ptr(self.arena_stage_chunk_mems + (sci as i64) * 8)
+            vkUnmapMemory(self.device, scm)
+            vkDestroyBuffer(self.device, Memory.read_ptr(self.arena_stage_chunks + (sci as i64) * 8), 0)
+            vkFreeMemory(self.device, scm, 0)
+            sci = sci + 1
+        self.arena_stage_chunk_count = 0
         # Arena pages own their shared memory; registry entries deliberately
         # store memory=0 so they are never double-freed below.
         api: i32 = 0
@@ -7204,9 +7520,9 @@ attach GpuRendererCore:
             aim: i64 = Memory.read_ptr(self.arena_page_imems + api * 8)
             avb: i64 = Memory.read_ptr(self.arena_page_vbs + api * 8)
             aib: i64 = Memory.read_ptr(self.arena_page_ibs + api * 8)
-            if avm != 0:
+            if avm != 0 and Memory.read_ptr(self.arena_page_vmaps + api * 8) != 0:
                 vkUnmapMemory(self.device, avm)
-            if aim != 0:
+            if aim != 0 and Memory.read_ptr(self.arena_page_imaps + api * 8) != 0:
                 vkUnmapMemory(self.device, aim)
             if avb != 0:
                 vkDestroyBuffer(self.device, avb, 0)

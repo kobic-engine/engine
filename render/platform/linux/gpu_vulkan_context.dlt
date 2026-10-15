@@ -15,6 +15,7 @@ struct GpuCaps:
     dynamic_rendering:    i32 = 0
     max_descriptor_array: i32 = 0
     timestamp_valid_bits: i32 = 0
+    pipeline_statistics:  i32 = 0
 
 struct VulkanContext:
     vk_instance:        i64 = 0

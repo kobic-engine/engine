@@ -577,6 +577,9 @@ attach Renderer:
     fun gpu_last_serial(self) -> i32:
         return self.core.gpu_last_serial()
 
+    fun gpu_static_stat(self, stat: i32) -> i64:
+        return self.core.gpu_static_stat(stat)
+
     fun late_occlusion_stat(self, stat: i32) -> i32:
         return self.core.late_occlusion_stat(stat)
 
