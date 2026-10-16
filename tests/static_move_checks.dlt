@@ -1,0 +1,54 @@
+# CPU-only checks for transform dirtying. Moving a non-static instance must
+# refresh only the dynamic candidates: the static pages keep their copied
+# models, so their transform serial must not change (one moving cloud deck or
+# mob part used to re-copy every static mesh matrix, each frame). Moving a
+# static member, a group containing one, or any mesh before the static flag
+# array exists still bumps it.
+import std
+import kobic
+
+fun static_move_check(ok: bool, message: str):
+    if ok == false:
+        print("FAIL static move: " + message)
+        Command.exit(1)
+
+fun run_static_move_checks():
+    ren: GpuRendererCore = GpuRendererCore()
+    ren.vb_count = 4
+    ren.model_matrices = Memory.malloc_zeroed(4 * 8)
+    i: i32 = 0
+    while i < 4:
+        Memory.write_ptr(ren.model_matrices + i * 8, Memory.malloc_zeroed(64))
+        i = i + 1
+    matrix: i64 = Memory.malloc_zeroed(64)
+    ids: i64 = Memory.malloc_zeroed(8)
+
+    serial: i32 = ren.gpu_static_xform_serial
+    gpu_set_model_matrix_raw(ren, 1, matrix)
+    static_move_check(ren.gpu_static_xform_serial == serial + 1, "without static flags every move counts as static")
+
+    ren.mesh_static_batches = Memory.malloc_zeroed(4 * 4)
+    Memory.write_i32(ren.mesh_static_batches + 2 * 4, 1)
+
+    serial = ren.gpu_static_xform_serial
+    gpu_set_model_matrix_raw(ren, 1, matrix)
+    gpu_set_transform(ren, 3, 1.0, 2.0, 3.0, 0.0, 30.0, 0.0, 1.0, 1.0, 1.0)
+    ren.set_model_matrix(0, Memory.malloc_zeroed(64))
+    Memory.write_i32(ids, 0)
+    Memory.write_i32(ids + 4, 1)
+    static_move_check(gpu_set_model_matrix_group(ren, ids, 2, matrix) == 2, "group of dynamic meshes updates both")
+    static_move_check(ren.gpu_static_xform_serial == serial, "dynamic moves leave the static pages' models alone")
+
+    gpu_set_model_matrix_raw(ren, 2, matrix)
+    static_move_check(ren.gpu_static_xform_serial == serial + 1, "moving a static member refreshes the static pages")
+    gpu_set_transform(ren, 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+    static_move_check(ren.gpu_static_xform_serial == serial + 2, "set_transform on a static member refreshes them")
+    ren.set_model_matrix(2, Memory.malloc_zeroed(64))
+    static_move_check(ren.gpu_static_xform_serial == serial + 3, "replacing a static member's matrix refreshes them")
+    Memory.write_i32(ids, 1)
+    Memory.write_i32(ids + 4, 2)
+    static_move_check(gpu_set_model_matrix_group(ren, ids, 2, matrix) == 2, "mixed group updates both")
+    static_move_check(ren.gpu_static_xform_serial == serial + 4, "a group with a static member refreshes them")
+    print("PASS: only static-member moves re-copy the static pages' models")
+
+run_static_move_checks()

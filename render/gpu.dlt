@@ -23,7 +23,7 @@ fun gpu_set_transform(ren: GpuRendererCore, mesh_id: i32, x: f32, y: f32, z: f32
         # In-place matrix update: the GPU cull candidate buffer caches this
         # matrix, so mark it stale or the GPU-drawn mesh stays at the old
         # transform while CPU-side collision/shadow move.
-        ren._mark_cull_dirty()
+        ren._mark_mesh_moved(mesh_id)
 
 # Set a mesh's model matrix directly from a 64-byte (16 x f32) column-major
 # matrix at `src`. Used for view-locked objects (e.g. an FPS viewmodel) where
@@ -46,7 +46,7 @@ fun gpu_set_model_matrix_raw(ren: GpuRendererCore, mesh_id: i32, src: i64):
     if Memory.read_ptr(ren.model_matrices + mesh_id * 8) == 0:
         ren.set_model_matrix(mesh_id, mat_ptr)
     else:
-        ren._mark_cull_dirty()
+        ren._mark_mesh_moved(mesh_id)
 
 # Update a rigid render group with one backend traversal and one cull dirty
 # notification. Matrices remain independently owned by the renderer: NEVER
@@ -56,6 +56,7 @@ fun gpu_set_model_matrix_group(ren: GpuRendererCore, mesh_ids: i64, count: i32, 
         return 0
     updated: i32 = 0
     structural: i32 = 0
+    static_moved: i32 = 0
     index: i32 = 0
     while index < count:
         mesh_id: i32 = Memory.read_i32(mesh_ids + (index as i64) * 4)
@@ -70,11 +71,15 @@ fun gpu_set_model_matrix_group(ren: GpuRendererCore, mesh_ids: i64, count: i32, 
             if matrix != 0:
                 Memory.copy(matrix, src, 64)
                 updated = updated + 1
+                if static_moved == 0 and ren._mesh_in_static_batch(mesh_id) != 0:
+                    static_moved = 1
         index = index + 1
     if structural != 0:
         ren._mark_cull_dirty_struct()
-    elif updated > 0:
+    elif static_moved != 0:
         ren._mark_cull_dirty()
+    elif updated > 0:
+        ren._mark_dynamic_moved()
     return updated
 
 fun gpu_camera_view_roll_into(cam_x: f32, cam_y: f32, cam_z: f32, pitch: f32, yaw: f32, roll: f32, m: i64):

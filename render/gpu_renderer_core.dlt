@@ -1661,6 +1661,27 @@ attach GpuRendererCore:
             cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
             cull.mark_xform_dirty()
 
+    # 1 when the mesh is (or, without the flag array, may be) a static-batch
+    # member, whose model the static pages copy into their cull input.
+    fun _mesh_in_static_batch(self, mesh_id: i32) -> i32:
+        if self.mesh_static_batches == 0 or mesh_id < 0 or mesh_id >= self.vb_count:
+            return 1
+        return Memory.read_i32(self.mesh_static_batches + mesh_id * 4)
+
+    # A non-static instance moved: refresh the dynamic candidates only. The
+    # static pages keep their copied models, so one moving prop, mob part or
+    # cloud deck no longer re-copies every static mesh's matrix each frame.
+    fun _mark_dynamic_moved(self):
+        if self.gpu_cull_ptr != 0:
+            cull: GpuCullPipeline = self.gpu_cull_ptr as GpuCullPipeline
+            cull.mark_xform_dirty()
+
+    fun _mark_mesh_moved(self, mesh_id: i32):
+        if self._mesh_in_static_batch(mesh_id) != 0:
+            self._mark_cull_dirty()
+        else:
+            self._mark_dynamic_moved()
+
     fun _ensure_gpu_static_cand_capacity(self, capacity: i32) -> i32:
         if self.gpu_static_slot_counts == 0:
             self.gpu_static_slot_counts = Memory.malloc_zeroed((KOBIC_CULL_SLOTS as i64) * 4)
@@ -5033,7 +5054,7 @@ attach GpuRendererCore:
         if old_ptr == 0:
             self._mark_mesh_dirty(vb_idx)
         else:
-            self._mark_cull_dirty()
+            self._mark_mesh_moved(vb_idx)
 
     # Register an uploaded GpuTexture, creating its descriptor set via the render
     # pass. Returns the texture id (index into the registry) or -1 on failure.

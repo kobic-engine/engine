@@ -63,3 +63,18 @@ saying 64-bit. `VK_QUERY_RESULT_64_BIT` is 1. With 32-bit results the
 nanosecond timestamps wrapped every ~4.3 s, which produced the occasional
 negative GPU segment; the validation layer also reported
 `VUID-vkGetQueryPoolResults-queryType-09439`.
+
+## Moving instances and the static pages
+
+Each static page copies its members' model matrices into the cull input
+(`_gpu_static_refresh_models`), keyed by `gpu_static_xform_serial`. Every
+`set_transform`, `set_model_matrix_raw`, `set_model_matrix` and
+`set_model_matrix_group` bumped that serial, so any moving object (a mob
+part, a held item, a drifting cloud deck) made every frame slot re-copy the
+matrices of all static members (about 8k terrain meshes in Bitora), even
+though none of them moved. Now only a move of a static-batch member (or of
+any mesh before the static flag array exists) bumps the serial; other moves
+only mark the dynamic candidates for their transform refresh. Joining or
+leaving a batch still rebuilds the pages, which copies every model.
+`tests/static_move_checks.dlt` checks the serial for each setter, without a
+GPU.
