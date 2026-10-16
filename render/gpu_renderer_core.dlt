@@ -694,6 +694,9 @@ struct GpuRendererCore:
     # Device has vkCmdDrawIndexedIndirectCount (VK_KHR_draw_indirect_count).
     draw_indirect_count_supported: i32 = 0
     gpu_late_last_total: i32 = 0
+    # Per-mesh fog distance scale (set_mesh_fog_distance_scale); 0 means 1.
+    mesh_fog_scales: i64 = 0
+    mesh_fog_scale_capacity: i32 = 0
     # Frame capture (Engine.debug.capture_frame): the next presented image is
     # copied into a host buffer and written as a BMP once its submit is done.
     capture_path: str = ""
@@ -2162,7 +2165,11 @@ attach GpuRendererCore:
         Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 12, mr)
         Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 16, occ)
         Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 20, kobic_skin_offset(gi))
-        Memory.write_i32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 24, 0)
+        # texIndex1.z carries the fog distance scale as float bits (0 = 1).
+        fog_scale: f32 = 0.0
+        if self.mesh_fog_scales != 0 and gi >= 0 and gi < self.mesh_fog_scale_capacity:
+            fog_scale = Memory.read_f32(self.mesh_fog_scales + gi * 4)
+        Memory.write_f32(rec + KOBIC_GPU_INSTANCE_TEXIDX_OFFSET + 24, fog_scale)
         alpha: f32 = 1.0
         if self.mesh_material_params != 0:
             material_off: i64 = (gi as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
@@ -4931,6 +4938,32 @@ attach GpuRendererCore:
                             self.transparent_visible_count = 0
         Memory.write_i32(self.vb_visible + mesh_id * 4, v)
         self._mark_mesh_dirty(mesh_id)
+
+    # Divide this mesh's fog distance by `scale` (bindless pipeline): a cloud
+    # layer kilometres away can fade over kilometres while the ground haze
+    # keeps its short distances. 1 (or 0) restores the default.
+    fun set_mesh_fog_distance_scale(self, mesh_id: i32, scale: f32) -> i32:
+        if mesh_id < 0 or mesh_id >= self.vb_count:
+            return 0
+        if mesh_id >= self.mesh_fog_scale_capacity:
+            next_capacity: i32 = 1024
+            while next_capacity <= mesh_id:
+                next_capacity = next_capacity * 2
+            next_scales: i64 = Memory.malloc_zeroed((next_capacity as i64) * 4)
+            if next_scales == 0:
+                return 0
+            if self.mesh_fog_scales != 0:
+                Memory.copy(next_scales, self.mesh_fog_scales, (self.mesh_fog_scale_capacity as i64) * 4)
+                Memory.free(self.mesh_fog_scales)
+            self.mesh_fog_scales = next_scales
+            self.mesh_fog_scale_capacity = next_capacity
+        value: f32 = scale
+        if value <= 0.0:
+            value = 0.0
+        if Memory.read_f32(self.mesh_fog_scales + mesh_id * 4) != value:
+            Memory.write_f32(self.mesh_fog_scales + mesh_id * 4, value)
+            self._mark_mesh_dirty(mesh_id)
+        return 1
 
     # Mark a dynamic-arena mesh whose vertices are already in world space.
     # Eligible meshes on the same arena page must share opaque material state;
@@ -7944,6 +7977,10 @@ attach GpuRendererCore:
             Memory.free(self.mesh_shadow_distances)
         if self.mesh_transparent != 0:
             Memory.free(self.mesh_transparent)
+        if self.mesh_fog_scales != 0:
+            Memory.free(self.mesh_fog_scales)
+            self.mesh_fog_scales = 0
+            self.mesh_fog_scale_capacity = 0
         self.tex_count = 0
         self.vb_count = 0
         self.instance_capacity = 0

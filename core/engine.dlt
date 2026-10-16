@@ -636,6 +636,11 @@ attach Engine:
     static fun set_mesh_late_occlusion(mesh_id: i32, on: i32) -> i32:
         return g_engine_runtime.set_mesh_late_occlusion(mesh_id, on)
 
+    # Fog for this mesh uses distance / scale (bindless pipeline). Lets a
+    # distant layer such as clouds fade over a longer range than the ground.
+    static fun set_mesh_fog_distance_scale(mesh_id: i32, scale: f32) -> i32:
+        return g_engine_runtime.set_mesh_fog_distance_scale(mesh_id, scale)
+
     static fun replace_mesh_data(mesh_id: i32, mesh: GpuMeshData) -> i32:
         return g_engine_runtime.replace_mesh_data(mesh_id, mesh)
 

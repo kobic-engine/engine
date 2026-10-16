@@ -792,6 +792,11 @@ void main() {
     float fogDensity = max(pushConstants.fogParams.w, 0.0);
 
     float fogDistance = fogDistanceForFragment();
+    // Per-mesh fog distance scale, texIndex1.z as float bits (0 = default).
+    float fogDistanceScale = uintBitsToFloat(fragmentTexIndex1.z);
+    if (fogDistanceScale > 0.0) {
+        fogDistance = fogDistance / fogDistanceScale;
+    }
 
     if (fogMode == 5) {
         fogFactor = smoothstep(fogStart, max(fogEnd, fogStart + 0.0001), fogDistance)

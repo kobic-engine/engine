@@ -477,6 +477,9 @@ attach Renderer:
     fun set_mesh_late_occlusion(self, mesh_id: i32, on: i32) -> i32:
         return self.core.set_mesh_late_occlusion(mesh_id, on)
 
+    fun set_mesh_fog_distance_scale(self, mesh_id: i32, scale: f32) -> i32:
+        return self.core.set_mesh_fog_distance_scale(mesh_id, scale)
+
     fun replace_mesh_data(self, mesh_id: i32, mesh: GpuMeshData) -> i32:
         return self.core.replace_mesh_data(mesh_id, mesh)
 

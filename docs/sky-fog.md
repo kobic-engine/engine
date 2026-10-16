@@ -23,6 +23,17 @@ lighting is disabled. The base sky draw reuses its existing128-byte push
 constants; celestial-object and cloud modes retain their separate packing.
 No new texture, fullscreen fog pass or per-draw allocation is introduced.
 
+## Per-mesh fog distance
+
+`Engine.set_mesh_fog_distance_scale(mesh_id, scale)` divides the fog distance
+of one mesh by `scale` (bindless pipeline). A cloud deck kilometres away can
+then fade over kilometres while the ground keeps its short haze: Bitora's
+cloud deck uses 25 with a 640 m sky fog, so it reaches the sky colour near
+16 km instead of 640 m. 1, 0 or a negative value restores the default. The
+scale rides in the instance record's texIndex1.z (float bits, 0 = default),
+which was always written as 0, so no record grows and other meshes are
+unchanged. Changing it marks only that mesh dirty.
+
 ## Regeneration and checks
 
 ```powershell
