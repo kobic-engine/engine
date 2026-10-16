@@ -1167,7 +1167,7 @@ attach RenderPass:
         Memory.write_i32(ds + 16, 0)
         Memory.write_i32(ds + 20, 1)
         Memory.write_i32(ds + 24, 1)
-        Memory.write_i32(ds + 28, 1)
+        Memory.write_i32(ds + 28, KOBIC_MAIN_DEPTH_COMPARE)
         Memory.write_i32(ds + 32, 0)
         Memory.write_i32(ds + 36, 0)
 
@@ -1498,7 +1498,7 @@ attach RenderPass:
         Memory.write_i32(ds, 25)
         Memory.write_i32(ds + 20, 1)
         Memory.write_i32(ds + 24, 1)
-        Memory.write_i32(ds + 28, 1)
+        Memory.write_i32(ds + 28, KOBIC_MAIN_DEPTH_COMPARE)
 
         pipe_ci: i64 = Memory.malloc_zeroed(144)
         if pipe_ci == 0:
@@ -1562,7 +1562,7 @@ attach RenderPass:
             Memory.write_i32(t_ds, 25)
             Memory.write_i32(t_ds + 20, 1)      # depthTestEnable
             Memory.write_i32(t_ds + 24, 0)      # depthWriteEnable = OFF
-            Memory.write_i32(t_ds + 28, 1)      # compareOp = LESS_OR_EQUAL
+            Memory.write_i32(t_ds + 28, KOBIC_MAIN_DEPTH_COMPARE)      # compareOp = GREATER (reverse-Z)
 
             Memory.write_i32(t_pipe_ci, 28)
             Memory.write_i32(t_pipe_ci + 20, 2)
@@ -1841,7 +1841,7 @@ attach RenderPass:
         Memory.write_i32(ds, 25)
         Memory.write_i32(ds + 20, 1)
         Memory.write_i32(ds + 24, 1)
-        Memory.write_i32(ds + 28, 1)
+        Memory.write_i32(ds + 28, KOBIC_MAIN_DEPTH_COMPARE)
 
         pipe_ci: i64 = Memory.malloc_zeroed(144)
         if pipe_ci == 0:

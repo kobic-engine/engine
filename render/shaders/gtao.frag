@@ -24,7 +24,8 @@ void main() {
     ivec2 outputSize = textureSize(depthTexture, 0) / 2;
     vec2 uv = (gl_FragCoord.xy * 2.0) / vec2(textureSize(depthTexture, 0));
     float centerDepth = texture(depthTexture, uv).r;
-    if (centerDepth >= 0.99999) {
+    // Reverse-Z: the cleared sky keeps depth 0.
+    if (centerDepth <= 0.00001) {
         outAo = 1.0;
         return;
     }
@@ -33,7 +34,7 @@ void main() {
     vec3 normal = normalize(texture(geometryTexture, uv).xyz * 2.0 - 1.0);
     vec2 texel = 1.0 / vec2(textureSize(depthTexture, 0));
     float rotation = interleavedGradientNoise(gl_FragCoord.xy) * 6.28318530718;
-    float radiusPixels = clamp(7.0 + centerDepth * 13.0, 7.0, 20.0);
+    float radiusPixels = clamp(7.0 + (1.0 - centerDepth) * 13.0, 7.0, 20.0);
 
     // Four horizon slices, sampled in both directions. Each slice keeps the
     // maximum visible horizon instead of averaging arbitrary depth taps; this
@@ -55,7 +56,7 @@ void main() {
                     continue;
                 }
                 float sampleDepth = texture(depthTexture, sampleUv).r;
-                if (sampleDepth >= 0.99999) {
+                if (sampleDepth <= 0.00001) {
                     continue;
                 }
                 vec3 delta = reconstructWorld(sampleUv, sampleDepth) - center;

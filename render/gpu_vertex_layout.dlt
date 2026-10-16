@@ -8,6 +8,12 @@ imm KOBIC_GPU_VERTEX_NORMAL_OFFSET: i32 = 12
 imm KOBIC_GPU_VERTEX_COLOR_OFFSET: i32 = 24
 imm KOBIC_GPU_VERTEX_UV_OFFSET: i32 = 36
 
+# The main camera uses reverse-Z (gpu_camera_proj_into_range): its depth is
+# cleared to 0 and nearer fragments have GREATER depth (VK_COMPARE_OP 4).
+# Shadow maps keep standard depth in their own pass (clear 1, LESS).
+imm KOBIC_MAIN_DEPTH_COMPARE: i32 = 4
+imm KOBIC_MAIN_DEPTH_CLEAR: f32 = 0.0
+
 imm KOBIC_GPU_INSTANCE_STRIDE: i32 = 128
 imm KOBIC_GPU_INSTANCE_MATERIAL_OFFSET: i32 = 64
 imm KOBIC_GPU_INSTANCE_UV_OFFSET: i32 = 80

@@ -84,7 +84,8 @@ bool sphereOccluded(vec4 sphere) {
     float radius = max(sphere.w, 0.001);
     vec2 ndcMin = vec2(1e20);
     vec2 ndcMax = vec2(-1e20);
-    float nearestDepth = 1.0;
+    // Reverse-Z: nearer means larger depth.
+    float nearestDepth = 0.0;
 
     // These eight corners enclose the sphere, so both the screen rectangle
     // and closest depth are conservative even for a rotated camera.
@@ -100,10 +101,10 @@ bool sphereOccluded(vec4 sphere) {
         vec3 ndc = clip.xyz / clip.w;
         ndcMin = min(ndcMin, ndc.xy);
         ndcMax = max(ndcMax, ndc.xy);
-        nearestDepth = min(nearestDepth, ndc.z);
+        nearestDepth = max(nearestDepth, ndc.z);
     }
 
-    if (nearestDepth <= 0.0) {
+    if (nearestDepth >= 1.0) {
         return false;
     }
     if (ndcMax.x < -1.0 || ndcMin.x > 1.0 || ndcMax.y < -1.0 || ndcMin.y > 1.0) {
@@ -124,13 +125,13 @@ bool sphereOccluded(vec4 sphere) {
         return false;
     }
 
-    float farthestOccluder = 0.0;
+    float farthestOccluder = 1.0;
     for (int y = pixelMin.y; y <= pixelMax.y; ++y) {
         for (int x = pixelMin.x; x <= pixelMax.x; ++x) {
-            farthestOccluder = max(farthestOccluder, texelFetch(hzbDepth, ivec2(x, y), 0).r);
+            farthestOccluder = min(farthestOccluder, texelFetch(hzbDepth, ivec2(x, y), 0).r);
         }
     }
-    return nearestDepth > farthestOccluder + hzb.params.w;
+    return nearestDepth < farthestOccluder - hzb.params.w;
 }
 
 void main() {

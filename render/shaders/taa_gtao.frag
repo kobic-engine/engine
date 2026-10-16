@@ -60,7 +60,8 @@ void main() {
     vec3 normal = normalize(texture(geometryTexture, uv).xyz * 2.0 - 1.0);
 
     float ao = 1.0;
-    if (depth < 0.99999) {
+    // Reverse-Z: the cleared sky keeps depth 0.
+    if (depth > 0.00001) {
         ao = bilateralAo(uv, depth, normal);
     }
     // Post AO cannot distinguish direct from indirect light in the compact
@@ -71,7 +72,7 @@ void main() {
 
     vec2 previousUv = uv;
     float predictedPreviousDepth = depth;
-    if (depth < 0.99999) {
+    if (depth > 0.00001) {
         vec3 world = reconstructWorld(uv, depth);
         vec4 previousClip = temporal.previousViewProjection * vec4(world, 1.0);
         if (abs(previousClip.w) > 1e-6) {
@@ -112,7 +113,7 @@ void main() {
     // The procedural sky is already analytic and does not receive projection
     // jitter. Keeping temporal history there only creates trails around the
     // sun/moon during fast camera rotations.
-    if (depth >= 0.99999) {
+    if (depth <= 0.00001) {
         historyWeight = 0.0;
     }
 

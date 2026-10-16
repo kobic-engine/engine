@@ -216,8 +216,9 @@ fun _kobic_instance_visible(vp: i64, model: i64, bound_x: f32, bound_y: f32, bou
         return 0
     if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 4), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 20), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 36), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 52), x, y, z, bounds) == 1:
         return 0
-    # Near (z >= -w, conservative for 0..1 depth) and far planes.
-    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) + Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) + Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) + Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) + Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
+    # Depth planes z >= 0 and z <= w: near and far in either depth convention
+    # (see kobic_cull_extract_planes).
+    if _kobic_sphere_outside_plane(Memory.read_f32(vp + 8), Memory.read_f32(vp + 24), Memory.read_f32(vp + 40), Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
         return 0
     if _kobic_sphere_outside_plane(Memory.read_f32(vp + 12) - Memory.read_f32(vp + 8), Memory.read_f32(vp + 28) - Memory.read_f32(vp + 24), Memory.read_f32(vp + 44) - Memory.read_f32(vp + 40), Memory.read_f32(vp + 60) - Memory.read_f32(vp + 56), x, y, z, bounds) == 1:
         return 0
@@ -6997,7 +6998,7 @@ attach GpuRendererCore:
             Memory.write_f32(clear_vals + 20, 1.0)
             Memory.write_f32(clear_vals + 24, 0.5)
             Memory.write_f32(clear_vals + 28, 1.0)
-            Memory.write_f32(clear_vals + 32, 1.0)
+            Memory.write_f32(clear_vals + 32, KOBIC_MAIN_DEPTH_CLEAR)
             Memory.write_i32(clear_vals + 36, 0)
             Memory.write_i32(rpi + 48, 3)
             Memory.write_ptr(rpi + 56, clear_vals)

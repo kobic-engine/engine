@@ -143,10 +143,11 @@ void main() {
     vec4 clipPosition = pushConstants.viewProjection * worldPosition;
     bool viewmodel = inst.material.z < 0.0;
     if (viewmodel) {
-        // Retain camera FOV/XY, but bypass its world near/far depth range.
+        // Retain camera FOV/XY, but bypass its world near/far depth range:
+        // reverse-Z band [1 - 1e-4, 1], nearer than any world surface.
         // Positive-w clipping and perspective-correct self-occlusion remain.
         clipPosition.z = clipPosition.w >= 0.02
-            ? 0.0001 * (clipPosition.w - 0.02) : -1.0;
+            ? clipPosition.w - 0.0001 * (clipPosition.w - 0.02) : clipPosition.w + 1.0;
     }
 
     gl_Position = clipPosition;

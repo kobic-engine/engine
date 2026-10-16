@@ -1263,9 +1263,12 @@ fun kobic_cull_extract_planes(vp: i64, out: i64):
     kobic_cull_write_plane(out, 2, m30 + m10, m31 + m11, m32 + m12, m33 + m13)
     # top = row3 - row1
     kobic_cull_write_plane(out, 3, m30 - m10, m31 - m11, m32 - m12, m33 - m13)
-    # near = row3 + row2
-    kobic_cull_write_plane(out, 4, m30 + m20, m31 + m21, m32 + m22, m33 + m23)
-    # far = row3 - row2
+    # Depth planes for [0,1] clip z: z >= 0 = row2 and z <= w = row3 - row2.
+    # They are the near and far planes in either depth convention (reverse-Z
+    # main camera: near z <= w, far z >= 0; standard shadow cascades: the
+    # other way round). The old OpenGL near (row3 + row2, z >= -w) culled
+    # nothing under reverse-Z.
+    kobic_cull_write_plane(out, 4, m20, m21, m22, m23)
     kobic_cull_write_plane(out, 5, m30 - m20, m31 - m21, m32 - m22, m33 - m23)
 
 fun kobic_cull_write_plane(out: i64, idx: i32, a: f32, b: f32, c: f32, d: f32):

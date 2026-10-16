@@ -35,10 +35,11 @@ void main() {
     ivec2 hi = ((dst + ivec2(1)) * srcSize + dstSize - ivec2(1)) / dstSize;
     hi = clamp(hi, lo + ivec2(1), srcSize);
 
-    float farthest = 0.0;
+    // Reverse-Z: the farthest depth is the smallest (sky = 0).
+    float farthest = 1.0;
     for (int y = lo.y; y < hi.y; ++y) {
         for (int x = lo.x; x < hi.x; ++x) {
-            farthest = max(farthest, texelFetch(sourceDepth, ivec2(x, y), 0).r);
+            farthest = min(farthest, texelFetch(sourceDepth, ivec2(x, y), 0).r);
         }
     }
     imageStore(coarseDepth, dst, vec4(farthest));

@@ -3,7 +3,8 @@
 Opt in per material with `Material3D.set_viewmodel(1)`, then bind it normally.
 Attach its model matrix to the active camera in your game. Projection retains
 the camera's FOV/aspect while giving the mesh a 2 cm near clip and a foreground
-depth band (0..0.0001). Self-occlusion is retained. Scene camera near/far planes
+depth band (1 - 0.0001..1 of the reverse-Z main depth, see REVERSE_Z.md).
+Self-occlusion is retained. Scene camera near/far planes
 are not modified: distant-world depth precision is unaffected.
 
 The option works on classic, bindless and bindless-SSBO textured/skinned paths.

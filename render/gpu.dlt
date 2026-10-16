@@ -223,11 +223,16 @@ fun gpu_camera_proj_into_range(fov: f32, aspect: f32, near_plane: f32, far_plane
     pi: f32 = 3.14159265
     half: f32 = fov * pi / 360.0
     f: f32 = @cos(half) / @sin(half)
-    ri: f32 = 1.0 / (near - far)
+    # Reverse-Z: depth 1 at the near plane, 0 at the far plane (cleared to 0,
+    # GREATER test). With the D32_SFLOAT buffer the float exponent then
+    # spends its precision far away: ~1e-7 relative error instead of
+    # z^2/(near*2^24) metres, so a 2 km cloud shell no longer fights the ground
+    # 1000 km away with a 0.15 m near plane and a 51,000 km far plane.
+    ri: f32 = 1.0 / (far - near)
     Memory.set(m, 0, 64)
     Memory.write_f32(m + 0, f / aspect)
     Memory.write_f32(m + 20, 0.0 - f)
-    Memory.write_f32(m + 40, far * ri)
+    Memory.write_f32(m + 40, near * ri)
     Memory.write_f32(m + 44, 0.0 - 1.0)
     Memory.write_f32(m + 56, near * far * ri)
 

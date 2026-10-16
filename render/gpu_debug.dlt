@@ -153,7 +153,7 @@ fun kobic_debug_collision_create_pipeline(device: i64, render_pass: i64) -> i32:
     Memory.write_i32(depth, 25)
     Memory.write_i32(depth + 20, 1)
     Memory.write_i32(depth + 24, 0)
-    Memory.write_i32(depth + 28, 1)
+    Memory.write_i32(depth + 28, KOBIC_MAIN_DEPTH_COMPARE)
 
     Memory.write_i32(color_attachment, 1)
     Memory.write_i32(color_attachment + 4, 6)
