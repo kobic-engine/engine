@@ -134,7 +134,8 @@ def main():
             raise SystemExit(f"getter {getter} already exists under another shader name; refusing to append a duplicate")
         new = src.rstrip("\n") + "\n\n" + block + "\n"
 
-    with open(target, "w", encoding="utf-8") as f:
+    # Keep LF: text mode on Windows would turn every line into CRLF.
+    with open(target, "w", encoding="utf-8", newline="\n") as f:
         f.write(new)
     print(f"[regen] {getter} <- {os.path.basename(spv_path)} "
           f"({os.path.getsize(spv_path)} bytes) into {target}")
