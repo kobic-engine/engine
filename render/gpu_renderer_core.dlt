@@ -2870,7 +2870,7 @@ attach GpuRendererCore:
             registered_triangle_count: i64 = self.debug_registered_indices / 3
             visible_vertex_count: i64 = self.debug_visible_vertices
             registered_vertex_count: i64 = self.debug_registered_vertices
-            print(@"[kobic.render] frames=120 meshes={mesh_count} instances={instance_count} vertices={visible_vertex_count} registeredVertices={registered_vertex_count} triangles={triangle_count} registeredTriangles={registered_triangle_count} draws={draw_count} indexed={indexed_count}")
+            kobic_log(@"[kobic.render] frames=120 meshes={mesh_count} instances={instance_count} vertices={visible_vertex_count} registeredVertices={registered_vertex_count} triangles={triangle_count} registeredTriangles={registered_triangle_count} draws={draw_count} indexed={indexed_count}")
             self.debug_window_triangles = triangle_count
             self.debug_window_vertices = visible_vertex_count
             self.debug_window_draws = draw_count as i64
@@ -3758,7 +3758,7 @@ attach GpuRendererCore:
         device_local: i32 = 0
         if vb.mapped == 0:
             device_local = 1
-        print(@"[kobic.mesh_arena] page={page} vertex_bytes={vbytes} index_bytes={ibytes} device_local={device_local}")
+        kobic_log(@"[kobic.mesh_arena] page={page} vertex_bytes={vbytes} index_bytes={ibytes} device_local={device_local}")
         return page
 
     fun reserve_dynamic_mesh_arena(self, vertex_bytes: i64, index_bytes: i64) -> i32:
@@ -7574,7 +7574,7 @@ attach GpuRendererCore:
                 rebuilds: i32 = g_kobic_cpu_prof_static_rebuilds
                 meshes: i32 = self.vb_count
                 pages: i32 = self.arena_page_count
-                print(@"[kobic.cpu_rec] avg/120 shadow_build={shadow_us} us  total_record={total_us} us  static_rebuild={static_us} us rebuilds={rebuilds} meshes={meshes} arena_pages={pages}")
+                kobic_log(@"[kobic.cpu_rec] avg/120 shadow_build={shadow_us} us  total_record={total_us} us  static_rebuild={static_us} us rebuilds={rebuilds} meshes={meshes} arena_pages={pages}")
                 g_kobic_cpu_prof_static_ticks = 0
                 g_kobic_cpu_prof_static_rebuilds = 0
                 g_kobic_cpu_prof_shadow_ticks = 0

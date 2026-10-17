@@ -476,8 +476,8 @@ attach Debug:
             scale: f32 = g_engine_render_scale
             active_mode: PresentMode = Engine.properties.active_present_mode()
             active_mode_name: str = PresentMode.name(active_mode)
-            print(@"[kobic.pacing] frames={frames} avg_ms={avg_ms} min_ms={min_ms} max_ms={max_ms}")
-            print(@"[kobic.pacing] spikes={spikes} target_fps={target_fps} render_scale={scale} present={active_mode_name}")
+            kobic_log(@"[kobic.pacing] frames={frames} avg_ms={avg_ms} min_ms={min_ms} max_ms={max_ms}")
+            kobic_log(@"[kobic.pacing] spikes={spikes} target_fps={target_fps} render_scale={scale} present={active_mode_name}")
             Debug.reset_frame_pacing()
 
 attach EngineMouse:
@@ -717,6 +717,7 @@ attach Engine:
 
     static fun shutdown():
         g_engine_runtime.shutdown()
+        kobic_log_flush(500)
 
 # Engine_Parallel_For (R10.1): thin delegation to the std data-parallel
 # scheduler. The engine adds NO scheduler of its own — it forwards to

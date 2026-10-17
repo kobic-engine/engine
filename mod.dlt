@@ -20,6 +20,7 @@ load kobic/math/color
 # Phase 2: Core OOP shell
 load kobic/core/platform/{os}/time
 load kobic/core/time
+load kobic/core/log
 load kobic/core/window
 load kobic/core/app
 load kobic/core/platform/{os}/input

@@ -65,6 +65,29 @@ frame. `Engine.debug.gpu_static_stat(i)` returns, for a recent frame:
 changes once per new sample (-1 when unsupported). These are what the GPU
 actually processed, unlike the CPU-side render stats.
 
+## Diagnostic lines are written off the frame thread
+
+With `gpu_timing`, `cpu_record_timing`, `render_stats` or frame pacing on,
+Kobic prints summary lines every 120 frames. They were plain `print` calls
+on the frame thread (`[kobic.cpu_rec]` after `vkEndCommandBuffer`,
+`[kobic.render]`, `[kobic.gpu_timer]`, `[kobic.pacing]`), and `print` is a
+synchronous stdout write. An ordinary write cost 0.1-0.2 ms; now and then
+one blocked for 6-63 ms, mostly off the CPU. Those were Bitora's rare
+10-30 ms "render" frames in the benchmark (which enables all of these): in
+three instrumented runs all 10 frames over 6 ms fell on a 120th frame,
+inside that write, while formatting the line took 3-5 us.
+
+They now go through `kobic_log(line)` (`core/log.dlt`): the line is copied
+into a 256-entry queue and a writer thread prints the queue in order. If
+stdout falls that far behind, new lines are dropped and counted instead of
+stalling the frame. `Engine.shutdown()` waits up to 500 ms for the queue.
+
+Not the same thing: rarer 95-150 ms frames blocked inside `vkQueueSubmit`,
+`vkQueuePresentKHR` or the window message pump (`Window.poll`), with almost
+no CPU time, normal GPU frame time and no page faults or commit growth in
+the process. They come and go between sessions (none in some sets of runs,
+one in every run of others) and are not in Kobic's command recording.
+
 ## Query results are 64-bit
 
 `vkGetQueryPoolResults` was called with flags 8 (`PARTIAL`) under a comment

@@ -274,14 +274,14 @@ attach GpuProfiler:
                     mn: f32 = self.acc_main_ms / n
                     po: f32 = self.acc_post_ms / n
                     tot: f32 = self.acc_total_ms / n
-                    print(@"[kobic.gpu_timer] gpu_ms total={tot} shadow={sh} main={mn} post={po} (avg/{self.acc_count})")
+                    kobic_log(@"[kobic.gpu_timer] gpu_ms total={tot} shadow={sh} main={mn} post={po} (avg/{self.acc_count})")
                     sky_ms: f32 = self.acc_sky_ms / n
                     static_ms: f32 = self.acc_static_ms / n
                     groups_ms: f32 = self.acc_groups_ms / n
                     inst_ms: f32 = self.acc_inst_ms / n
                     tail_ms: f32 = self.acc_tail_ms / n
                     groups_per_frame: i64 = self.acc_groups / (self.acc_count as i64)
-                    print(@"[kobic.gpu_timer] main split: sky={sky_ms} staticBatches={static_ms} perGroupDraws={groups_ms} (groups/frame={groups_per_frame}) instances={inst_ms} endPassHzb={tail_ms}")
+                    kobic_log(@"[kobic.gpu_timer] main split: sky={sky_ms} staticBatches={static_ms} perGroupDraws={groups_ms} (groups/frame={groups_per_frame}) instances={inst_ms} endPassHzb={tail_ms}")
                     self.acc_sky_ms = 0.0
                     self.acc_static_ms = 0.0
                     self.acc_groups_ms = 0.0

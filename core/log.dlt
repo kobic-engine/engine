@@ -1,0 +1,114 @@
+##############################
+# Kobic - Asynchronous engine log
+# print() writes stdout synchronously (WriteFile on Windows). When whatever
+# reads stdout is slow to take the bytes - a console window, a pipe, a file
+# being scanned - the call blocks, and on the frame thread a blocked write
+# is a dropped frame (measured: 6-63 ms, at ~900 fps). Lines the engine
+# logs from the frame loop go through kobic_log instead: the caller copies
+# the line into a queue and returns, and one writer thread prints the
+# queue in order.
+##############################
+
+imm KOBIC_LOG_CAPACITY: i32 = 256
+
+# 0 = writer not started, 1 = writer running, 2 = no writer (print inline).
+static g_kobic_log_state: i32 = 0
+# i32 spin lock (0 free, 1 held) guarding the fields below; held only for
+# a few stores, never across a print.
+static g_kobic_log_lock: i64 = 0
+# Ring of KOBIC_LOG_CAPACITY heap-owned C strings.
+static g_kobic_log_lines: i64 = 0
+static g_kobic_log_head: i32 = 0
+static g_kobic_log_count: i32 = 0
+static g_kobic_log_dropped: i32 = 0
+static g_kobic_log_printing: i32 = 0
+
+fun _kobic_log_acquire():
+    acquired: bool = false
+    while not acquired:
+        acquired = __atomic_cas_i32(g_kobic_log_lock, 0, 1)
+        if not acquired:
+            Thread.yield_now()
+
+fun _kobic_log_release():
+    __atomic_store_i32(g_kobic_log_lock, 0)
+
+fun _kobic_log_start():
+    g_kobic_log_state = 2
+    lock: i64 = Memory.malloc_zeroed(8)
+    lines: i64 = Memory.malloc_zeroed((KOBIC_LOG_CAPACITY as i64) * 8)
+    if lock == 0 or lines == 0:
+        Memory.free(lock)
+        Memory.free(lines)
+        return
+    g_kobic_log_lock = lock
+    g_kobic_log_lines = lines
+    body: @heap fun() = fun() _kobic_log_writer()
+    writer: Thread = Thread.spawn(body)
+    if writer.handle != 0:
+        g_kobic_log_state = 1
+
+fun _kobic_log_writer():
+    while true:
+        line: i64 = 0
+        _kobic_log_acquire()
+        dropped: i32 = g_kobic_log_dropped
+        g_kobic_log_dropped = 0
+        if g_kobic_log_count > 0:
+            line = Memory.read_ptr(g_kobic_log_lines + (g_kobic_log_head as i64) * 8)
+            g_kobic_log_head = (g_kobic_log_head + 1) % KOBIC_LOG_CAPACITY
+            g_kobic_log_count = g_kobic_log_count - 1
+            g_kobic_log_printing = 1
+        _kobic_log_release()
+        if dropped > 0:
+            print(@"[kobic.log] {dropped} lines dropped: stdout is not keeping up")
+        if line != 0:
+            print(line as str)
+            Memory.free(line)
+            _kobic_log_acquire()
+            g_kobic_log_printing = 0
+            _kobic_log_release()
+        else:
+            Thread.sleep(10)
+
+# Queue one line for stdout without waiting for the write. Lines from all
+# callers come out in the order they were queued. If stdout falls behind by
+# KOBIC_LOG_CAPACITY lines, new lines are dropped (and counted) rather than
+# stalling the caller.
+fun kobic_log(line: str):
+    if g_kobic_log_state == 0:
+        _kobic_log_start()
+    if g_kobic_log_state != 1:
+        print(line)
+        return
+    size: i64 = Memory.strlen(line) + 1
+    copy: i64 = Memory.malloc(size)
+    if copy == 0:
+        return
+    Memory.copy(copy, line as i64, size)
+    _kobic_log_acquire()
+    if g_kobic_log_count < KOBIC_LOG_CAPACITY:
+        slot: i32 = (g_kobic_log_head + g_kobic_log_count) % KOBIC_LOG_CAPACITY
+        Memory.write_ptr(g_kobic_log_lines + (slot as i64) * 8, copy)
+        g_kobic_log_count = g_kobic_log_count + 1
+        copy = 0
+    else:
+        g_kobic_log_dropped = g_kobic_log_dropped + 1
+    _kobic_log_release()
+    if copy != 0:
+        Memory.free(copy)
+
+# Wait (at most timeout_ms) until every queued line has been written.
+fun kobic_log_flush(timeout_ms: i32):
+    if g_kobic_log_state != 1:
+        return
+    deadline: i64 = kobic_time_now_ticks() + (kobic_time_frequency() * (timeout_ms as i64)) / 1000
+    while kobic_time_now_ticks() < deadline:
+        _kobic_log_acquire()
+        idle: i32 = 0
+        if g_kobic_log_count == 0 and g_kobic_log_printing == 0:
+            idle = 1
+        _kobic_log_release()
+        if idle == 1:
+            return
+        Thread.sleep(1)
