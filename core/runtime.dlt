@@ -249,6 +249,9 @@ attach EngineRuntime:
     fun reserve_dynamic_mesh_arena(self, vertex_bytes: i64, index_bytes: i64) -> i32:
         return self.renderer.reserve_dynamic_mesh_arena(vertex_bytes, index_bytes)
 
+    fun reserve_dynamic_mesh_arena_pages(self, pages: i32) -> i32:
+        return self.renderer.reserve_dynamic_mesh_arena_pages(pages)
+
     fun upload_dynamic_mesh_data(self, mesh: GpuMeshData) -> i32:
         return self.renderer.upload_dynamic_mesh_data(mesh)
 

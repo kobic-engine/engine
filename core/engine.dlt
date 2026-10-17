@@ -620,6 +620,11 @@ attach Engine:
     static fun reserve_dynamic_mesh_arena(vertex_bytes: i64, index_bytes: i64) -> i32:
         return g_engine_runtime.reserve_dynamic_mesh_arena(vertex_bytes, index_bytes)
 
+    # Pre-creates arena pages (after reserve_dynamic_mesh_arena set their
+    # size) so their allocation happens at load, never mid-game.
+    static fun reserve_dynamic_mesh_arena_pages(pages: i32) -> i32:
+        return g_engine_runtime.reserve_dynamic_mesh_arena_pages(pages)
+
     static fun upload_dynamic_mesh_data(mesh: GpuMeshData) -> i32:
         return g_engine_runtime.upload_dynamic_mesh_data(mesh)
 

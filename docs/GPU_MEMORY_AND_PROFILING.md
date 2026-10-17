@@ -46,6 +46,15 @@ captures; the Kobic GPU checks pass.
 `_upload_buffer` (per-mesh buffers outside the arena) still uses
 host-visible memory.
 
+## Creating arena pages at load
+
+A new device page is created the first time meshes outgrow the existing ones,
+and creating it stalls that frame by 20-30 ms (Bitora, while walking). After
+`Engine.reserve_dynamic_mesh_arena(vertex_bytes, index_bytes)` sets the page
+size, `Engine.reserve_dynamic_mesh_arena_pages(count)` creates pages up to
+`count` immediately, so a streaming game pays for them during loading.
+Bitora reserves four, which its chunks plus far field settle at.
+
 ## Pipeline statistics of the static batches
 
 With `Engine.debug.gpu_timing(1)` and a device that supports

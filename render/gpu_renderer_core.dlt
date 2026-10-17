@@ -3773,6 +3773,17 @@ attach GpuRendererCore:
                 return 0
         return 1
 
+    # Adds default-size pages until the arena has `pages` of them. Creating a
+    # device page costs tens of milliseconds; a streaming game pays it at load
+    # instead of as a hitch the first time its meshes outgrow the pages.
+    fun reserve_dynamic_mesh_arena_pages(self, pages: i32) -> i32:
+        if self.initialized == 0:
+            return 0
+        while self.arena_page_count < pages:
+            if self._arena_add_page(self.arena_default_vbytes, self.arena_default_ibytes) < 0:
+                return 0
+        return self.arena_page_count
+
     fun _grow_arena_free(self) -> i32:
         old_cap: i32 = self.arena_free_capacity
         new_cap: i32 = 2048
