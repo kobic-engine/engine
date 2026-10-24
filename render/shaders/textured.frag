@@ -21,7 +21,19 @@ layout(set = 1, binding = 0) uniform PointLightBlock {
     vec4 skyUpCurve;
     vec4 horizonGlowDirection;
     vec4 horizonGlowColor;
+    vec4 styleLight;
+    vec4 styleShadow;
+    vec4 styleSun;
+    vec4 styleGrade;
+    vec4 styleVariation;
+    vec4 stylePlanetCenter;
+    vec4 stylePlanetAxis;
 } pointLights;
+
+// Texel-snapped lighting inputs (see styleResolveSnappedInputs).
+vec4 styleShadowPosition0;
+vec4 styleShadowPosition1;
+vec3 styleWorldNormal;
 
 layout(location = 0) in vec3 fragmentColor;
 layout(location = 1) in vec2 fragmentUv;
@@ -324,6 +336,7 @@ float shadowDistanceFade(float distanceFromCamera, float maxDistance, float fade
 
 float sampleShadowCascade(
     vec4 shadowPosition,
+    vec4 gradientPosition,
     vec2 atlasOffset,
     vec2 atlasScale,
     vec3 normal,
@@ -356,7 +369,8 @@ float sampleShadowCascade(
     vec2 atlasUv = atlasOffset + localUv * atlasScale;
     vec2 texel = 1.0 / vec2(textureSize(shadowSampler, 0));
     vec2 localTexel = texel / max(atlasScale, vec2(0.0001));
-    vec2 receiverGradient = receiverPlaneDepthGradient(localUv, projected.z);
+    vec3 gradientProjected = gradientPosition.xyz / gradientPosition.w;
+    vec2 receiverGradient = receiverPlaneDepthGradient(gradientProjected.xy * 0.5 + 0.5, gradientProjected.z);
     float receiverFootprint = abs(receiverGradient.x) * localTexel.x
         + abs(receiverGradient.y) * localTexel.y;
     float receiverBiasLimit = bias + normalBias * 1.25;
@@ -505,67 +519,37 @@ float sampleShadow(vec3 normal, vec3 lightDirection) {
     if (distanceFade <= 0.0001) {
         return 1.0;
     }
-    if (cascadeCount <= 1) {
-        float single = sampleShadowCascade(
-            fragmentShadowPosition0,
-            vec2(0.0, 0.0),
-            vec2(1.0, 1.0),
-            normal,
-            lightDirection,
-            fragmentShadowParams.y,
-            fragmentShadowParams.z,
-            softness,
-            filterQuality
-        );
-        if (single < 0.0) {
-            return 1.0;
+
+    // One cascade-sampling call site (the optimizer inlines every call):
+    // a single map uses the whole atlas; with two, the near cascade falls
+    // back to the far one outside its bounds, the far one stands alone.
+    int firstCascade = 0;
+    int lastCascade = 0;
+    if (cascadeCount > 1) {
+        lastCascade = 1;
+        if (cascadeDistance > fragmentShadowSplits.y) {
+            firstCascade = 1;
         }
-        return mix(1.0, single, distanceFade);
     }
-
-    int cascadeIndex = 0;
-    if (cascadeDistance > fragmentShadowSplits.y) {
-        cascadeIndex = 1;
-    }
-
+    vec2 atlasScale = cascadeCount > 1 ? vec2(0.5, 0.5) : vec2(1.0, 1.0);
     float selected = -1.0;
-    if (cascadeIndex == 0) {
+    for (int cascade = firstCascade; cascade <= lastCascade; ++cascade) {
+        bool far = cascade == 1;
         selected = sampleShadowCascade(
-            fragmentShadowPosition0,
-            vec2(0.0, 0.0),
-            vec2(0.5, 0.5),
-            normal,
-                lightDirection,
-                fragmentShadowParams.y,
-                fragmentShadowParams.z,
-                softness,
-                filterQuality
-            );
-        if (selected < 0.0) {
-            selected = sampleShadowCascade(
-                fragmentShadowPosition1,
-                vec2(0.5, 0.0),
-                vec2(0.5, 0.5),
-                normal,
-                lightDirection,
-                fragmentShadowSplits.z,
-                fragmentShadowSplits.w,
-                softness,
-                filterQuality
-            );
-        }
-    } else {
-        selected = sampleShadowCascade(
-            fragmentShadowPosition1,
-            vec2(0.5, 0.0),
-            vec2(0.5, 0.5),
+            far ? styleShadowPosition1 : styleShadowPosition0,
+            far ? fragmentShadowPosition1 : fragmentShadowPosition0,
+            far ? vec2(0.5, 0.0) : vec2(0.0, 0.0),
+            atlasScale,
             normal,
             lightDirection,
-            fragmentShadowSplits.z,
-            fragmentShadowSplits.w,
+            far ? fragmentShadowSplits.z : fragmentShadowParams.y,
+            far ? fragmentShadowSplits.w : fragmentShadowParams.z,
             softness,
             filterQuality
         );
+        if (selected >= 0.0) {
+            break;
+        }
     }
 
     if (selected < 0.0) {
@@ -600,7 +584,211 @@ vec3 evaluateSkyGradient(vec3 direction, vec3 localUp, vec3 zenith, vec3 horizon
     return mix(color, glowColor, clamp(glowStrength, 0.0, 1.0) * alignment * horizonBand);
 }
 
+// Stylized pixel lighting (opt-in, Environment.stylized; all zero = off).
+// styleLight:  x enabled, y tone bands (0 = smooth), z wrap, w world texels
+//              per metre for texel-aligned light (0 = off)
+// styleShadow: rgb colour of the unlit side, a = how much it follows the sky
+// styleSun:    rgb colour of the lit side, a = cast-shadow strength
+// styleGrade:  x saturation, y contrast, z contrast pivot, w sky brightness
+//              at noon (lit materials scale their shade by the sky they see)
+// styleVariation: x strength, y patch size in metres; world-pixel surfaces
+//              take a warm/neutral/cool tint from world noise, dithered per
+//              texel
+// Face mode (styleLight.x = 2) replaces the tones with voxel-game face
+// shading: top 100%, north/south 80%, east/west 60%, bottom 50%, blended by
+// the squared normal components in the local frame. stylePlanetCenter (xyz,
+// w = 1 when set) and stylePlanetAxis give each pixel its own up, north and
+// day/night on a planet; otherwise the sky's up and world axes are used.
+// Uniformly lit materials split their energy between a warm lit colour and
+// a cool shade. Lit materials use the energy of a face turned to the sun
+// (ambient + 0.62 sun, as the classic path) and dim the shade with the sky,
+// so night sides and space stay dark.
+bool styleEnabled() {
+    return pointLights.styleLight.x > 0.5;
+}
+
+bool styleFaces() {
+    return pointLights.styleLight.x > 1.5;
+}
+
+// Local up at this pixel: from the planet centre when known.
+vec3 styleLocalUp() {
+    if (pointLights.stylePlanetCenter.w > 0.5) {
+        vec3 fromCenter = fragmentWorldPosition - pointLights.stylePlanetCenter.xyz;
+        if (dot(fromCenter, fromCenter) > 1.0) {
+            return normalize(fromCenter);
+        }
+    }
+    vec3 skyUp = pointLights.skyUpCurve.xyz;
+    if (dot(skyUp, skyUp) > 0.000001) {
+        return normalize(skyUp);
+    }
+    return vec3(0.0, 1.0, 0.0);
+}
+
+// Face brightness: top 1.0, bottom 0.5, north/south 0.8, east/west 0.6.
+float styleFaceShade(vec3 normal, vec3 up) {
+    vec3 axis = pointLights.stylePlanetAxis.xyz;
+    if (dot(axis, axis) < 0.000001) {
+        axis = vec3(0.0, 0.0, 1.0);
+    }
+    vec3 east = cross(normalize(axis), up);
+    if (dot(east, east) < 0.000001) {
+        east = abs(up.x) < 0.9 ? cross(vec3(1.0, 0.0, 0.0), up) : cross(vec3(0.0, 0.0, 1.0), up);
+    }
+    east = normalize(east);
+    vec3 north = cross(up, east);
+    float u = dot(normal, up);
+    float e = dot(normal, east);
+    float n = dot(normal, north);
+    return u * u * (u >= 0.0 ? 1.0 : 0.5) + e * e * 0.6 + n * n * 0.8;
+}
+
+// Daylight 0..1 from the sun's height above this pixel's horizon (the same
+// dawn curve the game uses for objects).
+float styleDaylight(vec3 up, vec3 lightDirection) {
+    if (dot(lightDirection, lightDirection) < 0.000001) {
+        return 1.0;
+    }
+    float height = dot(up, -normalize(lightDirection));
+    float dawn = clamp((height + 0.14) / 0.36, 0.0, 1.0);
+    return dawn * dawn * (3.0 - 2.0 * dawn);
+}
+
+// Screen-derivative weights that move this fragment to the centre of its
+// world texel on the surface plane. Light and shadow are linear over a
+// triangle, so the same weights move them there too and their edges then
+// follow the texture's pixels. Must run in uniform control flow.
+vec2 styleTexelSnapWeights() {
+    vec3 dx = dFdx(fragmentWorldPosition);
+    vec3 dy = dFdy(fragmentWorldPosition);
+    float texels = pointLights.styleLight.w;
+    if (texels <= 0.0) {
+        return vec2(0.0);
+    }
+    vec3 delta = (floor(fragmentWorldPosition * texels) + 0.5) / texels - fragmentWorldPosition;
+    float a11 = dot(dx, dx);
+    float a12 = dot(dx, dy);
+    float a22 = dot(dy, dy);
+    float determinant = a11 * a22 - a12 * a12;
+    if (determinant <= max(a11 * a22, 1e-30) * 1e-6) {
+        return vec2(0.0);
+    }
+    float b1 = dot(delta, dx);
+    float b2 = dot(delta, dy);
+    vec2 weights = vec2(a22 * b1 - a12 * b2, a11 * b2 - a12 * b1) / determinant;
+    return clamp(weights, vec2(-64.0), vec2(64.0));
+}
+
+void styleResolveSnappedInputs() {
+    vec2 weights = styleTexelSnapWeights();
+    vec4 shadow0 = fragmentShadowPosition0 + weights.x * dFdx(fragmentShadowPosition0) + weights.y * dFdy(fragmentShadowPosition0);
+    vec4 shadow1 = fragmentShadowPosition1 + weights.x * dFdx(fragmentShadowPosition1) + weights.y * dFdy(fragmentShadowPosition1);
+    vec3 normal = fragmentWorldNormal + weights.x * dFdx(fragmentWorldNormal) + weights.y * dFdy(fragmentWorldNormal);
+    bool snap = styleEnabled() && hasWorldPixelSampling() > 0.5 && pointLights.styleLight.w > 0.0;
+    styleShadowPosition0 = snap ? shadow0 : fragmentShadowPosition0;
+    styleShadowPosition1 = snap ? shadow1 : fragmentShadowPosition1;
+    styleWorldNormal = snap ? normal : fragmentWorldNormal;
+}
+
+// The lighting normal with the texel snap applied; falls back to `normal`.
+vec3 styleNormal(vec3 normal) {
+    vec3 snapped = normal + (styleWorldNormal - fragmentWorldNormal);
+    if (dot(snapped, snapped) < 0.0001) {
+        return normal;
+    }
+    return normalize(snapped);
+}
+
+float styleBand(float value) {
+    float bands = floor(pointLights.styleLight.y + 0.5);
+    if (bands < 1.0) {
+        return value;
+    }
+    return clamp(floor(value * bands + 0.5) / bands, 0.0, 1.0);
+}
+
+// How bright the sky seen by `normal` is relative to the noon reference.
+float styleSkyLevel(vec3 normal) {
+    float reference = pointLights.styleGrade.w;
+    if (reference <= 0.0) {
+        return 1.0;
+    }
+    vec3 sky = sampleSkyLighting(normal);
+    return clamp(max(sky.r, max(sky.g, sky.b)) / reference, 0.0, 1.0);
+}
+
+// Light colour (to multiply albedo) for a surface of total brightness
+// `energy`: lit side = sun colour, unlit/shadowed side = cool shade scaled
+// by `shadeLevel`.
+vec3 styleLightColor(float energy, vec3 normal, vec3 lightDirection, float shadow, vec3 sunColor, float shadeLevel) {
+    float lit = 1.0;
+    if (dot(lightDirection, lightDirection) > 0.000001) {
+        float wrap = clamp(pointLights.styleLight.z, 0.0, 0.95);
+        float facing = dot(normal, -normalize(lightDirection));
+        lit = clamp((facing + wrap) / (1.0 + wrap), 0.0, 1.0);
+    }
+    lit *= mix(1.0, clamp(shadow, 0.0, 1.0), clamp(pointLights.styleSun.a, 0.0, 1.0));
+    lit = styleBand(lit);
+    vec3 skyHue = sampleSkyLighting(normal);
+    float skyPeak = max(skyHue.r, max(skyHue.g, skyHue.b));
+    skyHue = skyPeak > 0.001 ? skyHue / skyPeak : vec3(1.0);
+    vec3 shade = pointLights.styleShadow.rgb * mix(vec3(1.0), skyHue, clamp(pointLights.styleShadow.a, 0.0, 1.0)) * shadeLevel;
+    vec3 sun = pointLights.styleSun.rgb * sunColor;
+    return mix(shade, sun, lit) * energy;
+}
+
+float styleHash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float styleValueNoise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(styleHash(i), styleHash(i + vec3(1, 0, 0)), f.x),
+            mix(styleHash(i + vec3(0, 1, 0)), styleHash(i + vec3(1, 1, 0)), f.x), f.y),
+        mix(mix(styleHash(i + vec3(0, 0, 1)), styleHash(i + vec3(1, 0, 1)), f.x),
+            mix(styleHash(i + vec3(0, 1, 1)), styleHash(i + vec3(1, 1, 1)), f.x), f.y),
+        f.z);
+}
+
+// Large warm/neutral/cool patches on world-pixel surfaces. Evaluated per
+// world texel with a 4x4 ordered dither between the three tones, so the
+// transitions are pixel-art dithering instead of gradients.
+vec3 styleVariationTint() {
+    float strength = pointLights.styleVariation.x;
+    float scale = pointLights.styleVariation.y;
+    if (strength <= 0.0 || scale <= 0.0) {
+        return vec3(1.0);
+    }
+    float texels = max(pointLights.styleLight.w, 1.0);
+    vec3 cell = floor(fragmentWorldPosition * texels);
+    vec3 position = (cell + 0.5) / texels;
+    float noise = styleValueNoise(position / scale) * 0.65 + styleValueNoise(position / (scale * 0.37) + 17.0) * 0.35;
+    const float bayer[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+    ivec2 ditherCell = ivec2(mod(cell.x + cell.y, 4.0), mod(cell.z + cell.y, 4.0));
+    float threshold = (bayer[ditherCell.y * 4 + ditherCell.x] + 0.5) / 16.0 - 0.5;
+    float tone = clamp(floor(clamp((noise - 0.5) * 1.8 + 0.5, 0.0, 1.0) * 2.0 + 0.5 + threshold), 0.0, 2.0);
+    vec3 warm = vec3(1.10, 1.05, 0.80);
+    vec3 cool = vec3(0.88, 0.98, 1.06);
+    vec3 tint = tone < 0.5 ? warm : (tone < 1.5 ? vec3(1.0) : cool);
+    return mix(vec3(1.0), tint, clamp(strength, 0.0, 1.0));
+}
+
+vec3 styleGradeColor(vec3 color) {
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    color = mix(vec3(luma), color, pointLights.styleGrade.x);
+    float pivot = pointLights.styleGrade.z;
+    color = (color - pivot) * pointLights.styleGrade.y + pivot;
+    return max(color, vec3(0.0));
+}
+
 void main() {
+    styleResolveSnappedInputs();
     if (isDoubleSided() < 0.5 && !gl_FrontFacing) {
         discard;
     }
@@ -623,6 +811,9 @@ void main() {
         discard;
     }
     vec3 albedo = fragmentColor * textureColor.rgb;
+    if (styleEnabled() && hasWorldPixelSampling() > 0.5 && worldSurfaceEffect() < 0.5) {
+        albedo *= styleVariationTint();
+    }
     vec4 surfaceColor = vec4(albedo, textureColor.a * clamp(fragmentAlpha, 0.0, 1.0));
     vec3 geometryNormal = normalize(fragmentWorldNormal);
     if (dot(geometryNormal, geometryNormal) < 0.0001) {
@@ -645,7 +836,28 @@ void main() {
         // Scalar albedo illumination, NOT a glowing unlit material. A game can
         // drive dawn/night or lightmaps without exposing polygon orientation.
         float energy = clamp(-1.0 - fragmentMaterial.x, 0.0, 4.0);
-        surfaceColor.rgb = albedo * energy * skyVisibility();
+        if (styleEnabled()) {
+            vec3 styleLightDirection = pushConstants.lightDirectionIntensity.xyz;
+            vec3 styleSunColor = vec3(1.0);
+            float styleShadow = 1.0;
+            // Double-sided cards (foliage) keep one normal for both faces so
+            // their back faces are not turned into shade.
+            vec3 styleSurfaceNormal = styleNormal(isDoubleSided() > 0.5 && !gl_FrontFacing ? -geometryNormal : geometryNormal);
+            if (packedLight > 0.5 && dot(styleLightDirection, styleLightDirection) > 0.000001) {
+                styleLightDirection = normalize(styleLightDirection);
+                styleSunColor = unpackLight().rgb;
+                styleShadow = sampleShadow(styleSurfaceNormal, styleLightDirection);
+            } else {
+                styleLightDirection = vec3(0.0);
+            }
+            if (styleFaces()) {
+                surfaceColor.rgb = albedo * energy * skyVisibility() * styleFaceShade(styleSurfaceNormal, styleLocalUp());
+            } else {
+                surfaceColor.rgb = albedo * styleLightColor(energy * skyVisibility(), styleSurfaceNormal, styleLightDirection, styleShadow, styleSunColor, 1.0);
+            }
+        } else {
+            surfaceColor.rgb = albedo * energy * skyVisibility();
+        }
         int pointCount = int(clamp(floor(pointLights.meta.x + 0.5), 0.0, float(MAX_POINT_LIGHTS)));
         for (int index = 0; index < pointCount; index++) {
             vec4 positionRange = pointLights.positionRange[index];
@@ -697,14 +909,28 @@ void main() {
         if (packedLight > 0.5) {
             vec3 lightDirection = normalize(pushConstants.lightDirectionIntensity.xyz);
             vec4 light = unpackLight();
-            float shadow = sampleShadow(normal, lightDirection);
-            vec3 directionalRadiance = light.rgb * lightIntensity * shadow;
-            irradiance += albedo * light.a * occlusion * skyLight;
-            if (hasVanillaLighting) {
-                float normalLight = max(dot(normal, -lightDirection), 0.0);
-                irradiance += albedo * directionalRadiance * normalLight * 0.62 * occlusion * skyLight;
+            vec3 styleSurfaceNormal = styleEnabled() ? styleNormal(normal) : normal;
+            float shadow = sampleShadow(styleSurfaceNormal, lightDirection);
+            if (styleFaces()) {
+                // Day energy of a sun-facing classic surface, faded to the
+                // ambient floor by this pixel's own sun height.
+                vec3 styleUp = styleLocalUp();
+                float styleDay = styleDaylight(styleUp, lightDirection);
+                float styleEnergy = mix(light.a, light.a + lightIntensity * 0.62, styleDay) * occlusion * skyLight;
+                irradiance += albedo * styleEnergy * styleFaceShade(styleSurfaceNormal, styleUp);
+            } else if (styleEnabled()) {
+                float styleEnergy = (light.a + lightIntensity * 0.62) * occlusion * skyLight;
+                vec3 styleColor = styleLightColor(styleEnergy, styleSurfaceNormal, lightDirection, shadow, light.rgb, styleSkyLevel(styleSurfaceNormal));
+                irradiance += albedo * max(styleColor, vec3(light.a * occlusion * skyLight));
             } else {
-                irradiance += evaluatePbrLight(normal, viewDirection, -lightDirection, albedo, metallic, roughness, directionalRadiance) * skyLight;
+                vec3 directionalRadiance = light.rgb * lightIntensity * shadow;
+                irradiance += albedo * light.a * occlusion * skyLight;
+                if (hasVanillaLighting) {
+                    float normalLight = max(dot(normal, -lightDirection), 0.0);
+                    irradiance += albedo * directionalRadiance * normalLight * 0.62 * occlusion * skyLight;
+                } else {
+                    irradiance += evaluatePbrLight(normal, viewDirection, -lightDirection, albedo, metallic, roughness, directionalRadiance) * skyLight;
+                }
             }
             hasLight = true;
         }
@@ -761,6 +987,10 @@ void main() {
         emissiveColor *= emissiveTexel.rgb * emissiveTexel.a;
     }
     surfaceColor.rgb += emissiveColor * max(fragmentMaterial.z, 0.0);
+
+    if (styleEnabled()) {
+        surfaceColor.rgb = styleGradeColor(surfaceColor.rgb);
+    }
 
     float fogFactor = 0.0;
     int fogMode = int(pushConstants.fogParams.x + 0.5);

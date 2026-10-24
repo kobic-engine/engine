@@ -69,6 +69,42 @@ Memory.free(group as i64)
   allocated, transform-only otherwise. It still performs O(n) matrix copies;
   this is not GPU shared-transform indirection or a guaranteed speedup.
 
+## Engine.destroy_mesh
+
+`Engine.destroy_mesh(mesh_id)` releases a mesh or instance id. It returns 1
+when the id was live, and 0 for invalid, already destroyed or refused ids.
+
+- Arena meshes (`upload_dynamic_mesh_data`) give their slice back to the arena
+  free list. Dedicated buffers (`upload_mesh_data`) go through the deferred
+  retire queue. Frames still in flight keep drawing from them safely.
+- A dedicated buffer that instances (`register_instance`) still use is handed
+  to one of them, so destroying a source never breaks its instances.
+- The slot returns to its startup defaults (material, textures, shadow flags,
+  transparency counts, late occlusion, fog scale, bounds); the renderer frees
+  its model matrix and hides the slot, and culling and static batches rebuild.
+- The id is reused by the next upload or `register_instance` (most recently
+  destroyed first), so the registry stops growing. Drop every copy of the id
+  after destroying it.
+- Model sources returned by `upload_model` are shared through the model caches,
+  and the shared sprite quad is internal: both are refused. Destroy their
+  instances instead.
+- `Engine.mesh_is_live(id)` reports whether an id is live. Render-window stats
+  7 and 8 (`Engine.debug.render_window_stat`) give the live slot count and the
+  number of destroy calls so far.
+
+```dolet
+id: i32 = Engine.upload_dynamic_mesh_data(mesh)
+# ...
+Engine.destroy_mesh(id)
+id = -1
+```
+
+`tests/mesh_destroy_gpu_checks.dlt` is an auto-exiting native window check. It
+covers arena and dedicated meshes, the instance hand-over, id reuse, invalid
+and double destroys, and transparent bookkeeping. It also runs 3000
+create/destroy cycles while rendering, which must not grow the registry or
+the arena.
+
 ## Verification
 
 From the Kobic package directory on Windows:

@@ -524,6 +524,24 @@ attach Renderer:
     fun register_instance(self, source_mesh: i32) -> i32:
         return self.core.register_instance(source_mesh)
 
+    # Model sources are shared through the model caches (upload_model returns
+    # the same id for the same file), so only their instances may be destroyed.
+    fun destroy_mesh(self, mesh_id: i32) -> i32:
+        i: i32 = 0
+        while i < self.model_cache_count:
+            if Memory.read_i32(self.model_cache_mesh_ids + (i as i64) * 4) == mesh_id:
+                return 0
+            i = i + 1
+        i = 0
+        while i < self.model_part_cache_count:
+            if Memory.read_i32(self.model_part_cache_mesh_ids + (i as i64) * 4) == mesh_id:
+                return 0
+            i = i + 1
+        return self.core.destroy_mesh(mesh_id)
+
+    fun mesh_is_live(self, mesh_id: i32) -> i32:
+        return self.core.mesh_is_live(mesh_id)
+
     # Upload a decoded RGBA Image to the GPU and register it as a texture.
     # Returns a texture id, or -1 on failure. Needs the render pass (for the
     # descriptor set) and a command pool (for the upload commands).

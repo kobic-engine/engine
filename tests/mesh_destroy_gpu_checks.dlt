@@ -1,0 +1,130 @@
+# Native GPU check of Engine.destroy_mesh, independent of Bitora. Auto-exits.
+# Arena meshes, dedicated meshes whose buffers instances still use, id reuse,
+# invalid and double destroys, transparent bookkeeping, and a create/destroy
+# churn while rendering that must not grow the registry or the arena.
+import std
+import kobic
+
+fun destroy_check(ok: bool, message: str):
+    if ok == false:
+        print("FAIL: " + message)
+        Command.exit(1)
+
+fun destroy_check_quad() -> GpuMeshData:
+    vertices: i64 = Memory.malloc_zeroed(4 * (KOBIC_GPU_VERTEX_STRIDE as i64))
+    indices: i64 = Memory.malloc(6 * 4)
+    off: i64 = 0
+    off = gpu_wv(vertices, off, -1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0)
+    off = gpu_wv(vertices, off, 1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    off = gpu_wv(vertices, off, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0)
+    off = gpu_wv(vertices, off, -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0)
+    Memory.write_i32(indices, 0)
+    Memory.write_i32(indices + 4, 1)
+    Memory.write_i32(indices + 8, 2)
+    Memory.write_i32(indices + 12, 0)
+    Memory.write_i32(indices + 16, 2)
+    Memory.write_i32(indices + 20, 3)
+    return GpuMeshData(vertices=vertices, vertex_count=4, indices=indices, index_count=6)
+
+fun destroy_check_frames(count: i32):
+    i: i32 = 0
+    while i < count:
+        Engine.begin_frame()
+        Engine.render()
+        i = i + 1
+
+fun destroy_check_show(mesh_id: i32, x: f32):
+    Engine.set_transform(mesh_id, x, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+    Engine.set_instance_visible(mesh_id, 1)
+
+fun run_mesh_destroy_gpu_checks():
+    Engine.window.create("Kobic mesh destroy GPU checks", 320, 180)
+    Engine.properties.set_target_fps(240)
+    scene: Scene = Scene.create()
+    camera: Camera3D = Camera3D.create("test")
+    camera.position(0.0, 0.0, 8.0)
+    camera.set_clip_planes(0.1, 100.0)
+    scene.add_child(camera)
+    Engine.scene.set(scene)
+    destroy_check(Engine.start() == 1, "native engine startup")
+    renderer: Renderer = g_engine_runtime.active_renderer()
+    quad: GpuMeshData = destroy_check_quad()
+
+    # Arena meshes: destroy, refuse twice and invalid ids, reuse the id.
+    a: i32 = Engine.upload_dynamic_mesh_data(quad)
+    b: i32 = Engine.upload_dynamic_mesh_data(quad)
+    destroy_check(a >= 0 and b >= 0 and a != b, "two arena meshes")
+    destroy_check_show(a, -2.0)
+    destroy_check_show(b, 2.0)
+    destroy_check_frames(3)
+    destroy_check(Engine.destroy_mesh(a) == 1, "destroy arena mesh")
+    destroy_check(Engine.mesh_is_live(a) == 0 and Engine.mesh_is_live(b) == 1, "liveness after destroy")
+    destroy_check(Engine.destroy_mesh(a) == 0, "double destroy refused")
+    destroy_check(Engine.destroy_mesh(-1) == 0 and Engine.destroy_mesh(1000000) == 0, "invalid ids refused")
+    destroy_check_frames(3)
+    c: i32 = Engine.upload_dynamic_mesh_data(quad)
+    destroy_check(c == a and Engine.mesh_is_live(c) == 1, "destroyed id is reused")
+    destroy_check(Memory.read_i32(renderer.core.mesh_arena_pages + (c as i64) * 4) >= 0, "reused id is an arena mesh again")
+    destroy_check(Memory.read_ptr(renderer.core.model_matrices + (c as i64) * 8) == 0, "reused id starts without a matrix")
+    destroy_check_show(c, -2.0)
+    destroy_check_frames(3)
+
+    # Dedicated buffers shared by instances: ownership moves, never freed early.
+    source: i32 = Engine.upload_mesh_data(quad)
+    first: i32 = Engine.register_instance(source)
+    second: i32 = Engine.register_instance(source)
+    destroy_check(source >= 0 and first >= 0 and second >= 0, "dedicated source and two instances")
+    destroy_check_show(source, 0.0)
+    destroy_check_show(first, 0.0)
+    destroy_check_show(second, 0.0)
+    destroy_check_frames(3)
+    source_memory: i64 = Memory.read_ptr(renderer.core.vb_memories + (source as i64) * 8)
+    destroy_check(source_memory != 0, "source owns its buffer")
+    destroy_check(Engine.destroy_mesh(source) == 1, "destroy shared source")
+    heir_memory: i64 = Memory.read_ptr(renderer.core.vb_memories + (first as i64) * 8) + Memory.read_ptr(renderer.core.vb_memories + (second as i64) * 8)
+    destroy_check(heir_memory == source_memory, "one instance inherits the buffer")
+    destroy_check_frames(3)
+    destroy_check(Engine.destroy_mesh(first) == 1 and Engine.destroy_mesh(second) == 1, "destroy both instances")
+    destroy_check_frames(12)
+
+    # Transparent bookkeeping returns to where it was.
+    transparent_before: i32 = renderer.core.transparent_mesh_count
+    visible_before: i32 = renderer.core.transparent_visible_count
+    t: i32 = Engine.upload_dynamic_mesh_data(quad)
+    glass: Material3D = Material3D.colored(Color.rgba(1.0, 1.0, 1.0, 0.5))
+    glass.set_transparent(1)
+    Engine.bind_material(t, glass)
+    destroy_check_show(t, 0.0)
+    destroy_check_frames(2)
+    destroy_check(renderer.core.transparent_mesh_count == transparent_before + 1, "transparent mesh counted")
+    destroy_check(Engine.destroy_mesh(t) == 1, "destroy transparent mesh")
+    destroy_check(renderer.core.transparent_mesh_count == transparent_before and renderer.core.transparent_visible_count == visible_before, "transparent counts restored")
+
+    # Churn while rendering: ids are recycled, the registry and arena stay put.
+    destroy_check_frames(12)
+    start_count: i32 = renderer.core.vb_count
+    start_pages: i32 = renderer.core.arena_page_count
+    matrix: i64 = Memory.malloc(64)
+    Mat4.identity().write_to_ptr(matrix)
+    round: i32 = 0
+    while round < 3000:
+        id: i32 = Engine.upload_dynamic_mesh_data(quad)
+        destroy_check(id >= 0, "churn upload")
+        Engine.set_model_matrix_raw(id, matrix)
+        Engine.set_instance_visible(id, 1)
+        if round % 50 == 0:
+            destroy_check_frames(1)
+        destroy_check(Engine.destroy_mesh(id) == 1, "churn destroy")
+        round = round + 1
+    Memory.free(matrix)
+    destroy_check_frames(12)
+    destroy_check(renderer.core.vb_count <= start_count + 1, "churn reuses ids (registry " + Convert.i32_to_str(start_count) + " -> " + Convert.i32_to_str(renderer.core.vb_count) + ")")
+    destroy_check(renderer.core.arena_page_count <= start_pages + 1, "churn reuses arena space (pages " + Convert.i32_to_str(start_pages) + " -> " + Convert.i32_to_str(renderer.core.arena_page_count) + ")")
+    destroy_check(Engine.debug.render_window_stat(7) == ((renderer.core.vb_count - renderer.core.free_mesh_count) as i64), "live mesh stat")
+
+    Memory.free(quad.vertices)
+    Memory.free(quad.indices)
+    Engine.shutdown()
+    print("PASS: destroy_mesh on arena and dedicated meshes, instance hand-over, id reuse, transparency and 3000-cycle churn")
+
+run_mesh_destroy_gpu_checks()

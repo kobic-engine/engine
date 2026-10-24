@@ -655,6 +655,20 @@ attach Engine:
     static fun upload_model_or_cube(path: str) -> i32:
         return g_engine_runtime.upload_model_or_cube(path)
 
+    # Releases a mesh or instance id (GPU storage, material, matrix, flags);
+    # the id is reused by later uploads, so drop every copy of it. Shared
+    # model sources from upload_model and the sprite quad are refused.
+    # Returns 1 when destroyed.
+    static fun destroy_mesh(mesh_id: i32) -> i32:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.destroy_mesh(mesh_id)
+
+    static fun mesh_is_live(mesh_id: i32) -> i32:
+        if g_engine_runtime.ready() == 0:
+            return 0
+        return g_engine_runtime.mesh_is_live(mesh_id)
+
     static fun register_instance(source_mesh: i32) -> i32:
         return g_engine_runtime.register_instance(source_mesh)
 

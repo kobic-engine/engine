@@ -185,11 +185,73 @@ struct EnvironmentLighting:
     reflection_strength: f32 = 0.0
     model: i32 = 0
 
+# Opt-in stylized lighting for pixel-art games, applied by the material
+# shaders to lit and uniformly lit (energy) materials alike:
+# - the sun and the unlit side get authored colours (warm light, cool shade);
+#   sky_tint makes the shade follow the sky's hue through the day;
+# - sun/shade blend in `bands` hard tones (0 = smooth) after wrap lighting;
+# - cast shadows also reach uniformly lit materials (shadow_strength);
+# - on world-pixel surfaces, light and shadow are evaluated at the centre of
+#   each world texel (texels_per_metre, 0 = off) so their edges follow pixels;
+# - world-pixel surfaces take large warm/neutral/cool patches (variation
+#   strength, patch size in metres), dithered per texel;
+# - saturation/contrast grade every lit surface before fog.
+# faces = 1 swaps the tones for voxel-game face shading (top 100%, north/
+# south 80%, east/west 60%, bottom 50%) with no sun direction or shadows;
+# brightness still follows the day. On a planet, set_planet_frame gives
+# every pixel its own up, north and sun height (render-space centre and
+# spin axis, refreshed when the render origin or the planet moves).
+# Uniformly lit materials keep their energy as the total brightness. Lit
+# materials use the classic sun-facing brightness and scale their shade by
+# how bright the sky they face is against sky_reference (the sky's noon
+# brightness; 0 = unscaled), so night sides and space stay dark.
+struct StylizedLighting:
+    enabled: i32 = 0
+    bands: f32 = 2.0
+    wrap: f32 = 0.25
+    texels_per_metre: f32 = 0.0
+    shadow_color: Color = Color()
+    sky_tint: f32 = 0.0
+    sun_color: Color = Color()
+    shadow_strength: f32 = 1.0
+    saturation: f32 = 1.0
+    contrast: f32 = 1.0
+    contrast_pivot: f32 = 0.4
+    sky_reference: f32 = 0.0
+    variation: f32 = 0.0
+    variation_scale: f32 = 40.0
+    faces: i32 = 0
+    has_planet: i32 = 0
+    planet_x: f32 = 0.0
+    planet_y: f32 = 0.0
+    planet_z: f32 = 0.0
+    axis_x: f32 = 0.0
+    axis_y: f32 = 0.0
+    axis_z: f32 = 1.0
+
+# Pixel-art outlines, a full-screen pass over the finished frame (used
+# instead of the GTAO/TAA stack, which it does not need). The nearer pixel of
+# every depth step and, optionally, sharp crease is multiplied by `color`, so
+# objects keep a darker version of their own hue. depth_threshold is relative
+# (0.05 = a 5% depth step); crease_threshold is 1 - cos(fold angle), 0 = off;
+# outlines fade out before fade_distance metres (0 = never); thickness is
+# the band width in rendered pixels (1..4).
+struct Outline:
+    enabled: i32 = 0
+    strength: f32 = 1.0
+    depth_threshold: f32 = 0.05
+    crease_threshold: f32 = 0.0
+    fade_distance: f32 = 0.0
+    thickness: i32 = 1
+    color: Color = Color()
+
 struct Environment:
     clear_color: Color = Color()
     fog: Fog = Fog()
     sky: Sky = Sky()
     lighting: EnvironmentLighting = EnvironmentLighting()
+    stylized: StylizedLighting = StylizedLighting()
+    outline: Outline = Outline()
     bloom: Bloom = Bloom()
     tone_mapping: ToneMapping = ToneMapping()
     # Renderer-native G-buffer post stack (GTAO + TAA). Kept explicit so
@@ -947,6 +1009,144 @@ attach Sky:
             return self.zenith_color
         return self.horizon_color
 
+attach StylizedLighting:
+
+    static fun none() -> StylizedLighting:
+        return StylizedLighting()
+
+    # Two hard tones, warm sun and cool sky-tinted shade, full cast shadows.
+    static fun pixel_art() -> StylizedLighting:
+        style: StylizedLighting = StylizedLighting()
+        style.enabled = 1
+        style.bands = 2.0
+        style.wrap = 0.25
+        style.shadow_color = Color.rgb(0.56, 0.60, 0.78)
+        style.sky_tint = 0.35
+        style.sun_color = Color.rgb(1.06, 1.0, 0.90)
+        style.shadow_strength = 1.0
+        style.saturation = 1.0
+        style.contrast = 1.0
+        style.contrast_pivot = 0.4
+        return style
+
+    # Voxel-game face shading, neutral grade, nothing else.
+    static fun voxel_faces() -> StylizedLighting:
+        style: StylizedLighting = StylizedLighting()
+        style.enabled = 1
+        style.faces = 1
+        style.saturation = 1.0
+        style.contrast = 1.0
+        return style
+
+    fun set_planet_frame(self, center_x: f32, center_y: f32, center_z: f32, axis_x: f32, axis_y: f32, axis_z: f32) -> StylizedLighting:
+        self.has_planet = 1
+        self.planet_x = center_x
+        self.planet_y = center_y
+        self.planet_z = center_z
+        self.axis_x = axis_x
+        self.axis_y = axis_y
+        self.axis_z = axis_z
+        return self
+
+    fun clear_planet_frame(self) -> StylizedLighting:
+        self.has_planet = 0
+        return self
+
+    fun set_bands(self, bands: f32) -> StylizedLighting:
+        self.bands = clamp(bands, 0.0, 8.0)
+        return self
+
+    fun set_wrap(self, wrap: f32) -> StylizedLighting:
+        self.wrap = clamp(wrap, 0.0, 0.95)
+        return self
+
+    fun set_texels_per_metre(self, texels: f32) -> StylizedLighting:
+        self.texels_per_metre = clamp(texels, 0.0, 1024.0)
+        return self
+
+    fun set_shadow_color(self, color: Color) -> StylizedLighting:
+        self.shadow_color = color
+        return self
+
+    fun set_sky_tint(self, amount: f32) -> StylizedLighting:
+        self.sky_tint = clamp(amount, 0.0, 1.0)
+        return self
+
+    fun set_sun_color(self, color: Color) -> StylizedLighting:
+        self.sun_color = color
+        return self
+
+    fun set_shadow_strength(self, strength: f32) -> StylizedLighting:
+        self.shadow_strength = clamp(strength, 0.0, 1.0)
+        return self
+
+    fun set_grade(self, saturation: f32, contrast: f32, pivot: f32) -> StylizedLighting:
+        self.saturation = clamp(saturation, 0.0, 3.0)
+        self.contrast = clamp(contrast, 0.0, 3.0)
+        self.contrast_pivot = clamp(pivot, 0.0, 1.0)
+        return self
+
+    fun set_variation(self, strength: f32, patch_metres: f32) -> StylizedLighting:
+        self.variation = clamp(strength, 0.0, 1.0)
+        self.variation_scale = clamp(patch_metres, 1.0, 10000.0)
+        return self
+
+    fun set_sky_reference(self, brightness: f32) -> StylizedLighting:
+        self.sky_reference = clamp(brightness, 0.0, 4.0)
+        return self
+
+    fun disable(self) -> StylizedLighting:
+        self.enabled = 0
+        return self
+
+attach Outline:
+
+    static fun none() -> Outline:
+        return Outline()
+
+    static fun pixel_art() -> Outline:
+        outline: Outline = Outline()
+        outline.enabled = 1
+        outline.strength = 1.0
+        outline.depth_threshold = 0.05
+        outline.crease_threshold = 0.45
+        outline.fade_distance = 90.0
+        outline.thickness = 1
+        outline.color = Color.rgb(0.42, 0.40, 0.52)
+        return outline
+
+    fun set_strength(self, strength: f32) -> Outline:
+        self.strength = clamp(strength, 0.0, 1.0)
+        return self
+
+    fun set_depth_threshold(self, threshold: f32) -> Outline:
+        self.depth_threshold = clamp(threshold, 0.0001, 1.0)
+        return self
+
+    fun set_crease_threshold(self, threshold: f32) -> Outline:
+        self.crease_threshold = clamp(threshold, 0.0, 2.0)
+        return self
+
+    fun set_fade_distance(self, distance: f32) -> Outline:
+        self.fade_distance = clamp(distance, 0.0, 100000.0)
+        return self
+
+    fun set_color(self, color: Color) -> Outline:
+        self.color = color
+        return self
+
+    fun set_thickness(self, pixels: i32) -> Outline:
+        self.thickness = pixels
+        if self.thickness < 1:
+            self.thickness = 1
+        if self.thickness > 4:
+            self.thickness = 4
+        return self
+
+    fun disable(self) -> Outline:
+        self.enabled = 0
+        return self
+
 attach Environment:
 
     static fun create() -> Environment:
@@ -976,6 +1176,14 @@ attach Environment:
 
     fun set_lighting(self, lighting: EnvironmentLighting) -> Environment:
         self.lighting = lighting
+        return self
+
+    fun set_stylized_lighting(self, style: StylizedLighting) -> Environment:
+        self.stylized = style
+        return self
+
+    fun set_outline(self, outline: Outline) -> Environment:
+        self.outline = outline
         return self
 
     fun set_bloom(self, bloom: Bloom) -> Environment:

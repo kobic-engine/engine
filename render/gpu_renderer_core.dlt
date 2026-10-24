@@ -35,7 +35,7 @@ struct GpuMeshBounds:
     radius: f32 = 1.0
 
 imm KOBIC_POINT_LIGHT_SLOTS: i32 = 8
-imm KOBIC_POINT_LIGHT_DATA_SIZE: i64 = 384
+imm KOBIC_POINT_LIGHT_DATA_SIZE: i64 = 496
 
 # Shadow caster size-cull threshold (angular: worldRadius / |clipW|).
 # 0.0 disables (default = prior behavior). The engine raises it for dense
@@ -613,6 +613,7 @@ struct GpuRendererCore:
     gpu_cull_ptr: i64 = 0    # borrowed GpuCullPipeline (owned by runtime)
     gpu_hzb_ptr: i64 = 0     # borrowed GpuHzb (owned by runtime)
     gpu_temporal_ptr: i64 = 0 # borrowed GpuTemporal (owned by runtime)
+    outline_params_ptr: i64 = 0 # 64-byte outline push block, owned
     gpu_hzb_use_frame: i32 = 0
     gpu_hzb_camera_valid: i32 = 0
     gpu_hzb_prev_x: f32 = 0.0
@@ -698,6 +699,14 @@ struct GpuRendererCore:
     # Per-mesh fog distance scale (set_mesh_fog_distance_scale); 0 means 1.
     mesh_fog_scales: i64 = 0
     mesh_fog_scale_capacity: i32 = 0
+    # Destroyed mesh ids (destroy_mesh), reused by the next upload or
+    # register_instance; dead flags guard double destroys and stale ids.
+    free_mesh_ids: i64 = 0
+    free_mesh_count: i32 = 0
+    free_mesh_capacity: i32 = 0
+    mesh_dead_flags: i64 = 0
+    mesh_dead_capacity: i32 = 0
+    destroyed_mesh_total: i64 = 0
     # Frame capture (Engine.debug.capture_frame): the next presented image is
     # copied into a host buffer and written as a BMP once its submit is done.
     capture_path: str = ""
@@ -2817,6 +2826,12 @@ attach GpuRendererCore:
             return self.vb_count as i64
         if stat == 6:
             return self.arena_page_count as i64
+        # Live registry slots (high-water minus destroyed ids awaiting reuse)
+        # and the number of destroy_mesh calls so far.
+        if stat == 7:
+            return (self.vb_count - self.free_mesh_count) as i64
+        if stat == 8:
+            return self.destroyed_mesh_total
         return 0
 
     # Shadow caster size-cull threshold (shadow LOD). Casters whose angular
@@ -4261,6 +4276,23 @@ attach GpuRendererCore:
             slot = slot + 1
         return 1
 
+    # The 64-byte outline push block (see outline.frag), kept in a reused buffer.
+    fun _outline_params(self, outline: Outline) -> i64:
+        if self.outline_params_ptr == 0:
+            self.outline_params_ptr = Memory.malloc_zeroed(64)
+            if self.outline_params_ptr == 0:
+                return 0
+        out: i64 = self.outline_params_ptr
+        Memory.write_f32(out, outline.strength)
+        Memory.write_f32(out + 4, outline.depth_threshold)
+        Memory.write_f32(out + 8, outline.crease_threshold)
+        Memory.write_f32(out + 12, outline.fade_distance)
+        Memory.write_f32(out + 16, outline.color.r)
+        Memory.write_f32(out + 20, outline.color.g)
+        Memory.write_f32(out + 24, outline.color.b)
+        Memory.write_f32(out + 28, outline.thickness as f32)
+        return out
+
     fun _write_point_light_data(self, out: i64, env: Environment):
         if out == 0:
             return
@@ -4297,6 +4329,39 @@ attach GpuRendererCore:
                 Memory.write_f32(out + 324, env.lighting.reflection_strength)
                 Memory.write_f32(out + 328, 1.0)
                 Memory.write_f32(out + 332, env.lighting.model as f32)
+        # Stylized lighting (styleLight, styleShadow, styleSun, styleGrade).
+        # All zero keeps the shaders on their classic paths.
+        style: StylizedLighting = env.stylized
+        if style.enabled == 1:
+            mode: f32 = 1.0
+            if style.faces == 1:
+                mode = 2.0
+            Memory.write_f32(out + 384, mode)
+            Memory.write_f32(out + 388, style.bands)
+            Memory.write_f32(out + 392, style.wrap)
+            Memory.write_f32(out + 396, style.texels_per_metre)
+            Memory.write_f32(out + 400, style.shadow_color.r)
+            Memory.write_f32(out + 404, style.shadow_color.g)
+            Memory.write_f32(out + 408, style.shadow_color.b)
+            Memory.write_f32(out + 412, style.sky_tint)
+            Memory.write_f32(out + 416, style.sun_color.r)
+            Memory.write_f32(out + 420, style.sun_color.g)
+            Memory.write_f32(out + 424, style.sun_color.b)
+            Memory.write_f32(out + 428, style.shadow_strength)
+            Memory.write_f32(out + 432, style.saturation)
+            Memory.write_f32(out + 436, style.contrast)
+            Memory.write_f32(out + 440, style.contrast_pivot)
+            Memory.write_f32(out + 444, style.sky_reference)
+            Memory.write_f32(out + 448, style.variation)
+            Memory.write_f32(out + 452, style.variation_scale)
+            if style.has_planet == 1:
+                Memory.write_f32(out + 464, style.planet_x)
+                Memory.write_f32(out + 468, style.planet_y)
+                Memory.write_f32(out + 472, style.planet_z)
+                Memory.write_f32(out + 476, 1.0)
+            Memory.write_f32(out + 480, style.axis_x)
+            Memory.write_f32(out + 484, style.axis_y)
+            Memory.write_f32(out + 488, style.axis_z)
         if self.point_light_ptrs == 0:
             return
         source_count: i32 = self.point_light_count
@@ -4675,7 +4740,7 @@ attach GpuRendererCore:
         if uploaded.ok == 0:
             return 0 - 1
         # Store
-        idx: i32 = self.vb_count
+        idx: i32 = self._peek_mesh_slot()
         Memory.write_ptr(self.vb_handles + idx * 8, uploaded.handle)
         Memory.write_ptr(self.vb_memories + idx * 8, uploaded.memory)
         Memory.write_i64(self.vb_alloc_sizes + idx * 8, uploaded.capacity)
@@ -4691,7 +4756,7 @@ attach GpuRendererCore:
         Memory.write_i64(self.mesh_arena_ib_caps + idx * 8, 0)
         Memory.write_ptr(self.model_matrices + idx * 8, 0)
         self._write_mesh_bounds(idx, vertices, vertex_count)
-        self.vb_count = idx + 1
+        self._commit_mesh_slot(idx)
         return idx
 
     fun upload_indexed_mesh(self, vertices: i64, vertex_count: i32, indices: i64, index_count: i32) -> i32:
@@ -4714,7 +4779,7 @@ attach GpuRendererCore:
             vkFreeMemory(self.device, uploaded_vb.memory, 0)
             return 0 - 1
 
-        idx: i32 = self.vb_count
+        idx: i32 = self._peek_mesh_slot()
         Memory.write_ptr(self.vb_handles + idx * 8, uploaded_vb.handle)
         Memory.write_ptr(self.vb_memories + idx * 8, uploaded_vb.memory)
         Memory.write_i64(self.vb_alloc_sizes + idx * 8, uploaded_vb.capacity)
@@ -4730,7 +4795,7 @@ attach GpuRendererCore:
         Memory.write_i64(self.mesh_arena_ib_caps + idx * 8, 0)
         Memory.write_ptr(self.model_matrices + idx * 8, 0)
         self._write_mesh_bounds(idx, vertices, vertex_count)
-        self.vb_count = idx + 1
+        self._commit_mesh_slot(idx)
         return idx
 
     fun upload_dynamic_mesh_data(self, mesh: GpuMeshData) -> i32:
@@ -4750,7 +4815,7 @@ attach GpuRendererCore:
         if self._arena_write_slice(slice, mesh, vbytes, ibytes) == 0:
             self._arena_retire_slice(slice.page, slice.first_vertex, slice.first_index, slice.vertex_capacity, slice.index_capacity)
             return -1
-        idx: i32 = self.vb_count
+        idx: i32 = self._peek_mesh_slot()
         Memory.write_ptr(self.vb_handles + idx * 8, Memory.read_ptr(self.arena_page_vbs + slice.page * 8))
         Memory.write_ptr(self.vb_memories + idx * 8, 0)
         Memory.write_i64(self.vb_alloc_sizes + idx * 8, 0)
@@ -4766,7 +4831,7 @@ attach GpuRendererCore:
         Memory.write_i64(self.mesh_arena_ib_caps + idx * 8, slice.index_capacity)
         Memory.write_ptr(self.model_matrices + idx * 8, 0)
         self._write_mesh_bounds(idx, mesh.vertices, mesh.vertex_count)
-        self.vb_count = idx + 1
+        self._commit_mesh_slot(idx)
         self._mark_mesh_dirty(idx)
         return idx
 
@@ -4893,7 +4958,7 @@ attach GpuRendererCore:
             return 0 - 1
         if self.vb_count >= self.vb_capacity:
             self._grow_vb_arrays()
-        idx: i32 = self.vb_count
+        idx: i32 = self._peek_mesh_slot()
         # Copy VkBuffer handle (shared), set memory to 0 (don't free on cleanup)
         src_handle: i64 = Memory.read_ptr(self.vb_handles + src_vb_idx * 8)
         src_vc: i32 = Memory.read_i32(self.vb_vert_counts + src_vb_idx * 4)
@@ -4940,9 +5005,181 @@ attach GpuRendererCore:
                     if Memory.read_i32(self.vb_visible + idx * 4) != 0:
                         self.transparent_visible_count = self.transparent_visible_count + 1
         self._copy_mesh_bounds(idx, src_vb_idx)
-        self.vb_count = idx + 1
+        self._commit_mesh_slot(idx)
         self._mark_mesh_dirty(idx)
         return idx
+
+    # Next registry slot: the most recently destroyed id, else a new one at
+    # vb_count. Only _commit_mesh_slot consumes it, so a failed upload loses
+    # nothing.
+    fun _peek_mesh_slot(self) -> i32:
+        if self.free_mesh_count > 0:
+            return Memory.read_i32(self.free_mesh_ids + ((self.free_mesh_count - 1) as i64) * 4)
+        if self.vb_count >= self.vb_capacity:
+            self._grow_vb_arrays()
+        return self.vb_count
+
+    fun _commit_mesh_slot(self, idx: i32):
+        if self.free_mesh_count > 0:
+            if Memory.read_i32(self.free_mesh_ids + ((self.free_mesh_count - 1) as i64) * 4) == idx:
+                self.free_mesh_count = self.free_mesh_count - 1
+                self._set_mesh_dead(idx, 0)
+        if idx >= self.vb_count:
+            self.vb_count = idx + 1
+
+    fun mesh_is_live(self, mesh_id: i32) -> i32:
+        if mesh_id < 0 or mesh_id >= self.vb_count:
+            return 0
+        if self.mesh_dead_flags != 0 and mesh_id < self.mesh_dead_capacity:
+            if Memory.read_i32(self.mesh_dead_flags + mesh_id * 4) != 0:
+                return 0
+        return 1
+
+    fun _set_mesh_dead(self, mesh_id: i32, dead: i32):
+        if mesh_id >= self.mesh_dead_capacity:
+            if dead == 0:
+                return
+            next_capacity: i32 = 1024
+            while next_capacity <= mesh_id:
+                next_capacity = next_capacity * 2
+            next_flags: i64 = Memory.malloc_zeroed((next_capacity as i64) * 4)
+            if next_flags == 0:
+                return
+            if self.mesh_dead_flags != 0:
+                Memory.copy(next_flags, self.mesh_dead_flags, (self.mesh_dead_capacity as i64) * 4)
+                Memory.free(self.mesh_dead_flags)
+            self.mesh_dead_flags = next_flags
+            self.mesh_dead_capacity = next_capacity
+        Memory.write_i32(self.mesh_dead_flags + mesh_id * 4, dead)
+
+    fun _push_free_mesh_id(self, mesh_id: i32) -> i32:
+        if self.free_mesh_count >= self.free_mesh_capacity:
+            next_capacity: i32 = self.free_mesh_capacity * 2
+            if next_capacity < 256:
+                next_capacity = 256
+            next_ids: i64 = Memory.malloc_zeroed((next_capacity as i64) * 4)
+            if next_ids == 0:
+                return 0
+            if self.free_mesh_ids != 0:
+                Memory.copy(next_ids, self.free_mesh_ids, (self.free_mesh_count as i64) * 4)
+                Memory.free(self.free_mesh_ids)
+            self.free_mesh_ids = next_ids
+            self.free_mesh_capacity = next_capacity
+        Memory.write_i32(self.free_mesh_ids + (self.free_mesh_count as i64) * 4, mesh_id)
+        self.free_mesh_count = self.free_mesh_count + 1
+        return 1
+
+    # Another live slot drawing from the same dedicated vertex buffer (an
+    # instance from register_instance), or -1.
+    fun _mesh_buffer_heir(self, mesh_id: i32) -> i32:
+        handle: i64 = Memory.read_ptr(self.vb_handles + mesh_id * 8)
+        if handle == 0:
+            return -1
+        i: i32 = 0
+        while i < self.vb_count:
+            if i != mesh_id and self.mesh_is_live(i) != 0:
+                if Memory.read_ptr(self.vb_handles + i * 8) == handle and Memory.read_i32(self.mesh_arena_pages + i * 4) < 0:
+                    return i
+            i = i + 1
+        return -1
+
+    # Releases a mesh or an instance. Arena slices and dedicated buffers are
+    # retired, not freed, so frames still in flight keep drawing safely; a
+    # dedicated buffer still used by instances is handed to one of them. The
+    # slot returns to its startup defaults and its id is reused by the next
+    # upload or register_instance. Returns 1 when the id was live.
+    fun destroy_mesh(self, mesh_id: i32) -> i32:
+        if self.initialized == 0:
+            return 0
+        if self.mesh_is_live(mesh_id) == 0:
+            return 0
+        if mesh_id == self.sprite_quad_source_id:
+            return 0
+        self.set_instance_visible(mesh_id, 0)
+        was_static: i32 = 0
+        if self.mesh_static_batches != 0:
+            was_static = Memory.read_i32(self.mesh_static_batches + mesh_id * 4)
+            Memory.write_i32(self.mesh_static_batches + mesh_id * 4, 0)
+
+        page: i32 = Memory.read_i32(self.mesh_arena_pages + mesh_id * 4)
+        if page >= 0:
+            self._arena_retire_slice(page, Memory.read_i32(self.vb_first_vertices + mesh_id * 4), Memory.read_i32(self.ib_first_indices + mesh_id * 4), Memory.read_i64(self.mesh_arena_vb_caps + mesh_id * 8), Memory.read_i64(self.mesh_arena_ib_caps + mesh_id * 8))
+        else:
+            vb_memory: i64 = Memory.read_ptr(self.vb_memories + mesh_id * 8)
+            if vb_memory != 0:
+                heir: i32 = self._mesh_buffer_heir(mesh_id)
+                if heir >= 0:
+                    Memory.write_ptr(self.vb_memories + heir * 8, vb_memory)
+                    Memory.write_i64(self.vb_alloc_sizes + heir * 8, Memory.read_i64(self.vb_alloc_sizes + mesh_id * 8))
+                    Memory.write_ptr(self.ib_memories + heir * 8, Memory.read_ptr(self.ib_memories + mesh_id * 8))
+                    Memory.write_i64(self.ib_alloc_sizes + heir * 8, Memory.read_i64(self.ib_alloc_sizes + mesh_id * 8))
+                else:
+                    self._retire_buffer_pair(Memory.read_ptr(self.vb_handles + mesh_id * 8), vb_memory, Memory.read_i64(self.vb_alloc_sizes + mesh_id * 8), 128)
+                    ib_memory: i64 = Memory.read_ptr(self.ib_memories + mesh_id * 8)
+                    if ib_memory != 0:
+                        self._retire_buffer_pair(Memory.read_ptr(self.ib_handles + mesh_id * 8), ib_memory, Memory.read_i64(self.ib_alloc_sizes + mesh_id * 8), 64)
+
+        if self.mesh_transparent != 0:
+            if Memory.read_i32(self.mesh_transparent + mesh_id * 4) != 0:
+                self.transparent_mesh_count = self.transparent_mesh_count - 1
+                if self.transparent_mesh_count < 0:
+                    self.transparent_mesh_count = 0
+                Memory.write_i32(self.mesh_transparent + mesh_id * 4, 0)
+        matrix: i64 = Memory.read_ptr(self.model_matrices + mesh_id * 8)
+        if matrix != 0:
+            Memory.free(matrix)
+        if self.mesh_late_flags != 0 and mesh_id < self.mesh_late_capacity:
+            Memory.write_i32(self.mesh_late_flags + mesh_id * 4, 0)
+        if self.mesh_fog_scales != 0 and mesh_id < self.mesh_fog_scale_capacity:
+            Memory.write_f32(self.mesh_fog_scales + mesh_id * 4, 0.0)
+        self._reset_mesh_slot(mesh_id)
+        self._set_mesh_dead(mesh_id, 1)
+        if self._push_free_mesh_id(mesh_id) == 0:
+            # Still dead and hidden; the id is only not reused.
+            print("[kobic] destroy_mesh: free-id list could not grow")
+        self.destroyed_mesh_total = self.destroyed_mesh_total + 1
+        if was_static != 0:
+            self._mark_cull_dirty_struct()
+        else:
+            self._mark_mesh_dirty(mesh_id)
+        return 1
+
+    # Startup defaults of one registry slot (as the constructor writes them).
+    fun _reset_mesh_slot(self, idx: i32):
+        Memory.write_ptr(self.vb_handles + idx * 8, 0)
+        Memory.write_ptr(self.vb_memories + idx * 8, 0)
+        Memory.write_i64(self.vb_alloc_sizes + idx * 8, 0)
+        Memory.write_i32(self.vb_vert_counts + idx * 4, 0)
+        Memory.write_i32(self.vb_first_vertices + idx * 4, 0)
+        Memory.write_ptr(self.ib_handles + idx * 8, 0)
+        Memory.write_ptr(self.ib_memories + idx * 8, 0)
+        Memory.write_i64(self.ib_alloc_sizes + idx * 8, 0)
+        Memory.write_i32(self.ib_index_counts + idx * 4, 0)
+        Memory.write_i32(self.ib_first_indices + idx * 4, 0)
+        Memory.write_i32(self.mesh_arena_pages + idx * 4, -1)
+        Memory.write_i64(self.mesh_arena_vb_caps + idx * 8, 0)
+        Memory.write_i64(self.mesh_arena_ib_caps + idx * 8, 0)
+        Memory.write_ptr(self.model_matrices + idx * 8, 0)
+        Memory.write_f32(self.mesh_bound_xs + idx * 4, 0.0)
+        Memory.write_f32(self.mesh_bound_ys + idx * 4, 0.0)
+        Memory.write_f32(self.mesh_bound_zs + idx * 4, 0.0)
+        Memory.write_f32(self.mesh_bound_rs + idx * 4, 0.0)
+        Memory.write_i32(self.vb_cull_result + idx * 4, 0)
+        Memory.write_i32(self.mesh_tex_ids + idx * 4, 0 - 1)
+        Memory.write_i32(self.mesh_emissive_tex_ids + idx * 4, 0 - 1)
+        Memory.write_i32(self.mesh_normal_tex_ids + idx * 4, 0 - 1)
+        Memory.write_i32(self.mesh_metallic_roughness_tex_ids + idx * 4, 0 - 1)
+        Memory.write_i32(self.mesh_occlusion_tex_ids + idx * 4, 0 - 1)
+        if self.mesh_desc_sets != 0:
+            Memory.write_ptr(self.mesh_desc_sets + idx * 8, 0)
+        material_off: i64 = (idx as i64) * (KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+        Memory.set(self.mesh_material_params + material_off, 0, KOBIC_GPU_MESH_MATERIAL_STRIDE as i64)
+        Memory.write_f32(self.mesh_material_params + material_off + 4, 1.0)
+        Memory.write_f32(self.mesh_material_params + material_off + 16, 1.0)
+        Memory.write_f32(self.mesh_material_params + material_off + 20, 1.0)
+        Memory.write_f32(self.mesh_material_params + material_off + 32, 1.0)
+        Memory.write_i32(self.mesh_shadow_flags + idx * 4, 3)
+        Memory.write_f32(self.mesh_shadow_distances + idx * 4, 0.0)
 
     fun set_instance_visible(self, mesh_id: i32, on: i32):
         if self.vb_visible == 0:
@@ -7552,6 +7789,15 @@ attach GpuRendererCore:
                                 post_image = temporal.output_image()
                                 post_desc = temporal.output_descriptor()
                                 post_sampled = 1
+                    elif env.outline.enabled == 1:
+                        outline_vp: i64 = self.scratch_vp_matrix
+                        outline_params: i64 = self._outline_params(env.outline)
+                        if outline_vp != 0 and outline_params != 0 and cam_view != 0 and cam_proj != 0:
+                            _kobic_multiply_4x4_into(cam_proj, cam_view, outline_vp)
+                            if temporal.record_outline(cmd, self.scale_color_image, self.scale_geometry_image, self.scale_depth_image, depth_is_sampled, outline_vp, outline_params) == 1:
+                                post_image = temporal.output_image()
+                                post_desc = temporal.output_descriptor()
+                                post_sampled = 1
                     else:
                         temporal.invalidate_history()
                 self._record_bloom_present(cmd, present_framebuffer, rp, post_image, post_desc, post_sampled, swap_image, swap_width, swap_height, env.bloom, env.tone_mapping)
@@ -7583,6 +7829,18 @@ attach GpuRendererCore:
 
     fun cleanup(self) -> void:
         self.cleanup_collision_debug()
+        if self.free_mesh_ids != 0:
+            Memory.free(self.free_mesh_ids)
+            self.free_mesh_ids = 0
+        self.free_mesh_count = 0
+        self.free_mesh_capacity = 0
+        if self.mesh_dead_flags != 0:
+            Memory.free(self.mesh_dead_flags)
+            self.mesh_dead_flags = 0
+        self.mesh_dead_capacity = 0
+        if self.outline_params_ptr != 0:
+            Memory.free(self.outline_params_ptr)
+            self.outline_params_ptr = 0
         self.destroy_render_scale_target()
         self.profiler.cleanup()
         # Phase 1: destroy the bindless table objects (pool frees its sets).

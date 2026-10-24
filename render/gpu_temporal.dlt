@@ -265,9 +265,11 @@ fun kobic_temporal_depth_barrier(cmd: i64, image: i64, old_layout: i32, new_layo
     temporal_pipeline_layout: i64 = 0
     gtao_pipeline: i64 = 0
     temporal_pipeline: i64 = 0
+    outline_pipeline: i64 = 0
     vert_module: i64 = 0
     gtao_frag_module: i64 = 0
     temporal_frag_module: i64 = 0
+    outline_frag_module: i64 = 0
     desc_pool: i64 = 0
     gtao_set: i64 = 0
     temporal_set0: i64 = 0
@@ -348,18 +350,23 @@ attach GpuTemporal:
         vert_shader: EmbeddedShader = get_temporal_vert_shader()
         gtao_shader: EmbeddedShader = get_gtao_frag_shader()
         temporal_shader: EmbeddedShader = get_taa_gtao_frag_shader()
+        outline_shader: EmbeddedShader = get_outline_frag_shader()
         self.vert_module = kobic_temporal_shader_module(device, vert_shader.data, vert_shader.size)
         self.gtao_frag_module = kobic_temporal_shader_module(device, gtao_shader.data, gtao_shader.size)
         self.temporal_frag_module = kobic_temporal_shader_module(device, temporal_shader.data, temporal_shader.size)
+        self.outline_frag_module = kobic_temporal_shader_module(device, outline_shader.data, outline_shader.size)
         vert_shader.release()
         gtao_shader.release()
         temporal_shader.release()
-        if self.vert_module == 0 or self.gtao_frag_module == 0 or self.temporal_frag_module == 0:
+        outline_shader.release()
+        if self.vert_module == 0 or self.gtao_frag_module == 0 or self.temporal_frag_module == 0 or self.outline_frag_module == 0:
             self.cleanup()
             return 0
         self.gtao_pipeline = kobic_temporal_pipeline(device, self.gtao_render_pass, self.gtao_pipeline_layout, self.vert_module, self.gtao_frag_module)
         self.temporal_pipeline = kobic_temporal_pipeline(device, self.temporal_render_pass, self.temporal_pipeline_layout, self.vert_module, self.temporal_frag_module)
-        if self.gtao_pipeline == 0 or self.temporal_pipeline == 0:
+        # Outlines share the temporal layout, inputs and history targets.
+        self.outline_pipeline = kobic_temporal_pipeline(device, self.temporal_render_pass, self.temporal_pipeline_layout, self.vert_module, self.outline_frag_module)
+        if self.gtao_pipeline == 0 or self.temporal_pipeline == 0 or self.outline_pipeline == 0:
             self.cleanup()
             return 0
 
@@ -625,6 +632,46 @@ attach GpuTemporal:
         kobic_temporal_depth_barrier(cmd, depth_image, 5, 3, 32, 1024, 128, 512)
         return 1
 
+    # Pixel-art outline pass into the next history target (no GTAO, no
+    # jitter, no history blend). `params` holds the 64-byte outline block
+    # (outline, color and two reserved vec4) that follows the view-projection.
+    fun record_outline(self, cmd: i64, color_image: i64, geometry_image: i64, depth_image: i64, depth_is_sampled: i32, current_vp: i64, params: i64) -> i32:
+        if self.ready == 0 or self.width <= 0 or current_vp == 0 or params == 0 or self.outline_pipeline == 0:
+            return 0
+        gpu_tex_barrier(cmd, color_image, 2, 5, 256, 32, 1024, 128)
+        gpu_tex_barrier(cmd, geometry_image, 2, 5, 256, 32, 1024, 128)
+        if depth_is_sampled == 0:
+            kobic_temporal_depth_barrier(cmd, depth_image, 3, 5, 1024, 32, 512, 128)
+        self._initialize_history(cmd)
+
+        target_framebuffer: i64 = self.history_framebuffer0
+        target_set: i64 = self.temporal_set0
+        target_image: i64 = self.history_image0
+        if self.write_index == 1:
+            target_framebuffer = self.history_framebuffer1
+            target_set = self.temporal_set1
+            target_image = self.history_image1
+        self._begin_pass(cmd, self.temporal_render_pass, target_framebuffer, self.width, self.height, 0.0)
+        vkCmdBindPipeline(cmd, 0, self.outline_pipeline)
+        Memory.write_ptr(self.scratch_desc, target_set)
+        vkCmdBindDescriptorSets(cmd, 0, self.temporal_pipeline_layout, 0, 1, self.scratch_desc, 0, 0)
+        self._set_viewport(cmd, self.width, self.height)
+        Memory.copy(self.scratch_push, current_vp, 64)
+        Memory.copy(self.scratch_push + 64, params, 64)
+        vkCmdPushConstants(cmd, self.temporal_pipeline_layout, 17, 0, 128, self.scratch_push)
+        vkCmdDraw(cmd, 3, 1, 0, 0)
+        vkCmdEndRenderPass(cmd)
+        gpu_tex_barrier(cmd, target_image, 5, 5, 256, 32, 1024, 128)
+        # TAA must not blend with an outlined frame if it is enabled later.
+        self.history_valid = 0
+        self.output_index = self.write_index
+        self.write_index = 1 - self.write_index
+
+        gpu_tex_barrier(cmd, color_image, 5, 2, 32, 256, 128, 1024)
+        gpu_tex_barrier(cmd, geometry_image, 5, 2, 32, 256, 128, 1024)
+        kobic_temporal_depth_barrier(cmd, depth_image, 5, 3, 32, 1024, 128, 512)
+        return 1
+
     fun output_image(self) -> i64:
         if self.output_index == 1:
             return self.history_image1
@@ -644,6 +691,8 @@ attach GpuTemporal:
             vkDestroyPipeline(self.device, self.gtao_pipeline, 0)
         if self.temporal_pipeline != 0:
             vkDestroyPipeline(self.device, self.temporal_pipeline, 0)
+        if self.outline_pipeline != 0:
+            vkDestroyPipeline(self.device, self.outline_pipeline, 0)
         if self.gtao_pipeline_layout != 0:
             vkDestroyPipelineLayout(self.device, self.gtao_pipeline_layout, 0)
         if self.temporal_pipeline_layout != 0:
@@ -664,6 +713,8 @@ attach GpuTemporal:
             vkDestroyShaderModule(self.device, self.gtao_frag_module, 0)
         if self.temporal_frag_module != 0:
             vkDestroyShaderModule(self.device, self.temporal_frag_module, 0)
+        if self.outline_frag_module != 0:
+            vkDestroyShaderModule(self.device, self.outline_frag_module, 0)
         if self.sampler != 0:
             vkDestroySampler(self.device, self.sampler, 0)
         if self.point_sampler != 0:

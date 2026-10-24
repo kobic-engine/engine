@@ -280,6 +280,12 @@ attach EngineRuntime:
             mesh_id = self.upload_cube_mesh()
         return mesh_id
 
+    fun destroy_mesh(self, mesh_id: i32) -> i32:
+        return self.renderer.destroy_mesh(mesh_id)
+
+    fun mesh_is_live(self, mesh_id: i32) -> i32:
+        return self.renderer.mesh_is_live(mesh_id)
+
     fun register_instance(self, source_mesh: i32) -> i32:
         return self.renderer.register_instance(source_mesh)
 
