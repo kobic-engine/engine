@@ -798,6 +798,8 @@ struct GpuRendererCore:
     scale_color_memory: i64 = 0
     scale_color_view:   i64 = 0
     scale_sampler:      i64 = 0
+    # Nearest instead of bilinear sampling when the scaled scene is enlarged.
+    pixel_upscale:      i32 = 0
     scale_desc_set:     i64 = 0
     scale_geometry_image:  i64 = 0
     scale_geometry_memory: i64 = 0
@@ -5602,6 +5604,20 @@ attach GpuRendererCore:
         self.scale_desc_set = dset
         return dset
 
+    # Switches the enlargement filter. The scale target and the temporal
+    # targets are rebuilt with the new sampler on the next frame (after the
+    # GPU is idle, as they are still bound by frames in flight).
+    fun set_pixel_upscale(self, on: i32):
+        value: i32 = 0
+        if on != 0:
+            value = 1
+        if value == self.pixel_upscale:
+            return
+        self.pixel_upscale = value
+        if self.device != 0:
+            vkDeviceWaitIdle(self.device)
+        self.destroy_render_scale_target()
+
     fun destroy_render_scale_target(self):
         if self.gpu_temporal_ptr != 0:
             temporal_target: GpuTemporal = self.gpu_temporal_ptr as GpuTemporal
@@ -5681,6 +5697,8 @@ attach GpuRendererCore:
             self.destroy_render_scale_target()
             return 0
         scale_spec: TextureSpec = TextureSpec.smooth()
+        if self.pixel_upscale != 0:
+            scale_spec = TextureSpec.pixel()
         scale_spec = scale_spec.wrap(2)
         self.scale_sampler = gpu_tex_make_sampler(self.device, scale_spec)
         if self.scale_sampler == 0:
@@ -6509,6 +6527,7 @@ attach GpuRendererCore:
             return
         if self.gpu_temporal_ptr != 0:
             temporal_target: GpuTemporal = self.gpu_temporal_ptr as GpuTemporal
+            temporal_target.nearest_output = self.pixel_upscale
             temporal_target.ensure_target(rp, rw, rh, self.scale_color_view, self.scale_depth_view, self.scale_geometry_view)
         if self.gpu_hzb_ptr != 0:
             hzb_target: GpuHzb = self.gpu_hzb_ptr as GpuHzb

@@ -42,6 +42,12 @@ static g_engine_vsync_enabled: i32 = 1
 static g_engine_present_mode_preference: i32 = -1
 static g_engine_target_fps: i32 = 0
 static g_engine_render_scale: f32 = 1.0
+# 1: the low-resolution scene is enlarged with nearest sampling (crisp
+# screen-space pixel art) instead of bilinear filtering.
+static g_engine_pixel_upscale: i32 = 0
+# >0: render at window_height / N with an integer N chosen so the scene is
+# about this many lines tall, enlarged with nearest sampling (N x N blocks).
+static g_engine_pixel_lines: i32 = 0
 static g_engine_gpu_preference: i32 = 0
 static g_engine_render_stats_enabled: i32 = 0
 static g_engine_gpu_timing_enabled: i32 = 0
@@ -166,6 +172,29 @@ attach Properties:
 
     static fun render_scale() -> f32:
         return g_engine_render_scale
+
+    # Crisp upscaling of the render-scale target: every scene pixel becomes
+    # a sharp block on screen. Use an integer 1/N render scale for even blocks.
+    static fun set_pixel_upscale(on: i32):
+        if on == 0:
+            g_engine_pixel_upscale = 0
+        else:
+            g_engine_pixel_upscale = 1
+
+    static fun pixel_upscale() -> i32:
+        return g_engine_pixel_upscale
+
+    # Screen-space pixel art: about `lines` scene pixels from top to bottom,
+    # each an exact N x N block of the window (N = round(height / lines)).
+    # Overrides the render scale and enables crisp upscaling; 0 turns it off.
+    static fun set_pixel_lines(lines: i32):
+        if lines <= 0:
+            g_engine_pixel_lines = 0
+            return
+        g_engine_pixel_lines = lines
+
+    static fun pixel_lines() -> i32:
+        return g_engine_pixel_lines
 
     static fun set_gpu_preference(preference: i32):
         if preference < 0:
@@ -722,6 +751,11 @@ attach Engine:
         if g_engine_collision_debug_enabled == 1:
             g_engine_runtime.set_collision_debug_root(g_engine_scene.root_ptr)
         env: Environment = g_engine_scene.environment()
+        if g_engine_pixel_lines > 0:
+            g_engine_runtime.set_pixel_upscale(1)
+            g_engine_runtime.render_camera_pixel_lines(camera, g_engine_pixel_lines, env)
+            return
+        g_engine_runtime.set_pixel_upscale(g_engine_pixel_upscale)
         g_engine_runtime.render_camera_scaled_with_environment(camera, g_engine_render_scale, env)
 
     static fun destroy_scene():

@@ -549,6 +549,25 @@ attach EngineRuntime:
             return
         self.renderer.render_camera3d_frame_with_environment(self.render_pass, self.swapchain, self.ctx, camera, self.width, self.height, env)
 
+    fun set_pixel_upscale(self, on: i32):
+        self.renderer.core.set_pixel_upscale(on)
+
+    # Integer block size N = round(height / lines): the scene renders at
+    # (width / N, height / N) and every scene pixel covers N x N pixels.
+    fun render_camera_pixel_lines(self, camera: Camera3D, lines: i32, env: Environment):
+        if self.recreate_swapchain_if_needed() == 0:
+            return
+        block: i32 = (self.height + lines / 2) / lines
+        if block < 1:
+            block = 1
+        rw: i32 = self.width / block
+        rh: i32 = self.height / block
+        if rw < 1:
+            rw = 1
+        if rh < 1:
+            rh = 1
+        self.renderer.render_camera3d_frame_scaled_with_environment(self.render_pass, self.swapchain, self.ctx, camera, self.width, self.height, rw, rh, env)
+
     fun render_camera_scaled(self, camera: Camera3D, render_scale: f32):
         self.render_camera_scaled_with_environment(camera, render_scale, Environment.create())
 

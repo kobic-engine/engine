@@ -276,6 +276,8 @@ fun kobic_temporal_depth_barrier(cmd: i64, image: i64, old_layout: i32, new_layo
     temporal_set1: i64 = 0
     sampler: i64 = 0
     point_sampler: i64 = 0
+    # Present the history targets with nearest sampling (pixel upscale).
+    nearest_output: i32 = 0
     gtao_image: i64 = 0
     gtao_memory: i64 = 0
     gtao_view: i64 = 0
@@ -523,8 +525,11 @@ attach GpuTemporal:
         kobic_temporal_update_image(self.device, self.temporal_set1, 2, geometry_view, self.point_sampler)
         kobic_temporal_update_image(self.device, self.temporal_set1, 3, self.gtao_view, self.sampler)
         kobic_temporal_update_image(self.device, self.temporal_set1, 4, self.history_view0, self.sampler)
-        self.bloom_desc0 = rp.make_texture_descriptor(self.device, self.history_view0, self.sampler)
-        self.bloom_desc1 = rp.make_texture_descriptor(self.device, self.history_view1, self.sampler)
+        output_sampler: i64 = self.sampler
+        if self.nearest_output != 0:
+            output_sampler = self.point_sampler
+        self.bloom_desc0 = rp.make_texture_descriptor(self.device, self.history_view0, output_sampler)
+        self.bloom_desc1 = rp.make_texture_descriptor(self.device, self.history_view1, output_sampler)
         if self.bloom_desc0 == 0 or self.bloom_desc1 == 0:
             self.destroy_targets()
             return 0
