@@ -99,6 +99,8 @@ fun node_release_resources(node_ptr: i64):
     node: Node = node_ptr as Node
     if node.kind == KOBIC_NODE_KIND_AUDIO_SOURCE:
         kobic_audio_source_detach(node_ptr)
+    elif node.kind == KOBIC_NODE_KIND_AUDIO_AREA:
+        kobic_audio_area_detach(node_ptr)
 
 fun node_destroy_tree(node_ptr: i64):
     if node_ptr == 0:

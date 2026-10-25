@@ -1,0 +1,131 @@
+##############################
+# Kobic - Reverb areas
+# AudioArea3D is a Node3D box or sphere with an AudioEnvironment (a preset
+# such as AudioEnvironment.cave(), or custom values). It becomes an audio3d
+# reverb zone with a fade distance and a priority: a room inside a building
+# inside a cave blends from the lowest priority to the highest around the
+# listener. Outside every area the scene's default (outdoor) applies.
+#
+# Audio is camera-relative, so each frame the engine moves every zone to
+# its node's position minus the eye. audio3d has no call that moves a zone,
+# so the zone is re-added at the new centre (same environment, fade and
+# priority); this is a handful of writes per area per frame.
+##############################
+
+imm KOBIC_NODE_KIND_AUDIO_AREA: i32 = 7
+imm KOBIC_AUDIO_AREA_BOX: i32 = 0
+imm KOBIC_AUDIO_AREA_SPHERE: i32 = 1
+
+static g_audio_areas: i64 = 0
+static g_audio_area_count: i32 = 0
+static g_audio_area_capacity: i32 = 0
+
+@heap struct AudioArea3D extends Node3D:
+    environment: AudioEnvironment = AudioEnvironment()
+    shape: i32 = 0
+    # Box half extents, or the sphere radius in half_x.
+    half_x: f32 = 1.0
+    half_y: f32 = 1.0
+    half_z: f32 = 1.0
+    # Distance outside the shape over which the area fades out.
+    fade: f32 = 2.0
+    priority: i32 = 0
+    zone: i32 = -1
+
+fun audio_area_registry_add(ptr: i64):
+    if g_audio_area_count >= g_audio_area_capacity:
+        capacity: i32 = g_audio_area_capacity * 2
+        if capacity < 16:
+            capacity = 16
+        grown: i64 = Memory.malloc_zeroed((capacity as i64) * 8)
+        if grown == 0:
+            return
+        if g_audio_areas != 0:
+            Memory.copy(grown, g_audio_areas, (g_audio_area_count as i64) * 8)
+            Memory.free(g_audio_areas)
+        g_audio_areas = grown
+        g_audio_area_capacity = capacity
+    Memory.write_i64(g_audio_areas + (g_audio_area_count as i64) * 8, ptr)
+    g_audio_area_count = g_audio_area_count + 1
+
+fun kobic_audio_area_detach(ptr: i64):
+    if ptr == 0:
+        return
+    area: AudioArea3D = ptr as AudioArea3D
+    if area.zone >= 0 and EngineAudio.ready():
+        EngineAudio.scene().remove_zone(area.zone)
+    area.zone = -1
+    i: i32 = 0
+    while i < g_audio_area_count:
+        if Memory.read_i64(g_audio_areas + (i as i64) * 8) == ptr:
+            g_audio_area_count = g_audio_area_count - 1
+            Memory.write_i64(g_audio_areas + (i as i64) * 8, Memory.read_i64(g_audio_areas + (g_audio_area_count as i64) * 8))
+            return
+        i = i + 1
+
+fun audio_area_create(environment: AudioEnvironment, shape: i32, hx: f32, hy: f32, hz: f32, fade: f32, priority: i32) -> AudioArea3D:
+    node: AudioArea3D = AudioArea3D()
+    node.name = "AudioArea3D"
+    node.active = 1
+    node.kind = KOBIC_NODE_KIND_AUDIO_AREA
+    node.mesh_id = -1
+    node.scale_x = 1.0
+    node.scale_y = 1.0
+    node.scale_z = 1.0
+    node.environment = environment
+    node.shape = shape
+    node.half_x = hx
+    node.half_y = hy
+    node.half_z = hz
+    node.fade = fade
+    node.priority = priority
+    node.zone = -1
+    audio_area_registry_add(node as i64)
+    return node
+
+attach AudioArea3D:
+    static fun box(environment: AudioEnvironment, half_x: f32, half_y: f32, half_z: f32, fade: f32, priority: i32) -> AudioArea3D:
+        return audio_area_create(environment, KOBIC_AUDIO_AREA_BOX, half_x, half_y, half_z, fade, priority)
+
+    static fun sphere(environment: AudioEnvironment, radius: f32, fade: f32, priority: i32) -> AudioArea3D:
+        return audio_area_create(environment, KOBIC_AUDIO_AREA_SPHERE, radius, radius, radius, fade, priority)
+
+    fun set_environment(self, environment: AudioEnvironment):
+        self.environment = environment
+
+    # Engine side, once per frame: the zone at the node, camera-relative.
+    fun sync(self, scene: AudioScene):
+        if self.zone >= 0:
+            scene.remove_zone(self.zone)
+            self.zone = -1
+        if self.active == 0:
+            return
+        x: f32 = EngineAudio.local_x(self.pos_x)
+        y: f32 = EngineAudio.local_y(self.pos_y)
+        z: f32 = EngineAudio.local_z(self.pos_z)
+        if self.shape == KOBIC_AUDIO_AREA_SPHERE:
+            self.zone = scene.add_zone_sphere(self.environment, x, y, z, self.half_x, self.fade, self.priority)
+        else:
+            self.zone = scene.add_zone_box(self.environment, x, y, z, self.half_x, self.half_y, self.half_z, self.fade, self.priority)
+
+    fun destroy(self):
+        kobic_audio_area_detach(self as i64)
+        Memory.free(self as i64)
+
+fun kobic_audio_sync_areas(scene: AudioScene):
+    i: i32 = 0
+    while i < g_audio_area_count:
+        ptr: i64 = Memory.read_i64(g_audio_areas + (i as i64) * 8)
+        if ptr != 0:
+            area: AudioArea3D = ptr as AudioArea3D
+            area.sync(scene)
+        i = i + 1
+
+fun kobic_audio_reset_areas():
+    i: i32 = 0
+    while i < g_audio_area_count:
+        ptr: i64 = Memory.read_i64(g_audio_areas + (i as i64) * 8)
+        if ptr != 0:
+            area: AudioArea3D = ptr as AudioArea3D
+            area.zone = -1
+        i = i + 1

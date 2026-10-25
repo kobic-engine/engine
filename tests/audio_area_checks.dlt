@@ -1,0 +1,60 @@
+# Reverb areas: an AudioArea3D around the camera sets the environment, it
+# fades out at its edge, a nested higher-priority area wins, deleting it
+# restores the outer one, and it all holds 800 km from the origin.
+import std
+import audio
+import audio3d
+import kobic
+
+g_area_fails: i32 = 0
+
+fun area_require(ok: bool, what: str):
+    if ok == false:
+        println("FAIL audio area: " + what)
+        g_area_fails = g_area_fails + 1
+
+fun area_rt60_at(camera: Camera3D, x: f32, y: f32, z: f32) -> f32:
+    camera.pos_x = x
+    camera.pos_y = y
+    camera.pos_z = z
+    Engine.audio.camera_cut()
+    Engine.audio.frame(camera)
+    return Engine.audio.scene().current_environment().rt60
+
+fun area_near(a: f32, b: f32) -> bool:
+    return a - b < 0.05 and b - a < 0.05
+
+fun run_audio_area_checks():
+    area_require(Engine.audio.start_offline(48000) == 1, "offline scene")
+    camera: Camera3D = Camera3D.create()
+    cave: AudioArea3D = AudioArea3D.box(AudioEnvironment.cave(), 5.0, 5.0, 5.0, 3.0, 1)
+    inside: f32 = area_rt60_at(camera, 0.0, 0.0, 0.0)
+    outside: f32 = area_rt60_at(camera, 20.0, 0.0, 0.0)
+    edge: f32 = area_rt60_at(camera, 6.5, 0.0, 0.0)
+    println("rt60 inside=" + Convert.f32_to_str(inside) + " edge=" + Convert.f32_to_str(edge) + " outside=" + Convert.f32_to_str(outside))
+    area_require(area_near(inside, 3.0), "inside the cave area the cave reverb applies")
+    area_require(area_near(outside, 0.5), "outside every area the outdoor default applies")
+    area_require(edge > outside + 0.5 and edge < inside - 0.5, "the area fades out across its edge")
+
+    room: AudioArea3D = AudioArea3D.box(AudioEnvironment.room(), 2.0, 2.0, 2.0, 0.5, 2)
+    nested: f32 = area_rt60_at(camera, 0.0, 0.0, 0.0)
+    area_require(area_near(nested, 0.8), "a room inside the cave wins by priority")
+    room.destroy()
+    restored: f32 = area_rt60_at(camera, 0.0, 0.0, 0.0)
+    area_require(area_near(restored, 3.0), "deleting the room restores the cave")
+
+    cave.pos_x = 800000.0
+    cave.pos_z = -300000.0
+    far: f32 = area_rt60_at(camera, 800000.0, 0.0, -300000.0)
+    area_require(area_near(far, 3.0), "camera-relative areas work 800 km from the origin")
+    cave.destroy()
+    gone: f32 = area_rt60_at(camera, 800000.0, 0.0, -300000.0)
+    area_require(area_near(gone, 0.5), "deleting the last area restores the default")
+
+    Engine.audio.shutdown()
+    if g_area_fails == 0:
+        println("PASS audio area: cave inside, outdoor outside, faded edge, nested priority, delete restores, 800 km")
+    else:
+        Command.exit(1)
+
+run_audio_area_checks()

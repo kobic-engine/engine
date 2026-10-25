@@ -205,6 +205,7 @@ attach EngineAudio:
         scene: AudioScene = g_audio_scene_ptr as AudioScene
         kobic_audio_sync_sources(scene, g_audio_cut != 0)
         kobic_audio_update_occlusion(scene)
+        kobic_audio_sync_areas(scene)
         scene.update(g_audio_frame_dt)
         g_audio_cut = 0
 
@@ -221,6 +222,11 @@ attach EngineAudio:
 
     static fun play_at(clip: AudioClip, x: f32, y: f32, z: f32, opts: AudioEmitter) -> i64:
         return EngineAudio.play_at(clip.buffer, x, y, z, opts)
+
+    # The environment outside every AudioArea3D (outdoor by default).
+    static fun set_environment(environment: AudioEnvironment):
+        if g_audio_scene_ptr != 0:
+            (g_audio_scene_ptr as AudioScene).set_environment(environment)
 
     # Occlusion rays (audio/audio_occlusion.dlt). The body is the player's
     # own node: rays pass through it. The budget is rays per frame, 5 per
@@ -254,6 +260,7 @@ attach EngineAudio:
     # mixer. Engine.shutdown calls this.
     static fun shutdown():
         kobic_audio_reset_sources()
+        kobic_audio_reset_areas()
         if g_audio_speaker_ptr != 0:
             speaker: Speaker = g_audio_speaker_ptr as Speaker
             speaker.close()

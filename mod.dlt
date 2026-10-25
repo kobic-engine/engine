@@ -77,6 +77,7 @@ load kobic/audio/engine_audio
 load kobic/audio/audio_source3d
 load kobic/audio/audio_assets
 load kobic/audio/audio_occlusion
+load kobic/audio/audio_area3d
 load kobic/core/runtime
 load kobic/core/engine
 load kobic/scene/skeleton3d
@@ -103,7 +104,7 @@ export Assets, AssetFiles, AssetModels, AssetTextures, AssetAudio, AssetShaders
 export Model3D, ModelLods, Texture2D, AudioClip, Shader, Shader3D
 export GpuTexture, TextureSpec, GpuMeshData
 export gpu_tag_interactive_foliage
-export EngineAudio, AudioSource3D, KOBIC_AUDIO_SFX, KOBIC_AUDIO_MUSIC, KOBIC_AUDIO_VOICE, KOBIC_AUDIO_UI, KOBIC_AUDIO_AMBIENCE, KOBIC_AUDIO_VEHICLES
+export EngineAudio, AudioSource3D, AudioArea3D, KOBIC_AUDIO_SFX, KOBIC_AUDIO_MUSIC, KOBIC_AUDIO_VOICE, KOBIC_AUDIO_UI, KOBIC_AUDIO_AMBIENCE, KOBIC_AUDIO_VEHICLES
 export Environment, Fog, Bloom, ToneMapping, Sky, SkyShape, SkyObject, DayCycle
 export Node, Node3D, Mesh3D, Mesh3DShape, Material3D, ModelMaterials, Camera3D, DirectionalLight3D, PointLight3D, ShadowSettings, RootNode
 export Sprite3D, Sprite3DBillboard, sprite3d_create
