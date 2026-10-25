@@ -1,0 +1,242 @@
+##############################
+# Kobic - Sound sources on nodes
+# AudioSource3D is a Node3D that plays a clip (or a sound set) where it is,
+# or where the node it follows is. Each frame the engine moves its emitter
+# to the node's position (camera-relative) and points it along the node's
+# forward for cones. Destroying the node releases the emitter: a looping
+# sound stops, a one-shot plays to its end.
+#
+# Fire-and-forget sounds (Engine.audio.play_at / play_sound) are tracked
+# until they end, so they stay put in the world while the camera moves.
+##############################
+
+imm KOBIC_NODE_KIND_AUDIO_SOURCE: i32 = 6
+imm KOBIC_AUDIO_ONESHOT_CAPACITY: i32 = 512
+
+static g_audio_sources: i64 = 0
+static g_audio_source_count: i32 = 0
+static g_audio_source_capacity: i32 = 0
+# One-shots: handle (i64) and world x, y, z (f32) per entry, 24 bytes.
+static g_audio_oneshots: i64 = 0
+static g_audio_oneshot_count: i32 = 0
+
+@heap struct AudioSource3D extends Node3D:
+    clip: AudioBuffer = AudioBuffer()
+    # A sound set id from Engine.audio.scene().sound_create, used instead of
+    # `clip` when >= 0 (variations, instance limits).
+    sound_id: i32 = -1
+    settings: AudioEmitter = AudioEmitter()
+    autoplay: i32 = 1
+    # Another node whose position and rotation this source follows.
+    follow_ptr: i64 = 0
+    handle: i64 = 0
+    started: i32 = 0
+
+fun audio_source_registry_add(ptr: i64):
+    if g_audio_source_count >= g_audio_source_capacity:
+        capacity: i32 = g_audio_source_capacity * 2
+        if capacity < 64:
+            capacity = 64
+        grown: i64 = Memory.malloc_zeroed((capacity as i64) * 8)
+        if grown == 0:
+            return
+        if g_audio_sources != 0:
+            Memory.copy(grown, g_audio_sources, (g_audio_source_count as i64) * 8)
+            Memory.free(g_audio_sources)
+        g_audio_sources = grown
+        g_audio_source_capacity = capacity
+    Memory.write_i64(g_audio_sources + (g_audio_source_count as i64) * 8, ptr)
+    g_audio_source_count = g_audio_source_count + 1
+
+# node_destroy / node_destroy_tree call this for audio nodes before freeing
+# them, so a source deleted with its parent's tree is released too.
+fun kobic_audio_source_detach(ptr: i64):
+    if ptr == 0:
+        return
+    source: AudioSource3D = ptr as AudioSource3D
+    if source.handle != AUDIO3D_NONE and EngineAudio.ready():
+        EngineAudio.scene().release(source.handle)
+    source.handle = AUDIO3D_NONE
+    i: i32 = 0
+    while i < g_audio_source_count:
+        if Memory.read_i64(g_audio_sources + (i as i64) * 8) == ptr:
+            g_audio_source_count = g_audio_source_count - 1
+            Memory.write_i64(g_audio_sources + (i as i64) * 8, Memory.read_i64(g_audio_sources + (g_audio_source_count as i64) * 8))
+            return
+        i = i + 1
+
+fun audio_source_create(name: str) -> AudioSource3D:
+    node: AudioSource3D = AudioSource3D()
+    node.name = name
+    node.active = 1
+    node.kind = KOBIC_NODE_KIND_AUDIO_SOURCE
+    node.mesh_id = -1
+    node.scale_x = 1.0
+    node.scale_y = 1.0
+    node.scale_z = 1.0
+    node.handle = AUDIO3D_NONE
+    audio_source_registry_add(node as i64)
+    return node
+
+# The node's forward: Kobic looks down -Z, rotated like the renderer.
+fun audio_source_forward(rot_x: f32, rot_y: f32, rot_z: f32) -> Vec3:
+    return Quat.from_euler_deg(rot_y, rot_x, rot_z).normalize().rotate_vec3(Vec3.forward())
+
+attach AudioSource3D:
+    static fun create(clip: AudioBuffer, settings: AudioEmitter) -> AudioSource3D:
+        node: AudioSource3D = audio_source_create("AudioSource3D")
+        node.clip = clip
+        node.settings = settings
+        return node
+
+    static fun create_sound(sound_id: i32, settings: AudioEmitter) -> AudioSource3D:
+        node: AudioSource3D = audio_source_create("AudioSource3D")
+        node.sound_id = sound_id
+        node.settings = settings
+        return node
+
+    # Follow another node's position and rotation instead of its own.
+    fun follow(self, node: Node3D) -> AudioSource3D:
+        self.follow_ptr = node as i64
+        return self
+
+    fun set_autoplay(self, on: i32) -> AudioSource3D:
+        self.autoplay = on
+        return self
+
+    fun world_x(self) -> f32:
+        if self.follow_ptr != 0:
+            return (self.follow_ptr as Node3D).pos_x
+        return self.pos_x
+
+    fun world_y(self) -> f32:
+        if self.follow_ptr != 0:
+            return (self.follow_ptr as Node3D).pos_y
+        return self.pos_y
+
+    fun world_z(self) -> f32:
+        if self.follow_ptr != 0:
+            return (self.follow_ptr as Node3D).pos_z
+        return self.pos_z
+
+    fun forward(self) -> Vec3:
+        if self.follow_ptr != 0:
+            target: Node3D = self.follow_ptr as Node3D
+            return audio_source_forward(target.rot_x, target.rot_y, target.rot_z)
+        return audio_source_forward(self.rot_x, self.rot_y, self.rot_z)
+
+    # Starts (or restarts) the sound at the node's current position.
+    fun play(self):
+        if EngineAudio.ready() == false:
+            return
+        scene: AudioScene = EngineAudio.scene()
+        if self.handle != AUDIO3D_NONE:
+            scene.play(self.handle)
+            self.started = 1
+            return
+        opts: AudioEmitter = self.settings
+        opts.x = EngineAudio.local_x(self.world_x())
+        opts.y = EngineAudio.local_y(self.world_y())
+        opts.z = EngineAudio.local_z(self.world_z())
+        if self.sound_id >= 0:
+            self.handle = scene.sound_play(self.sound_id, opts.x, opts.y, opts.z)
+        else:
+            self.handle = scene.add(self.clip, opts)
+        self.started = 1
+
+    fun stop(self):
+        if self.handle != AUDIO3D_NONE and EngineAudio.ready():
+            EngineAudio.scene().stop(self.handle)
+
+    fun is_playing(self) -> bool:
+        if self.handle == AUDIO3D_NONE or EngineAudio.ready() == false:
+            return false
+        return EngineAudio.scene().is_playing(self.handle)
+
+    fun set_gain(self, gain: f32):
+        self.settings.gain = gain
+        if self.handle != AUDIO3D_NONE and EngineAudio.ready():
+            EngineAudio.scene().set_gain(self.handle, gain)
+
+    # Engine side, once per frame: start autoplay sources, follow the node.
+    fun sync(self, scene: AudioScene, cut: bool):
+        if self.active == 0:
+            return
+        if self.started == 0:
+            if self.autoplay != 0:
+                self.play()
+            return
+        if self.handle == AUDIO3D_NONE:
+            return
+        x: f32 = EngineAudio.local_x(self.world_x())
+        y: f32 = EngineAudio.local_y(self.world_y())
+        z: f32 = EngineAudio.local_z(self.world_z())
+        if cut:
+            scene.teleport(self.handle, x, y, z)
+        else:
+            scene.set_position(self.handle, x, y, z)
+        if self.settings.cone_inner_deg < 360.0 or self.settings.cone_outer_deg < 360.0:
+            f: Vec3 = self.forward()
+            scene.set_direction(self.handle, f.x, f.y, f.z)
+
+    fun destroy(self):
+        kobic_audio_source_detach(self as i64)
+        Memory.free(self as i64)
+
+# Every live source, then every one-shot still playing. Called by
+# EngineAudio.frame after the listener moved.
+fun kobic_audio_sync_sources(scene: AudioScene, cut: bool):
+    i: i32 = 0
+    while i < g_audio_source_count:
+        ptr: i64 = Memory.read_i64(g_audio_sources + (i as i64) * 8)
+        if ptr != 0:
+            source: AudioSource3D = ptr as AudioSource3D
+            source.sync(scene, cut)
+        i = i + 1
+    if g_audio_oneshots == 0:
+        return
+    write: i32 = 0
+    j: i32 = 0
+    while j < g_audio_oneshot_count:
+        entry: i64 = g_audio_oneshots + (j as i64) * 24
+        handle: i64 = Memory.read_i64(entry)
+        if scene.slot(handle) >= 0:
+            x: f32 = EngineAudio.local_x(Memory.read_f32(entry + 8))
+            y: f32 = EngineAudio.local_y(Memory.read_f32(entry + 12))
+            z: f32 = EngineAudio.local_z(Memory.read_f32(entry + 16))
+            if cut:
+                scene.teleport(handle, x, y, z)
+            else:
+                scene.set_position(handle, x, y, z)
+            if write != j:
+                Memory.copy(g_audio_oneshots + (write as i64) * 24, entry, 24)
+            write = write + 1
+        j = j + 1
+    g_audio_oneshot_count = write
+
+fun kobic_audio_track_oneshot(handle: i64, x: f32, y: f32, z: f32):
+    if handle == AUDIO3D_NONE:
+        return
+    if g_audio_oneshots == 0:
+        g_audio_oneshots = Memory.malloc_zeroed((KOBIC_AUDIO_ONESHOT_CAPACITY as i64) * 24)
+        if g_audio_oneshots == 0:
+            return
+    if g_audio_oneshot_count >= KOBIC_AUDIO_ONESHOT_CAPACITY:
+        return
+    entry: i64 = g_audio_oneshots + (g_audio_oneshot_count as i64) * 24
+    Memory.write_i64(entry, handle)
+    Memory.write_f32(entry + 8, x)
+    Memory.write_f32(entry + 12, y)
+    Memory.write_f32(entry + 16, z)
+    g_audio_oneshot_count = g_audio_oneshot_count + 1
+
+fun kobic_audio_reset_sources():
+    g_audio_oneshot_count = 0
+    i: i32 = 0
+    while i < g_audio_source_count:
+        ptr: i64 = Memory.read_i64(g_audio_sources + (i as i64) * 8)
+        if ptr != 0:
+            source: AudioSource3D = ptr as AudioSource3D
+            source.handle = AUDIO3D_NONE
+            source.started = 0
+        i = i + 1

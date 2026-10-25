@@ -90,7 +90,15 @@ fun node_store_destroy(store: i64, count: i32, destroy_nodes: i32):
 
 fun node_destroy(node_ptr: i64):
     if node_ptr != 0:
+        node_release_resources(node_ptr)
         Memory.free(node_ptr)
+
+# Engine-side resources a node owns beyond its memory: an audio source's
+# emitter is released (looping stops, a one-shot finishes).
+fun node_release_resources(node_ptr: i64):
+    node: Node = node_ptr as Node
+    if node.kind == KOBIC_NODE_KIND_AUDIO_SOURCE:
+        kobic_audio_source_detach(node_ptr)
 
 fun node_destroy_tree(node_ptr: i64):
     if node_ptr == 0:
@@ -103,6 +111,7 @@ fun node_destroy_tree(node_ptr: i64):
         next_ptr = child.next_sibling_ptr
         node_destroy_tree(child_ptr)
         child_ptr = next_ptr
+    node_release_resources(node_ptr)
     Memory.free(node_ptr)
 
 attach Node:

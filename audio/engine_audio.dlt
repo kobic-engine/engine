@@ -203,12 +203,35 @@ attach EngineAudio:
             return
         EngineAudio.sync_listener(camera)
         scene: AudioScene = g_audio_scene_ptr as AudioScene
+        kobic_audio_sync_sources(scene, g_audio_cut != 0)
         scene.update(g_audio_frame_dt)
         g_audio_cut = 0
+
+    # Fire and forget at a world position (an explosion, a footstep). The
+    # engine keeps it in place while the camera moves, until it ends.
+    # Returns its handle (AUDIO3D_NONE without audio).
+    static fun play_at(clip: AudioBuffer, x: f32, y: f32, z: f32, opts: AudioEmitter) -> i64:
+        if g_audio_scene_ptr == 0:
+            return AUDIO3D_NONE
+        scene: AudioScene = g_audio_scene_ptr as AudioScene
+        handle: i64 = scene.play_at(clip, x - g_audio_eye_x, y - g_audio_eye_y, z - g_audio_eye_z, opts)
+        kobic_audio_track_oneshot(handle, x, y, z)
+        return handle
+
+    # One instance of a sound set (variations, limits) at a world position.
+    static fun play_sound(sound_id: i32, x: f32, y: f32, z: f32) -> i64:
+        if g_audio_scene_ptr == 0:
+            return AUDIO3D_NONE
+        scene: AudioScene = g_audio_scene_ptr as AudioScene
+        handle: i64 = scene.sound_play(sound_id, x - g_audio_eye_x, y - g_audio_eye_y, z - g_audio_eye_z)
+        # Sound instances free their own slot when they end, like play_at.
+        kobic_audio_track_oneshot(handle, x, y, z)
+        return handle
 
     # Speaker first (it stops the audio thread), then the scene, then the
     # mixer. Engine.shutdown calls this.
     static fun shutdown():
+        kobic_audio_reset_sources()
         if g_audio_speaker_ptr != 0:
             speaker: Speaker = g_audio_speaker_ptr as Speaker
             speaker.close()
