@@ -112,14 +112,7 @@ attach AssetTextures:
             ready = 1
         return Texture2D(path=path, resolved_path=resolved, texture_id=tid, found=1, ready=ready)
 
-attach AssetAudio:
-
-    static fun load(path: str) -> AudioClip:
-        resolved: str = AssetFiles.locate(path)
-        if Str.equals(resolved, ""):
-            return AudioClip(path=path, resolved_path="", found=0, ready=0, error="asset root is not mounted; call Assets.mount before loading assets")
-        found: i32 = AssetFiles.exists_located(resolved)
-        return AudioClip(path=path, resolved_path=resolved, found=found, ready=0)
+# AssetAudio (decoding, cache, sound sets) lives in audio/audio_assets.dlt.
 
 attach AssetShaders:
 

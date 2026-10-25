@@ -218,6 +218,9 @@ attach EngineAudio:
         kobic_audio_track_oneshot(handle, x, y, z)
         return handle
 
+    static fun play_at(clip: AudioClip, x: f32, y: f32, z: f32, opts: AudioEmitter) -> i64:
+        return EngineAudio.play_at(clip.buffer, x, y, z, opts)
+
     # One instance of a sound set (variations, limits) at a world position.
     static fun play_sound(sound_id: i32, x: f32, y: f32, z: f32) -> i64:
         if g_audio_scene_ptr == 0:
@@ -244,6 +247,7 @@ attach EngineAudio:
             mixer: AudioMixer = g_audio_mixer_ptr as AudioMixer
             mixer.destroy()
             g_audio_mixer_ptr = 0
+        kobic_audio_cache_clear()
         g_audio_has_device = 0
         g_audio_listener_ready = 0
         g_audio_cut = 1

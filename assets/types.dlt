@@ -62,6 +62,8 @@ struct AudioClip:
     found: i32 = 0
     ready: i32 = 0
     error: str = ""
+    # Decoded samples, owned by the engine's clip cache (audio/audio_assets).
+    buffer: AudioBuffer = AudioBuffer()
 
 struct Shader:
     path: str = ""

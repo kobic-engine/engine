@@ -89,6 +89,9 @@ attach AudioSource3D:
         node.settings = settings
         return node
 
+    static fun create(clip: AudioClip, settings: AudioEmitter) -> AudioSource3D:
+        return AudioSource3D.create(clip.buffer, settings)
+
     static fun create_sound(sound_id: i32, settings: AudioEmitter) -> AudioSource3D:
         node: AudioSource3D = audio_source_create("AudioSource3D")
         node.sound_id = sound_id

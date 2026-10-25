@@ -1,0 +1,88 @@
+# Audio assets: AssetAudio.load decodes WAV into AudioClip.buffer, caches it
+# by path, reports missing files, and builds sound sets with variation and
+# instance limits. Writes its WAV files into the working directory.
+import std
+import audio
+import audio3d
+import kobic
+
+g_asset_fails: i32 = 0
+
+fun asset_require(ok: bool, what: str):
+    if ok == false:
+        println("FAIL audio assets: " + what)
+        g_asset_fails = g_asset_fails + 1
+
+fun asset_write_tone(path: str, hz: f32, seconds: f32) -> i32:
+    clip: AudioBuffer = AudioBuffer.create_seconds(seconds, 1, 48000)
+    f: i64 = 0
+    while f < clip.frames:
+        clip.set(f, 0, (sin(6.2831853 * (hz as f64) * (f as f64) / 48000.0) * 0.5) as f32)
+        f = f + 1
+    written: i32 = WAV.save(clip, path, 16)
+    clip.free()
+    return written
+
+fun run_audio_asset_checks():
+    asset_require(asset_write_tone("kobic_audio_step_a.wav", 220.0, 0.25) != 0, "test WAV written")
+    asset_write_tone("kobic_audio_step_b.wav", 260.0, 0.25)
+    asset_write_tone("kobic_audio_step_c.wav", 300.0, 0.25)
+    Assets.mount(".")
+
+    first: AudioClip = Assets.audio.load("kobic_audio_step_a.wav")
+    asset_require(first.ready == 1 and first.is_valid(), "a WAV decodes into the clip")
+    asset_require(first.buffer.frames == 12000 and first.buffer.channels == 1 and first.buffer.sample_rate == 48000, "decoded frames, channels and rate")
+    again: AudioClip = Assets.audio.load("kobic_audio_step_a.wav")
+    asset_require(again.ready == 1 and again.buffer.data == first.buffer.data, "a second load comes from the cache")
+    missing: AudioClip = Assets.audio.load("kobic_audio_missing.wav")
+    asset_require(missing.ready == 0 and missing.found == 0 and Memory.strlen(missing.error) > 0, "a missing file reports why")
+
+    asset_require(Engine.audio.start_offline(48000) == 1, "offline scene")
+    camera: Camera3D = Camera3D.create()
+    Engine.audio.frame(camera)
+    steps: i32 = Assets.audio.sound(AudioEmitter(min_distance=1.0, max_distance=40.0, group=KOBIC_AUDIO_SFX, reverb_send=0.0))
+    asset_require(steps >= 0, "a sound set exists in the engine scene")
+    asset_require(Assets.audio.sound_add(steps, "kobic_audio_step_a.wav") == 1, "first footstep clip")
+    asset_require(Assets.audio.sound_add(steps, "kobic_audio_step_b.wav") == 1, "second footstep clip")
+    asset_require(Assets.audio.sound_add(steps, "kobic_audio_step_c.wav") == 1, "third footstep clip")
+    asset_require(Assets.audio.sound_add(steps, "kobic_audio_missing.wav") == 0, "a missing clip is skipped")
+    Assets.audio.sound_variation(steps, 2.0, 1.5)
+    Assets.audio.sound_limit(steps, 2, AUDIO3D_STEAL_OLDEST, 0.0)
+    scene: AudioScene = Engine.audio.scene()
+    handles: i64 = Memory.malloc_zeroed(5 * 8)
+    i: i32 = 0
+    while i < 5:
+        Memory.write_i64(handles + (i as i64) * 8, Engine.audio.play_sound(steps, 0.0, 0.0, -2.0))
+        i = i + 1
+    Engine.audio.frame(camera)
+    live: i32 = 0
+    i = 0
+    while i < 5:
+        if scene.is_playing(Memory.read_i64(handles + (i as i64) * 8)):
+            live = live + 1
+        i = i + 1
+    Memory.free(handles)
+    mix: AudioBuffer = scene.render_buffer(4800)
+    loud: f32 = 0.0
+    f: i64 = 0
+    while f < mix.frames:
+        v: f32 = mix.get(f, 0)
+        if v < 0.0:
+            v = 0.0 - v
+        if v > loud:
+            loud = v
+        f = f + 1
+    mix.free()
+    println("footstep instances playing: " + Convert.i32_to_str(live) + " peak " + Convert.f32_to_str(loud))
+    asset_require(live == 2, "the instance limit keeps two footsteps, stealing the oldest")
+    asset_require(loud > 0.01, "the sound set is heard")
+
+    Engine.audio.shutdown()
+    reload: AudioClip = Assets.audio.load("kobic_audio_step_a.wav")
+    asset_require(reload.ready == 1 and reload.buffer.frames == 12000, "after shutdown the cache is empty and loads again")
+    if g_asset_fails == 0:
+        println("PASS audio assets: WAV decode, path cache, missing-file error, sound sets with variation and instance limits")
+    else:
+        Command.exit(1)
+
+run_audio_asset_checks()

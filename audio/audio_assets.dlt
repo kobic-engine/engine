@@ -1,0 +1,124 @@
+##############################
+# Kobic - Audio assets
+# AssetAudio.load decodes a WAV (from the program's pack first, then the
+# mounted asset root) into an AudioBuffer inside AudioClip. Clips are cached
+# by path and the cache owns them: an emitter may play a clip for as long as
+# the engine runs. Sound sets group clips with random variation and
+# instance limits (footsteps by surface, impacts, gunfire).
+##############################
+
+# Per cached clip: path copy (i64), frames (i64), channels (i32), rate (i32),
+# data (i64): 32 bytes.
+imm KOBIC_AUDIO_CACHE_STRIDE: i64 = 32
+
+static g_audio_cache: i64 = 0
+static g_audio_cache_count: i32 = 0
+static g_audio_cache_capacity: i32 = 0
+
+fun kobic_audio_cache_find(path: str) -> i32:
+    i: i32 = 0
+    while i < g_audio_cache_count:
+        key: i64 = Memory.read_i64(g_audio_cache + (i as i64) * KOBIC_AUDIO_CACHE_STRIDE)
+        if key != 0 and Str.equals(key as str, path):
+            return i
+        i = i + 1
+    return -1
+
+fun kobic_audio_cache_buffer(index: i32) -> AudioBuffer:
+    entry: i64 = g_audio_cache + (index as i64) * KOBIC_AUDIO_CACHE_STRIDE
+    return AudioBuffer(frames=Memory.read_i64(entry + 8), channels=Memory.read_i32(entry + 16), sample_rate=Memory.read_i32(entry + 20), data=Memory.read_i64(entry + 24), owns_data=0)
+
+fun kobic_audio_cache_add(path: str, buffer: AudioBuffer):
+    if g_audio_cache_count >= g_audio_cache_capacity:
+        capacity: i32 = g_audio_cache_capacity * 2
+        if capacity < 32:
+            capacity = 32
+        grown: i64 = Memory.malloc_zeroed((capacity as i64) * KOBIC_AUDIO_CACHE_STRIDE)
+        if grown == 0:
+            return
+        if g_audio_cache != 0:
+            Memory.copy(grown, g_audio_cache, (g_audio_cache_count as i64) * KOBIC_AUDIO_CACHE_STRIDE)
+            Memory.free(g_audio_cache)
+        g_audio_cache = grown
+        g_audio_cache_capacity = capacity
+    entry: i64 = g_audio_cache + (g_audio_cache_count as i64) * KOBIC_AUDIO_CACHE_STRIDE
+    Memory.write_i64(entry, Str.strcpy(path) as i64)
+    Memory.write_i64(entry + 8, buffer.frames)
+    Memory.write_i32(entry + 16, buffer.channels)
+    Memory.write_i32(entry + 20, buffer.sample_rate)
+    Memory.write_i64(entry + 24, buffer.data)
+    g_audio_cache_count = g_audio_cache_count + 1
+
+# Frees every cached clip. EngineAudio.shutdown calls it after the scene
+# (the last reader of the samples) is gone.
+fun kobic_audio_cache_clear():
+    i: i32 = 0
+    while i < g_audio_cache_count:
+        entry: i64 = g_audio_cache + (i as i64) * KOBIC_AUDIO_CACHE_STRIDE
+        key: i64 = Memory.read_i64(entry)
+        data: i64 = Memory.read_i64(entry + 24)
+        if key != 0:
+            Memory.free(key)
+        if data != 0:
+            Memory.free(data)
+        i = i + 1
+    if g_audio_cache != 0:
+        Memory.free(g_audio_cache)
+    g_audio_cache = 0
+    g_audio_cache_count = 0
+    g_audio_cache_capacity = 0
+
+attach AudioClip:
+    fun is_valid(self) -> bool:
+        return self.ready == 1 and self.buffer.is_valid() == 1
+
+attach AssetAudio:
+    # Decoded and cached by path. The packed asset wins over the disk, as for
+    # every Kobic asset. A missing or broken file gives ready = 0 and error.
+    static fun load(path: str) -> AudioClip:
+        cached: i32 = kobic_audio_cache_find(path)
+        if cached >= 0:
+            return AudioClip(path=path, resolved_path=path, found=1, ready=1, buffer=kobic_audio_cache_buffer(cached))
+        resolved: str = AssetFiles.locate(path)
+        if Str.equals(resolved, ""):
+            return AudioClip(path=path, resolved_path="", found=0, ready=0, error="asset root is not mounted; call Assets.mount before loading assets")
+        found: i32 = AssetFiles.exists_located(resolved)
+        if found == 0:
+            return AudioClip(path=path, resolved_path=resolved, found=0, ready=0, error="audio asset not found")
+        source: str = resolved
+        if AssetFiles.packed() == 1:
+            source = AssetFiles.entry_name(resolved)
+        buffer: AudioBuffer = WAV.load(source)
+        if buffer.is_valid() == 0:
+            return AudioClip(path=path, resolved_path=resolved, found=1, ready=0, error=WAV.last_error())
+        kobic_audio_cache_add(path, buffer)
+        return AudioClip(path=path, resolved_path=resolved, found=1, ready=1, buffer=buffer)
+
+    # A sound set in the engine scene; add clips, then variation and limits.
+    # Returns -1 when audio is not running.
+    static fun sound(settings: AudioEmitter) -> i32:
+        if EngineAudio.ready() == false:
+            return -1
+        return EngineAudio.scene().sound_create(settings)
+
+    # Adds the clip at `path` to a sound set; 0 when it cannot be loaded.
+    static fun sound_add(sound: i32, path: str) -> i32:
+        if sound < 0 or EngineAudio.ready() == false:
+            return 0
+        clip: AudioClip = AssetAudio.load(path)
+        if clip.ready == 0:
+            println("[kobic.audio] " + path + ": " + clip.error)
+            return 0
+        EngineAudio.scene().sound_add_clip(sound, clip.buffer)
+        return 1
+
+    # Random gain (+-dB) and pitch (+-semitones) per instance.
+    static fun sound_variation(sound: i32, gain_db: f32, pitch_semitones: f32):
+        if sound >= 0 and EngineAudio.ready():
+            EngineAudio.scene().sound_variation(sound, gain_db, pitch_semitones)
+
+    # At most `max_instances` at once (stealing AUDIO3D_STEAL_*), and no new
+    # instance within `cooldown_seconds` of the last.
+    static fun sound_limit(sound: i32, max_instances: i32, steal: i32, cooldown_seconds: f32):
+        if sound >= 0 and EngineAudio.ready():
+            EngineAudio.scene().sound_limit(sound, max_instances, steal, cooldown_seconds)
