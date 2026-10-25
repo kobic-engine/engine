@@ -29,9 +29,33 @@ static g_audio_scene_ptr: i64 = 0
 static g_audio_speaker_ptr: i64 = 0
 static g_audio_has_device: i32 = 0
 static g_audio_sample_rate: i32 = 0
+# The listener is the camera. Audio is camera-relative: the listener stays
+# at the origin and every emitter is placed at (position - eye), so f32
+# keeps millimetre precision in very large worlds (an 800 km planet).
+static g_audio_eye_x: f32 = 0.0
+static g_audio_eye_y: f32 = 0.0
+static g_audio_eye_z: f32 = 0.0
+static g_audio_listener_ready: i32 = 0
+# Set by camera_cut(): the next sync teleports instead of moving, so the
+# jump makes no Doppler sweep.
+static g_audio_cut: i32 = 1
+static g_audio_frame_dt: f32 = 0.0
 
 struct EngineAudio:
     _placeholder: i32 = 0
+
+# The camera basis the renderer uses for its view matrix (render/gpu.dlt,
+# render_camera3d_frame*): quaternion cameras use their orientation, Euler
+# cameras Quat.from_euler_deg(rot_y, rot_x, rot_z).
+fun kobic_audio_camera_forward(camera: Camera3D) -> Vec3:
+    if camera.orientation_mode != 0:
+        return gpu_camera_quat_forward(camera.orientation_x, camera.orientation_y, camera.orientation_z, camera.orientation_w)
+    return Quat.from_euler_deg(camera.rot_y, camera.rot_x, camera.rot_z).normalize().rotate_vec3(Vec3.forward())
+
+fun kobic_audio_camera_up(camera: Camera3D) -> Vec3:
+    if camera.orientation_mode != 0:
+        return Quat.make(camera.orientation_x, camera.orientation_y, camera.orientation_z, camera.orientation_w).normalize().rotate_vec3(Vec3.up())
+    return Quat.from_euler_deg(camera.rot_y, camera.rot_x, camera.rot_z).normalize().rotate_vec3(Vec3.up())
 
 # Mixer channels for an audio3d output mode.
 fun kobic_audio_channels(output: i32) -> i32:
@@ -132,6 +156,56 @@ attach EngineAudio:
     static fun mixer() -> AudioMixer:
         return g_audio_mixer_ptr as AudioMixer
 
+    # Engine.begin_frame records the frame time for scene.update.
+    static fun note_frame(dt: f32):
+        g_audio_frame_dt = dt
+
+    # Call on camera cuts, respawns and teleports: the next listener sync
+    # jumps instead of moving, so nothing sweeps in pitch.
+    static fun camera_cut():
+        g_audio_cut = 1
+
+    # Listener = camera, with the renderer's own eye, forward and up. The
+    # listener sits at the origin (camera-relative audio).
+    static fun sync_listener(camera: Camera3D):
+        if g_audio_scene_ptr == 0 or (camera as i64) == 0:
+            return
+        scene: AudioScene = g_audio_scene_ptr as AudioScene
+        forward: Vec3 = kobic_audio_camera_forward(camera)
+        up: Vec3 = kobic_audio_camera_up(camera)
+        g_audio_eye_x = camera.pos_x
+        g_audio_eye_y = camera.pos_y
+        g_audio_eye_z = camera.pos_z
+        scene.set_listener(0, 0.0, 0.0, 0.0, forward.x, forward.y, forward.z, up.x, up.y, up.z)
+        if g_audio_cut != 0 or g_audio_listener_ready == 0:
+            scene.teleport_listener(0, 0.0, 0.0, 0.0)
+        g_audio_listener_ready = 1
+
+    # World position -> the scene's camera-relative coordinates.
+    static fun local_x(x: f32) -> f32:
+        return x - g_audio_eye_x
+
+    static fun local_y(y: f32) -> f32:
+        return y - g_audio_eye_y
+
+    static fun local_z(z: f32) -> f32:
+        return z - g_audio_eye_z
+
+    # True while this frame's sync should teleport emitters (a camera cut).
+    static fun cutting() -> bool:
+        return g_audio_cut != 0
+
+    # The frame's audio work, after game logic and the camera, before the
+    # render: listener, then sources, occlusion and zones, then one
+    # scene.update(dt) on the game thread.
+    static fun frame(camera: Camera3D):
+        if g_audio_scene_ptr == 0:
+            return
+        EngineAudio.sync_listener(camera)
+        scene: AudioScene = g_audio_scene_ptr as AudioScene
+        scene.update(g_audio_frame_dt)
+        g_audio_cut = 0
+
     # Speaker first (it stops the audio thread), then the scene, then the
     # mixer. Engine.shutdown calls this.
     static fun shutdown():
@@ -148,3 +222,5 @@ attach EngineAudio:
             mixer.destroy()
             g_audio_mixer_ptr = 0
         g_audio_has_device = 0
+        g_audio_listener_ready = 0
+        g_audio_cut = 1

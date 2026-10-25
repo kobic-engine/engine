@@ -608,6 +608,7 @@ attach Engine:
 
     static fun begin_frame() -> f32:
         dt: f32 = g_engine_runtime.begin_frame_limited(g_engine_target_fps)
+        EngineAudio.note_frame(dt)
         if g_engine_collision_debug_enabled == 1:
             g_engine_runtime.begin_collision_debug_frame()
         if g_engine_has_scene == 1:
@@ -759,6 +760,8 @@ attach Engine:
         camera: Camera3D = g_engine_scene.camera()
         if (camera as i64) == 0:
             return
+        # Audio after game logic and the camera, before the frame is drawn.
+        EngineAudio.frame(camera)
         g_engine_runtime.set_directional_light(g_engine_scene.directional_light_ptr)
         g_engine_runtime.set_point_lights(g_engine_scene.point_light_ptrs, g_engine_scene.point_light_count)
         if g_engine_collision_debug_enabled == 1:
