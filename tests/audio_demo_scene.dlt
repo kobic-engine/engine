@@ -1,0 +1,143 @@
+# Not a check: a 10 s binaural recording of a Kobic test scene through the
+# engine path (camera listener, AudioSource3D, occlusion rays, areas,
+# sound sets), plus the per-frame cost with 200 sources. Writes
+# kobic_audio_demo_binaural.wav into the working directory.
+#
+#   0-10 s  a "car" (110 Hz saw with rumble) circles the camera at 6 m,
+#           once every 8 s: listen for it going round the head
+#   3-5 s   a wall slides between the camera and the car: muffled
+#   6-10 s  the camera walks into a cave area: long reverb
+#   always  footsteps (a 3-clip sound set) on the left every 0.5 s
+import std
+import audio
+import audio3d
+import kobic
+
+fun demo_saw(hz: f32, seconds: f32) -> AudioBuffer:
+    clip: AudioBuffer = AudioBuffer.create_seconds(seconds, 1, 48000)
+    seed: i64 = 99
+    f: i64 = 0
+    while f < clip.frames:
+        t: f64 = (f as f64) * (hz as f64) / 48000.0
+        saw: f64 = (t - floor(t)) * 2.0 - 1.0
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        noise: f64 = (((seed % 2000) as f64) / 1000.0 - 1.0)
+        clip.set(f, 0, (saw * 0.25 + noise * 0.18 + sin(6.2831853 * 55.0 * (f as f64) / 48000.0) * 0.12) as f32)
+        f = f + 1
+    return clip
+
+fun demo_step(hz: f32) -> AudioBuffer:
+    clip: AudioBuffer = AudioBuffer.create_seconds(0.12, 1, 48000)
+    seed: i64 = (hz as i64) * 7
+    f: i64 = 0
+    while f < clip.frames:
+        env: f64 = exp(0.0 - (f as f64) / 900.0)
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        noise: f64 = (((seed % 2000) as f64) / 1000.0 - 1.0)
+        clip.set(f, 0, ((noise * 0.6 + sin(6.2831853 * (hz as f64) * (f as f64) / 48000.0) * 0.4) * env * 0.7) as f32)
+        f = f + 1
+    return clip
+
+fun demo_append(out: AudioBuffer, at: i64, block: AudioBuffer) -> i64:
+    f: i64 = 0
+    while f < block.frames and at + f < out.frames:
+        out.set(at + f, 0, block.get(f, 0))
+        out.set(at + f, 1, block.get(f, 1))
+        f = f + 1
+    return at + block.frames
+
+fun run_audio_demo_scene():
+    Engine.audio.set_output(AUDIO3D_OUTPUT_BINAURAL)
+    Engine.audio.start_offline(48000)
+    world: Scene = Scene.create()
+    Engine.scene.set(world)
+    camera: Camera3D = Camera3D.create()
+    scene: AudioScene = Engine.audio.scene()
+
+    car_clip: AudioBuffer = demo_saw(110.0, 4.0)
+    car_node: Node3D = Node3D.create("car")
+    car: AudioSource3D = AudioSource3D.create(car_clip, AudioEmitter(looping=true, min_distance=2.0, max_distance=80.0, group=KOBIC_AUDIO_VEHICLES))
+    car.follow(car_node)
+    wall: Node3D = Node3D.create("wall")
+    wall.collision_box(9.0, 8.0, 9.0)
+    wall.pos_z = 40.0
+    world.add_child(wall)
+    cave: AudioArea3D = AudioArea3D.box(AudioEnvironment.cave(), 6.0, 6.0, 6.0, 3.0, 1)
+    cave.pos_z = -14.0
+    s1: AudioBuffer = demo_step(180.0)
+    s2: AudioBuffer = demo_step(210.0)
+    s3: AudioBuffer = demo_step(240.0)
+    steps: i32 = scene.sound_create(AudioEmitter(gain=0.4, min_distance=1.0, max_distance=30.0, group=KOBIC_AUDIO_SFX))
+    scene.sound_add_clip(steps, s1)
+    scene.sound_add_clip(steps, s2)
+    scene.sound_add_clip(steps, s3)
+    scene.sound_variation(steps, 2.0, 1.0)
+
+    frames: i32 = 500
+    out: AudioBuffer = AudioBuffer.create(48000 * 10, 2, 48000)
+    at: i64 = 0
+    game_ns: i64 = 0
+    render_ns: i64 = 0
+    frame: i32 = 0
+    while frame < frames:
+        t: f32 = (frame as f32) * 0.02
+        angle: f32 = t * 6.2831853 / 8.0
+        car_node.pos_x = (sin(angle as f64) * 6.0) as f32
+        car_node.pos_z = camera.pos_z - (cos(angle as f64) * 6.0) as f32
+        if t >= 3.0 and t < 5.0:
+            # Halfway between the camera and the car, facing the camera.
+            wall.pos_x = (camera.pos_x + car_node.pos_x) * 0.5
+            wall.pos_z = (camera.pos_z + car_node.pos_z) * 0.5
+        else:
+            wall.pos_z = 40.0
+        if t >= 6.0:
+            camera.pos_z = 0.0 - ((t - 6.0) / 4.0) * 14.0
+        if frame % 25 == 0:
+            Engine.audio.play_sound(steps, camera.pos_x - 0.6, camera.pos_y - 1.5, camera.pos_z)
+        start: i64 = Time.now_ns()
+        Engine.audio.note_frame(0.02)
+        Engine.audio.frame(camera)
+        game_ns = game_ns + (Time.now_ns() - start)
+        start = Time.now_ns()
+        block: AudioBuffer = scene.render_buffer(960)
+        render_ns = render_ns + (Time.now_ns() - start)
+        at = demo_append(out, at, block)
+        block.free()
+        frame = frame + 1
+    WAV.save(out, "kobic_audio_demo_binaural.wav", 16)
+    println("demo: 10 s binaural, game thread " + Convert.f64_to_str((game_ns as f64) / (frames as f64) / 1000.0) + " us/frame, audio render " + Convert.f64_to_str((render_ns as f64) / 100000000.0) + " % of one core")
+    out.free()
+
+    # Load: 200 looping sources around the camera, 64 real voices.
+    camera.pos_z = 0.0
+    noise: AudioBuffer = demo_saw(90.0, 2.0)
+    i: i32 = 0
+    while i < 200:
+        extra: AudioSource3D = AudioSource3D.create(noise, AudioEmitter(looping=true, min_distance=1.0, max_distance=60.0))
+        extra.pos_x = ((i % 20) as f32) * 3.0 - 30.0
+        extra.pos_z = ((i / 20) as f32) * 3.0 - 15.0
+        i = i + 1
+    warm: i32 = 0
+    while warm < 20:
+        Engine.audio.note_frame(0.02)
+        Engine.audio.frame(camera)
+        b: AudioBuffer = scene.render_buffer(960)
+        b.free()
+        warm = warm + 1
+    game_ns = 0
+    render_ns = 0
+    frame = 0
+    while frame < 250:
+        start2: i64 = Time.now_ns()
+        Engine.audio.note_frame(0.02)
+        Engine.audio.frame(camera)
+        game_ns = game_ns + (Time.now_ns() - start2)
+        start2 = Time.now_ns()
+        b2: AudioBuffer = scene.render_buffer(960)
+        render_ns = render_ns + (Time.now_ns() - start2)
+        b2.free()
+        frame = frame + 1
+    println("load: 200 sources, real " + Convert.i32_to_str(scene.real_voices()) + " virtual " + Convert.i32_to_str(scene.virtual_voices()) + ", game thread " + Convert.f64_to_str((game_ns as f64) / 250.0 / 1000.0) + " us/frame (" + Convert.i32_to_str(Engine.audio.rays_last_frame()) + " rays), audio render " + Convert.f64_to_str((render_ns as f64) / 50000000.0) + " % of one core")
+    Engine.audio.shutdown()
+
+run_audio_demo_scene()
