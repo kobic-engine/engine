@@ -98,14 +98,20 @@ void main() {
         float interactionTime = mod(floor(interactionPayload / 2.0), 32768.0) / 32.0;
         float motionEnergy = floor(interactionPayload / 65536.0) / 255.0;
         // The foliage actor (Engine.set_foliage_actor), else the camera.
-        vec3 cameraPosition = pushConstants.fogShapeProjectionLight.yzw;
+        // Roots are stored in the mesh's own frame, which a model matrix may
+        // rotate (a spinning planet), so the actor is brought into that frame
+        // (rotation + translation inverse), the bend is evaluated there and
+        // the offset is rotated back to world space.
+        mat3 foliageBasis = mat3(model);
+        vec3 cameraPosition = transpose(foliageBasis) * (pushConstants.fogShapeProjectionLight.yzw - model[3].xyz);
+        vec3 foliageOffset = vec3(0.0);
         vec2 awayDelta = inColor.gb - cameraPosition.xz;
         float playerDistance = length(awayDelta);
         float horizontalInfluence = 1.0 - smoothstep(0.35, 1.55, playerDistance);
         float verticalInfluence = 1.0 - smoothstep(
             2.20,
             3.50,
-            abs(cameraPosition.y - worldPosition.y)
+            abs(cameraPosition.y - localPosition.y)
         );
         float phaseSeed = fract(sin(dot(inColor.gb, vec2(12.9898, 78.233))) * 43758.5453);
         float phase = interactionTime * 14.13716694 + phaseSeed * 6.28318531;
@@ -118,8 +124,8 @@ void main() {
             vec2 away = playerDistance > 0.001
                 ? awayDelta / playerDistance
                 : vec2(0.0, 1.0);
-            worldPosition.xz += away * (0.62 * bend);
-            worldPosition.y -= 0.10 * bend * bend;
+            foliageOffset.xz += away * (0.62 * bend);
+            foliageOffset.y -= 0.10 * bend * bend;
         }
         // Light breeze, only around the actor: a slow seeded sway along a
         // fixed wind with a faint cross flutter, gusting over ~17 s and
@@ -131,8 +137,9 @@ void main() {
                 + sin(interactionTime * 3.7 + phaseSeed * 11.0) * 0.35;
             float flutter = sin(interactionTime * 5.3 + phaseSeed * 17.0);
             float breeze = flexibility * gust * breezeFade;
-            worldPosition.xz += vec2(0.8, 0.6) * (0.075 * breeze * sway) + vec2(-0.6, 0.8) * (0.018 * breeze * flutter);
+            foliageOffset.xz += vec2(0.8, 0.6) * (0.075 * breeze * sway) + vec2(-0.6, 0.8) * (0.018 * breeze * flutter);
         }
+        worldPosition.xyz += foliageBasis * foliageOffset;
     }
     vec4 clipPosition = pushConstants.viewProjection * worldPosition;
     bool viewmodel = instanceMaterial.z < 0.0;
