@@ -800,6 +800,12 @@ struct GpuRendererCore:
     scale_sampler:      i64 = 0
     # Nearest instead of bilinear sampling when the scaled scene is enlarged.
     pixel_upscale:      i32 = 0
+    # Interactive foliage reacts to this actor instead of the camera.
+    foliage_actor_enabled: i32 = 0
+    foliage_actor_x:    f32 = 0.0
+    foliage_actor_y:    f32 = 0.0
+    foliage_actor_z:    f32 = 0.0
+    foliage_actor_time: f64 = 0.0
     scale_desc_set:     i64 = 0
     scale_geometry_image:  i64 = 0
     scale_geometry_memory: i64 = 0
@@ -2648,7 +2654,10 @@ attach GpuRendererCore:
             normalized_up_z = up_z * inverse_up_length
         now: f64 = engine_time_seconds()
         motion_energy: f32 = Memory.read_f32(self.render_state + 84)
-        if Memory.read_i32(self.render_state + 96) != 0:
+        if self.foliage_actor_enabled != 0:
+            # The actor drives the foliage motion energy (set_foliage_actor).
+            Memory.write_i32(self.render_state + 96, 0)
+        elif Memory.read_i32(self.render_state + 96) != 0:
             dt64: f64 = now - Memory.read_f64(self.render_state + 88)
             if dt64 > 0.000001 and dt64 < 0.25:
                 dx: f32 = x - Memory.read_f32(self.render_state + 64)
@@ -2679,6 +2688,39 @@ attach GpuRendererCore:
         Memory.write_f32(self.render_state + 104, normalized_up_x)
         Memory.write_f32(self.render_state + 108, normalized_up_y)
         Memory.write_f32(self.render_state + 112, normalized_up_z)
+
+    # Moves the interactive-foliage actor. Its horizontal speed raises the
+    # shared motion energy (full at 4 m/s, decaying 1.35 per second) that
+    # makes passed plants wobble, exactly like the camera path.
+    fun set_foliage_actor(self, x: f32, y: f32, z: f32):
+        if self.render_state == 0:
+            return
+        now: f64 = engine_time_seconds()
+        motion_energy: f32 = Memory.read_f32(self.render_state + 84)
+        if self.foliage_actor_enabled != 0:
+            dt64: f64 = now - self.foliage_actor_time
+            if dt64 > 0.000001 and dt64 < 0.25:
+                dx: f32 = x - self.foliage_actor_x
+                dz: f32 = z - self.foliage_actor_z
+                new_energy: f32 = @sqrt(dx * dx + dz * dz) / (dt64 as f32) / 4.0
+                if new_energy > 1.0:
+                    new_energy = 1.0
+                decayed_energy: f32 = motion_energy - (dt64 as f32) * 1.35
+                if decayed_energy < 0.0:
+                    decayed_energy = 0.0
+                motion_energy = decayed_energy
+                if new_energy > decayed_energy:
+                    motion_energy = new_energy
+            elif dt64 >= 0.25:
+                motion_energy = 0.0
+        else:
+            motion_energy = 0.0
+        Memory.write_f32(self.render_state + 84, motion_energy)
+        self.foliage_actor_enabled = 1
+        self.foliage_actor_x = x
+        self.foliage_actor_y = y
+        self.foliage_actor_z = z
+        self.foliage_actor_time = now
 
     fun set_render_stats(self, enabled: i32):
         if enabled == 0:
@@ -7398,7 +7440,11 @@ attach GpuRendererCore:
                         if (env.fog.shape & 1) != 0:
                             packed_interaction = interaction_payload + 1
                         Memory.write_f32(pc_data + 96, packed_interaction as f32)
-                        if self.render_state != 0:
+                        if self.foliage_actor_enabled != 0:
+                            Memory.write_f32(pc_data + 100, self.foliage_actor_x)
+                            Memory.write_f32(pc_data + 104, self.foliage_actor_y)
+                            Memory.write_f32(pc_data + 108, self.foliage_actor_z)
+                        elif self.render_state != 0:
                             Memory.write_f32(pc_data + 100, Memory.read_f32(self.render_state + 64))
                             Memory.write_f32(pc_data + 104, Memory.read_f32(self.render_state + 68))
                             Memory.write_f32(pc_data + 108, Memory.read_f32(self.render_state + 72))

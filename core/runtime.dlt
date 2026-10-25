@@ -373,6 +373,12 @@ attach EngineRuntime:
     fun set_instance_visible(self, mesh_id: i32, on: i32):
         self.renderer.set_instance_visible(mesh_id, on)
 
+    fun set_foliage_actor(self, x: f32, y: f32, z: f32):
+        self.renderer.core.set_foliage_actor(x, y, z)
+
+    fun clear_foliage_actor(self):
+        self.renderer.core.foliage_actor_enabled = 0
+
     fun set_render_stats(self, enabled: i32):
         self.renderer.set_render_stats(enabled)
 

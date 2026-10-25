@@ -97,6 +97,7 @@ void main() {
         float interactionPayload = abs(pushConstants.fogShapeProjectionLight.x);
         float interactionTime = mod(floor(interactionPayload / 2.0), 32768.0) / 32.0;
         float motionEnergy = floor(interactionPayload / 65536.0) / 255.0;
+        // The foliage actor (Engine.set_foliage_actor), else the camera.
         vec3 cameraPosition = pushConstants.fogShapeProjectionLight.yzw;
         vec2 awayDelta = inColor.gb - cameraPosition.xz;
         float playerDistance = length(awayDelta);
@@ -119,6 +120,18 @@ void main() {
                 : vec2(0.0, 1.0);
             worldPosition.xz += away * (0.62 * bend);
             worldPosition.y -= 0.10 * bend * bend;
+        }
+        // Light breeze, only around the actor: a slow seeded sway along a
+        // fixed wind with a faint cross flutter, gusting over ~17 s and
+        // fading out between 16 and 26 m so distant plants stay still.
+        float breezeFade = 1.0 - smoothstep(16.0, 26.0, playerDistance);
+        if (breezeFade > 0.0 && flexibility > 0.0) {
+            float gust = 0.55 + 0.45 * sin(interactionTime * 0.37 + inColor.g * 0.045 + inColor.b * 0.031);
+            float sway = sin(interactionTime * 2.1 + phaseSeed * 6.28318531) * 0.65
+                + sin(interactionTime * 3.7 + phaseSeed * 11.0) * 0.35;
+            float flutter = sin(interactionTime * 5.3 + phaseSeed * 17.0);
+            float breeze = flexibility * gust * breezeFade;
+            worldPosition.xz += vec2(0.8, 0.6) * (0.075 * breeze * sway) + vec2(-0.6, 0.8) * (0.018 * breeze * flutter);
         }
     }
     vec4 clipPosition = pushConstants.viewProjection * worldPosition;

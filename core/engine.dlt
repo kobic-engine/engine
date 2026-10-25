@@ -738,6 +738,15 @@ attach Engine:
     static fun set_instance_visible(mesh_id: i32, on: i32):
         g_engine_runtime.set_instance_visible(mesh_id, on)
 
+    # Interactive foliage (gpu_tag_interactive_foliage) bends away from, and
+    # wobbles after, this world position, usually the player's feet. Without
+    # an actor it follows the camera, as before. Call every frame.
+    static fun set_foliage_actor(x: f32, y: f32, z: f32):
+        g_engine_runtime.set_foliage_actor(x, y, z)
+
+    static fun clear_foliage_actor():
+        g_engine_runtime.clear_foliage_actor()
+
     static fun render():
         if g_engine_runtime.ready() == 0:
             return
