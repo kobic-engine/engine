@@ -1,0 +1,122 @@
+# Occlusion from geometry: a wall between the camera and an emitter makes
+# it quieter and duller once the engine's rays run; a thin pillar only
+# obstructs; the per-frame ray budget holds with many emitters. No device.
+import std
+import audio
+import audio3d
+import kobic
+
+g_occ_fails: i32 = 0
+
+fun occ_require(ok: bool, what: str):
+    if ok == false:
+        println("FAIL audio occlusion: " + what)
+        g_occ_fails = g_occ_fails + 1
+
+fun occ_noise(rate: i32) -> AudioBuffer:
+    clip: AudioBuffer = AudioBuffer.create_seconds(2.0, 1, rate)
+    seed: i64 = 4242
+    f: i64 = 0
+    while f < clip.frames:
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        clip.set(f, 0, (((seed % 2000) as f32) / 1000.0 - 1.0) * 0.4)
+        f = f + 1
+    return clip
+
+# Runs `frames` engine frames of 20 ms, then measures 100 ms of output:
+# level (rms over both channels) and brightness (first-difference rms over
+# rms, high for bright sound, low for muffled).
+fun occ_measure(scene: AudioScene, camera: Camera3D, frames: i32) -> Vec3:
+    i: i32 = 0
+    while i < frames:
+        Engine.audio.note_frame(0.02)
+        Engine.audio.frame(camera)
+        block: AudioBuffer = scene.render_buffer(960)
+        block.free()
+        i = i + 1
+    mix: AudioBuffer = scene.render_buffer(4800)
+    acc: f64 = 0.0
+    dif: f64 = 0.0
+    f: i64 = 1
+    while f < mix.frames:
+        ch: i32 = 0
+        while ch < 2:
+            x: f64 = mix.get(f, ch) as f64
+            p: f64 = mix.get(f - 1, ch) as f64
+            acc = acc + x * x
+            dif = dif + (x - p) * (x - p)
+            ch = ch + 1
+        f = f + 1
+    samples: f64 = (mix.frames * 2) as f64
+    mix.free()
+    level: f32 = sqrt(acc / samples) as f32
+    bright: f32 = 0.0
+    if acc > 0.0:
+        bright = sqrt(dif / acc) as f32
+    return Vec3.make(level, bright, 0.0)
+
+fun run_audio_occlusion_checks():
+    occ_require(Engine.audio.start_offline(48000) == 1, "offline scene")
+    world: Scene = Scene.create()
+    Engine.scene.set(world)
+    camera: Camera3D = Camera3D.create()
+    scene: AudioScene = Engine.audio.scene()
+    noise: AudioBuffer = occ_noise(48000)
+    source: AudioSource3D = AudioSource3D.create(noise, AudioEmitter(looping=true, max_distance=100.0, reverb_send=0.0))
+    source.pos_z = -6.0
+
+    wall: Node3D = Node3D.create("wall")
+    wall.pos_z = -3.0
+    wall.collision_box(8.0, 8.0, 0.4)
+    wall.active = 0
+    world.add_child(wall)
+    pillar: Node3D = Node3D.create("pillar")
+    pillar.pos_z = -3.0
+    pillar.collision_box(0.25, 8.0, 0.25)
+    pillar.active = 0
+    world.add_child(pillar)
+
+    clear: Vec3 = occ_measure(scene, camera, 30)
+    wall.active = 1
+    walled: Vec3 = occ_measure(scene, camera, 30)
+    wall.active = 0
+    pillar.active = 1
+    pillared: Vec3 = occ_measure(scene, camera, 30)
+    pillar.active = 0
+    println("clear level=" + Convert.f32_to_str(clear.x) + " bright=" + Convert.f32_to_str(clear.y))
+    println("wall  level=" + Convert.f32_to_str(walled.x) + " bright=" + Convert.f32_to_str(walled.y))
+    println("pillar level=" + Convert.f32_to_str(pillared.x) + " bright=" + Convert.f32_to_str(pillared.y))
+    occ_require(walled.x < clear.x * 0.7, "a wall makes the emitter quieter")
+    occ_require(walled.y < clear.y * 0.8, "a wall makes the emitter duller")
+    occ_require(pillared.x < clear.x and pillared.x > walled.x, "a thin pillar only obstructs: between clear and the wall")
+
+    # The listener's body never occludes its own hearing.
+    body: Node3D = Node3D.create("player")
+    body.pos_z = -3.0
+    body.collision_box(8.0, 8.0, 0.4)
+    world.add_child(body)
+    Engine.audio.set_listener_body(body)
+    through_body: Vec3 = occ_measure(scene, camera, 30)
+    occ_require(through_body.x > clear.x * 0.9, "the player's own body does not occlude")
+    body.active = 0
+
+    # Budget: 40 heard emitters, at most the budget of rays per frame.
+    Engine.audio.set_ray_budget(48)
+    i: i32 = 0
+    while i < 40:
+        extra: AudioSource3D = AudioSource3D.create(noise, AudioEmitter(looping=true, max_distance=100.0))
+        extra.pos_x = (i as f32) * 0.5 - 10.0
+        extra.pos_z = -8.0
+        i = i + 1
+    occ_measure(scene, camera, 3)
+    occ_require(Engine.audio.rays_last_frame() <= 48 and Engine.audio.rays_last_frame() >= 40, "the ray budget per frame holds")
+    println("rays last frame: " + Convert.i32_to_str(Engine.audio.rays_last_frame()))
+
+    noise.free()
+    Engine.audio.shutdown()
+    if g_occ_fails == 0:
+        println("PASS audio occlusion: wall quieter and duller, pillar obstructs, player body ignored, ray budget per frame")
+    else:
+        Command.exit(1)
+
+run_audio_occlusion_checks()

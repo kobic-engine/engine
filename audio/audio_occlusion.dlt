@@ -1,0 +1,121 @@
+##############################
+# Kobic - Occlusion from geometry
+# audio3d takes occlusion and obstruction values; the engine measures them
+# with ray casts (Engine.scene.raycast) on the game thread. Only emitters that are actually heard
+# (a real voice, or audible above a threshold) cost rays: five per emitter,
+# listener to emitter through the centre and four parallel rays offset
+# 0.3 m around it, within a round-robin budget of rays per frame, so each
+# heard emitter is checked 10-20 times a second. audio3d smooths the values,
+# so the slower update never clicks.
+#
+#   all five blocked   -> occlusion 0.9 (a wall: direct and reverb muffled)
+#   some blocked       -> obstruction = blocked fraction (a pillar, a car)
+#   none blocked       -> clear
+#
+# Hits on the emitter's own node, the node it follows and the listener's
+# body (Engine.audio.set_listener_body) do not count: the ray continues.
+##############################
+
+imm KOBIC_AUDIO_RAY_OFFSET: f32 = 0.3
+imm KOBIC_AUDIO_WALL_OCCLUSION: f32 = 0.9
+
+static g_audio_occlusion_enabled: i32 = 1
+static g_audio_ray_budget: i32 = 48
+static g_audio_rays_last_frame: i32 = 0
+static g_audio_occlusion_cursor: i32 = 0
+static g_audio_listener_body_ptr: i64 = 0
+static g_audio_audible_threshold: f32 = 0.0005
+
+# True when geometry blocks the segment (ox, oy, oz) -> (tx, ty, tz).
+fun kobic_audio_ray_blocked(ox: f32, oy: f32, oz: f32, tx: f32, ty: f32, tz: f32, ignore_a: i64, ignore_b: i64) -> bool:
+    dx: f32 = tx - ox
+    dy: f32 = ty - oy
+    dz: f32 = tz - oz
+    length: f32 = @sqrt(dx * dx + dy * dy + dz * dz)
+    if length < 0.05:
+        return false
+    direction: Vec3 = Vec3.make(dx / length, dy / length, dz / length)
+    origin: Vec3 = Vec3.make(ox, oy, oz)
+    remaining: f32 = length - 0.05
+    attempts: i32 = 0
+    while attempts < 4 and remaining > 0.0:
+        hit: RaycastHit = EngineScene.raycast(origin, direction, remaining)
+        g_audio_rays_last_frame = g_audio_rays_last_frame + 1
+        if hit.hit == 0:
+            return false
+        if hit.node_ptr != 0 and (hit.node_ptr == ignore_a or hit.node_ptr == ignore_b or hit.node_ptr == g_audio_listener_body_ptr):
+            step: f32 = hit.distance + 0.02
+            origin = origin.add(direction.scale(step))
+            remaining = remaining - step
+            attempts = attempts + 1
+        else:
+            return true
+    return false
+
+# Five rays from the listener (the camera eye, in world space) to the
+# emitter at world (ex, ey, ez); sets the emitter's occlusion/obstruction.
+fun kobic_audio_occlude(scene: AudioScene, handle: i64, ex: f32, ey: f32, ez: f32, ignore_a: i64, ignore_b: i64):
+    lx: f32 = g_audio_eye_x
+    ly: f32 = g_audio_eye_y
+    lz: f32 = g_audio_eye_z
+    d: Vec3 = Vec3.make(ex - lx, ey - ly, ez - lz)
+    if d.length_sq() < 0.0025:
+        scene.set_occlusion(handle, 0.0, 0.0)
+        return
+    d = d.normalize()
+    helper: Vec3 = Vec3.up()
+    if d.y > 0.9 or d.y < -0.9:
+        helper = Vec3.make(1.0, 0.0, 0.0)
+    u: Vec3 = d.cross(helper).normalize().scale(KOBIC_AUDIO_RAY_OFFSET)
+    v: Vec3 = d.cross(u).normalize().scale(KOBIC_AUDIO_RAY_OFFSET)
+    blocked: i32 = 0
+    if kobic_audio_ray_blocked(lx, ly, lz, ex, ey, ez, ignore_a, ignore_b):
+        blocked = blocked + 1
+    if kobic_audio_ray_blocked(lx + u.x, ly + u.y, lz + u.z, ex + u.x, ey + u.y, ez + u.z, ignore_a, ignore_b):
+        blocked = blocked + 1
+    if kobic_audio_ray_blocked(lx - u.x, ly - u.y, lz - u.z, ex - u.x, ey - u.y, ez - u.z, ignore_a, ignore_b):
+        blocked = blocked + 1
+    if kobic_audio_ray_blocked(lx + v.x, ly + v.y, lz + v.z, ex + v.x, ey + v.y, ez + v.z, ignore_a, ignore_b):
+        blocked = blocked + 1
+    if kobic_audio_ray_blocked(lx - v.x, ly - v.y, lz - v.z, ex - v.x, ey - v.y, ez - v.z, ignore_a, ignore_b):
+        blocked = blocked + 1
+    if blocked >= 5:
+        scene.set_occlusion(handle, KOBIC_AUDIO_WALL_OCCLUSION, 0.0)
+    else:
+        scene.set_occlusion(handle, 0.0, (blocked as f32) / 5.0)
+
+fun kobic_audio_heard(scene: AudioScene, handle: i64) -> bool:
+    if handle == AUDIO3D_NONE:
+        return false
+    if scene.voice_mode(handle) == AUDIO3D_MODE_REAL:
+        return true
+    return scene.audibility(handle) > g_audio_audible_threshold
+
+# Round-robin over sources, then one-shots, within the ray budget.
+fun kobic_audio_update_occlusion(scene: AudioScene):
+    g_audio_rays_last_frame = 0
+    if g_audio_occlusion_enabled == 0 or g_engine_has_scene == 0:
+        return
+    total: i32 = g_audio_source_count + g_audio_oneshot_count
+    if total <= 0:
+        return
+    if g_audio_occlusion_cursor >= total:
+        g_audio_occlusion_cursor = 0
+    visited: i32 = 0
+    while visited < total and g_audio_rays_last_frame + 5 <= g_audio_ray_budget:
+        index: i32 = g_audio_occlusion_cursor
+        if index < g_audio_source_count:
+            ptr: i64 = Memory.read_i64(g_audio_sources + (index as i64) * 8)
+            if ptr != 0:
+                source: AudioSource3D = ptr as AudioSource3D
+                if source.active != 0 and kobic_audio_heard(scene, source.handle):
+                    kobic_audio_occlude(scene, source.handle, source.world_x(), source.world_y(), source.world_z(), ptr, source.follow_ptr)
+        else:
+            entry: i64 = g_audio_oneshots + ((index - g_audio_source_count) as i64) * 24
+            handle: i64 = Memory.read_i64(entry)
+            if kobic_audio_heard(scene, handle):
+                kobic_audio_occlude(scene, handle, Memory.read_f32(entry + 8), Memory.read_f32(entry + 12), Memory.read_f32(entry + 16), 0, 0)
+        g_audio_occlusion_cursor = g_audio_occlusion_cursor + 1
+        if g_audio_occlusion_cursor >= total:
+            g_audio_occlusion_cursor = 0
+        visited = visited + 1

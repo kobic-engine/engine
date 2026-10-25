@@ -204,6 +204,7 @@ attach EngineAudio:
         EngineAudio.sync_listener(camera)
         scene: AudioScene = g_audio_scene_ptr as AudioScene
         kobic_audio_sync_sources(scene, g_audio_cut != 0)
+        kobic_audio_update_occlusion(scene)
         scene.update(g_audio_frame_dt)
         g_audio_cut = 0
 
@@ -220,6 +221,24 @@ attach EngineAudio:
 
     static fun play_at(clip: AudioClip, x: f32, y: f32, z: f32, opts: AudioEmitter) -> i64:
         return EngineAudio.play_at(clip.buffer, x, y, z, opts)
+
+    # Occlusion rays (audio/audio_occlusion.dlt). The body is the player's
+    # own node: rays pass through it. The budget is rays per frame, 5 per
+    # heard emitter (32-64 is typical).
+    static fun set_listener_body(node: Node3D):
+        g_audio_listener_body_ptr = node as i64
+
+    static fun set_occlusion_enabled(on: i32):
+        g_audio_occlusion_enabled = on
+
+    static fun set_ray_budget(rays: i32):
+        if rays < 5:
+            g_audio_ray_budget = 5
+        else:
+            g_audio_ray_budget = rays
+
+    static fun rays_last_frame() -> i32:
+        return g_audio_rays_last_frame
 
     # One instance of a sound set (variations, limits) at a world position.
     static fun play_sound(sound_id: i32, x: f32, y: f32, z: f32) -> i64:

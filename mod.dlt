@@ -76,6 +76,7 @@ load kobic/render/gpu
 load kobic/audio/engine_audio
 load kobic/audio/audio_source3d
 load kobic/audio/audio_assets
+load kobic/audio/audio_occlusion
 load kobic/core/runtime
 load kobic/core/engine
 load kobic/scene/skeleton3d
