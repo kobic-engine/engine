@@ -38,12 +38,18 @@ fun run_sky_fog_checks():
 
     renderer: GpuRendererCore = GpuRendererCore()
     data: i64 = Memory.malloc_zeroed(KOBIC_POINT_LIGHT_DATA_SIZE + 16)
-    Memory.write_i32(data + 384, 0x13572468)
+    # 384 bytes of point lights, sky and glow, then seven vec4 of stylized
+    # lighting (styleLight .. stylePlanetAxis, 73299e2): 496 bytes in all.
+    Memory.write_i32(data + KOBIC_POINT_LIGHT_DATA_SIZE, 0x13572468)
     env: Environment = Environment.create()
     env.set_sky(sky)
     env.set_lighting(EnvironmentLighting.none())
     renderer._write_point_light_data(data, env)
-    sky_fog_require(KOBIC_POINT_LIGHT_DATA_SIZE == 384 and Memory.read_i32(data + 384) == 0x13572468, "384-byte bounded write")
+    sky_fog_require(KOBIC_POINT_LIGHT_DATA_SIZE == 496 and Memory.read_i32(data + KOBIC_POINT_LIGHT_DATA_SIZE) == 0x13572468, "496-byte bounded write")
+    style_offset: i64 = 384
+    while style_offset < KOBIC_POINT_LIGHT_DATA_SIZE:
+        sky_fog_require(Memory.read_i32(data + style_offset) == 0, "stylized lighting fields stay off without a stylized environment")
+        style_offset = style_offset + 4
     sky_fog_require(sky_fog_close(Memory.read_f32(data + 272), 0.10) and sky_fog_close(Memory.read_f32(data + 288), 0.40) and sky_fog_close(Memory.read_f32(data + 304), 0.70), "sky colors available without environment lighting")
     sky_fog_require(Memory.read_f32(data + 320) == 0.0 and Memory.read_f32(data + 328) == 0.0, "indirect lighting stays disabled")
     sky_fog_require(Memory.read_f32(data + 340) == 1.0 and sky_fog_close(Memory.read_f32(data + 348), 0.55) and Memory.read_f32(data + 360) == 1.0 and Memory.read_f32(data + 364) == 0.75, "new sky frame/direction fields")
@@ -69,6 +75,6 @@ fun run_sky_fog_checks():
     Memory.free(camera)
     Memory.free(push)
     Memory.free(data)
-    print("PASS sky/fog: public API bounds, defaults, spherical mode, 384-byte UBO, no-lighting sky data, rotated local frame, 128-byte sky push")
+    print("PASS sky/fog: public API bounds, defaults, spherical mode, 496-byte UBO, no-lighting sky data, rotated local frame, 128-byte sky push")
 
 run_sky_fog_checks()
