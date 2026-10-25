@@ -1,0 +1,137 @@
+##############################
+# Kobic - Groups and the mix
+# The six engine groups (sfx, music, voice, ui, ambience, vehicles) get:
+# - the player's volume per group and a master volume (game settings);
+# - a pause state (Engine.pause): sfx and vehicles pause in place, music and
+#   ambience drop 6 dB behind a low-pass, voice and ui stay clear;
+# - an under-water state: the world groups are muffled and the environment
+#   becomes AudioEnvironment.underwater();
+# - ducking: voice lowers music by 9 dB while someone speaks;
+# - optional HDR mixing for loud action games.
+#
+# Each group's target is volume x state, written into one audio3d snapshot
+# and applied with a short fade, so volume settings and states compose
+# instead of overwriting each other.
+##############################
+
+imm KOBIC_AUDIO_PAUSE_FADE: f32 = 0.25
+imm KOBIC_AUDIO_STATE_LOWPASS_HZ: f32 = 900.0
+imm KOBIC_AUDIO_WATER_LOWPASS_HZ: f32 = 650.0
+
+static g_audio_group_volumes: i64 = 0
+static g_audio_mix_snapshot: i32 = -1
+static g_audio_paused: i32 = 0
+static g_audio_underwater: i32 = 0
+# AudioEnvironment.outdoor(), written out for a static initialiser.
+static g_audio_default_environment: AudioEnvironment = AudioEnvironment(rt60=0.5, hf_ratio=0.4, size=2.5, predelay=0.06, early=0.2, wet=0.08, diffusion=0.6)
+static g_audio_voice_ducking: i32 = -1
+
+fun kobic_audio_group_volume(group: i32) -> f32:
+    if g_audio_group_volumes == 0 or group < 0 or group >= AUDIO3D_GROUPS:
+        return 1.0
+    return Memory.read_f32(g_audio_group_volumes + (group as i64) * 4)
+
+# Scene creation: volumes at 1, the mix snapshot, voice-over-music ducking.
+fun kobic_audio_mix_init(scene: AudioScene):
+    if g_audio_group_volumes == 0:
+        g_audio_group_volumes = Memory.malloc_zeroed((AUDIO3D_GROUPS as i64) * 4)
+        g: i32 = 0
+        while g < AUDIO3D_GROUPS:
+            Memory.write_f32(g_audio_group_volumes + (g as i64) * 4, 1.0)
+            g = g + 1
+    g_audio_mix_snapshot = scene.snapshot_create()
+    g_audio_voice_ducking = scene.add_ducking(KOBIC_AUDIO_VOICE, KOBIC_AUDIO_MUSIC, 9.0, -45.0, 0.05, 0.4)
+    scene.set_environment(g_audio_default_environment)
+    kobic_audio_apply_mix(scene, 0.0)
+
+# Volume x state for every group, through the mix snapshot.
+fun kobic_audio_apply_mix(scene: AudioScene, seconds: f32):
+    if g_audio_mix_snapshot < 0:
+        return
+    g: i32 = 0
+    while g < AUDIO3D_GROUPS:
+        gain: f32 = kobic_audio_group_volume(g)
+        lowpass: f32 = 0.0
+        world: bool = g == KOBIC_AUDIO_SFX or g == KOBIC_AUDIO_VOICE or g == KOBIC_AUDIO_AMBIENCE or g == KOBIC_AUDIO_VEHICLES
+        if g_audio_underwater != 0 and world:
+            gain = gain * 0.8
+            lowpass = KOBIC_AUDIO_WATER_LOWPASS_HZ
+        if g_audio_paused != 0 and (g == KOBIC_AUDIO_MUSIC or g == KOBIC_AUDIO_AMBIENCE):
+            gain = gain * 0.5
+            lowpass = KOBIC_AUDIO_STATE_LOWPASS_HZ
+        scene.snapshot_set(g_audio_mix_snapshot, g, gain, lowpass)
+        g = g + 1
+    scene.snapshot_apply(g_audio_mix_snapshot, seconds)
+    paused: bool = g_audio_paused != 0
+    scene.pause_group(KOBIC_AUDIO_SFX, paused)
+    scene.pause_group(KOBIC_AUDIO_VEHICLES, paused)
+
+fun kobic_audio_mix_reset():
+    g_audio_mix_snapshot = -1
+    g_audio_voice_ducking = -1
+    g_audio_paused = 0
+    g_audio_underwater = 0
+
+attach EngineAudio:
+    # Player settings: master volume and per-group volume (0 to 1+).
+    static fun set_master_volume(volume: f32):
+        if EngineAudio.ready():
+            EngineAudio.scene().set_master_gain(volume)
+
+    static fun set_group_volume(group: i32, volume: f32):
+        if g_audio_group_volumes == 0 or group < 0 or group >= AUDIO3D_GROUPS:
+            return
+        v: f32 = volume
+        if v < 0.0:
+            v = 0.0
+        Memory.write_f32(g_audio_group_volumes + (group as i64) * 4, v)
+        if EngineAudio.ready():
+            kobic_audio_apply_mix(EngineAudio.scene(), 0.05)
+
+    static fun group_volume(group: i32) -> f32:
+        return kobic_audio_group_volume(group)
+
+    # The pause snapshot (Engine.pause / Engine.resume call this).
+    static fun set_paused(on: i32):
+        g_audio_paused = on
+        if EngineAudio.ready():
+            kobic_audio_apply_mix(EngineAudio.scene(), KOBIC_AUDIO_PAUSE_FADE)
+
+    static fun paused() -> bool:
+        return g_audio_paused != 0
+
+    # Under water: the world groups muffled and the underwater environment
+    # (areas still blend on top of it).
+    static fun set_underwater(on: i32):
+        g_audio_underwater = on
+        if EngineAudio.ready() == false:
+            return
+        scene: AudioScene = EngineAudio.scene()
+        if on != 0:
+            scene.set_environment(AudioEnvironment.underwater())
+        else:
+            scene.set_environment(g_audio_default_environment)
+        kobic_audio_apply_mix(scene, KOBIC_AUDIO_PAUSE_FADE)
+
+    # The environment outside every AudioArea3D (outdoor by default).
+    static fun set_environment(environment: AudioEnvironment):
+        g_audio_default_environment = environment
+        if EngineAudio.ready() and g_audio_underwater == 0:
+            EngineAudio.scene().set_environment(environment)
+
+    # HDR mixing (loud action games). Give emitters their real loudness in
+    # AudioEmitter.loudness_db (gunshot 140, footsteps 60).
+    static fun set_hdr(on: i32):
+        if EngineAudio.ready():
+            EngineAudio.scene().set_hdr(on != 0, 60.0, 20.0, 70.0)
+
+    # Real and virtual voices of the last rendered block, for kobic_log.
+    static fun real_voices() -> i32:
+        if EngineAudio.ready() == false:
+            return 0
+        return EngineAudio.scene().real_voices()
+
+    static fun virtual_voices() -> i32:
+        if EngineAudio.ready() == false:
+            return 0
+        return EngineAudio.scene().virtual_voices()

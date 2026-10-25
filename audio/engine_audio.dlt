@@ -40,6 +40,7 @@ static g_audio_listener_ready: i32 = 0
 # jump makes no Doppler sweep.
 static g_audio_cut: i32 = 1
 static g_audio_frame_dt: f32 = 0.0
+static g_audio_frames: i32 = 0
 
 struct EngineAudio:
     _placeholder: i32 = 0
@@ -133,7 +134,7 @@ attach EngineAudio:
             mixer.destroy()
             return 0
         scene.attach(mixer, KOBIC_AUDIO_BUS)
-        scene.set_environment(AudioEnvironment.outdoor())
+        kobic_audio_mix_init(scene)
         g_audio_mixer_ptr = mixer as i64
         g_audio_scene_ptr = scene as i64
         g_audio_sample_rate = rate
@@ -208,6 +209,9 @@ attach EngineAudio:
         kobic_audio_sync_areas(scene)
         scene.update(g_audio_frame_dt)
         g_audio_cut = 0
+        g_audio_frames = g_audio_frames + 1
+        if g_audio_frames % 600 == 0:
+            kobic_log("[kobic.audio] voices real=" + Convert.i32_to_str(scene.real_voices()) + " virtual=" + Convert.i32_to_str(scene.virtual_voices()) + " rays=" + Convert.i32_to_str(g_audio_rays_last_frame))
 
     # Fire and forget at a world position (an explosion, a footstep). The
     # engine keeps it in place while the camera moves, until it ends.
@@ -222,11 +226,6 @@ attach EngineAudio:
 
     static fun play_at(clip: AudioClip, x: f32, y: f32, z: f32, opts: AudioEmitter) -> i64:
         return EngineAudio.play_at(clip.buffer, x, y, z, opts)
-
-    # The environment outside every AudioArea3D (outdoor by default).
-    static fun set_environment(environment: AudioEnvironment):
-        if g_audio_scene_ptr != 0:
-            (g_audio_scene_ptr as AudioScene).set_environment(environment)
 
     # Occlusion rays (audio/audio_occlusion.dlt). The body is the player's
     # own node: rays pass through it. The budget is rays per frame, 5 per
@@ -261,6 +260,7 @@ attach EngineAudio:
     static fun shutdown():
         kobic_audio_reset_sources()
         kobic_audio_reset_areas()
+        kobic_audio_mix_reset()
         if g_audio_speaker_ptr != 0:
             speaker: Speaker = g_audio_speaker_ptr as Speaker
             speaker.close()

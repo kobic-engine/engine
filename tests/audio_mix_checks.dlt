@@ -1,0 +1,127 @@
+# Groups and the mix: pause snapshot, voice-over-music ducking, player
+# volumes that survive states, master volume and under water. Each group
+# plays its own tone (music 220 Hz, sfx 1000 Hz, voice 3000 Hz) and is
+# measured on its own frequency. No device.
+import std
+import audio
+import audio3d
+import kobic
+
+g_mix_fails: i32 = 0
+
+fun mix_require(ok: bool, what: str):
+    if ok == false:
+        println("FAIL audio mix: " + what)
+        g_mix_fails = g_mix_fails + 1
+
+fun mix_tone(hz: f32, amplitude: f32) -> AudioBuffer:
+    clip: AudioBuffer = AudioBuffer.create_seconds(2.0, 1, 48000)
+    f: i64 = 0
+    while f < clip.frames:
+        clip.set(f, 0, (sin(6.2831853 * (hz as f64) * (f as f64) / 48000.0) as f32) * amplitude)
+        f = f + 1
+    return clip
+
+# Amplitude of the `hz` component in channel 0 (correlation with a sine and
+# a cosine over a whole number of periods).
+fun mix_component(buf: AudioBuffer, hz: f32) -> f32:
+    s: f64 = 0.0
+    c: f64 = 0.0
+    f: i64 = 0
+    while f < buf.frames:
+        x: f64 = buf.get(f, 0) as f64
+        phase: f64 = 6.2831853 * (hz as f64) * (f as f64) / 48000.0
+        s = s + x * sin(phase)
+        c = c + x * cos(phase)
+        f = f + 1
+    return (2.0 * sqrt(s * s + c * c) / (buf.frames as f64)) as f32
+
+fun mix_db(a: f32, b: f32) -> f32:
+    if a < 0.0000001 or b < 0.0000001:
+        return -120.0
+    return 20.0 * (log10((a / b) as f64) as f32)
+
+# Settles for `seconds`, then measures 0.1 s (music, sfx, voice).
+fun mix_measure(camera: Camera3D, seconds: f32) -> Vec3:
+    scene: AudioScene = Engine.audio.scene()
+    steps: i32 = (seconds / 0.02) as i32
+    i: i32 = 0
+    while i < steps:
+        Engine.audio.note_frame(0.02)
+        Engine.audio.frame(camera)
+        block: AudioBuffer = scene.render_buffer(960)
+        block.free()
+        i = i + 1
+    mix: AudioBuffer = scene.render_buffer(4800)
+    result: Vec3 = Vec3.make(mix_component(mix, 220.0), mix_component(mix, 1000.0), mix_component(mix, 3000.0))
+    mix.free()
+    return result
+
+fun run_audio_mix_checks():
+    mix_require(Engine.audio.start_offline(48000) == 1, "offline scene")
+    camera: Camera3D = Camera3D.create()
+    scene: AudioScene = Engine.audio.scene()
+    music_clip: AudioBuffer = mix_tone(220.0, 0.2)
+    sfx_clip: AudioBuffer = mix_tone(1000.0, 0.2)
+    voice_clip: AudioBuffer = mix_tone(3000.0, 0.5)
+    music: i64 = scene.add(music_clip, AudioEmitter(spatial=false, looping=true, group=KOBIC_AUDIO_MUSIC))
+    sfx: AudioSource3D = AudioSource3D.create(sfx_clip, AudioEmitter(looping=true, group=KOBIC_AUDIO_SFX, reverb_send=0.0))
+    sfx.pos_z = -2.0
+    base: Vec3 = mix_measure(camera, 0.3)
+    mix_require(music != AUDIO3D_NONE and base.x > 0.01 and base.y > 0.01, "music and sfx play")
+
+    Engine.pause()
+    paused: Vec3 = mix_measure(camera, 0.6)
+    println("pause: music " + Convert.f32_to_str(mix_db(paused.x, base.x)) + " dB, sfx " + Convert.f32_to_str(mix_db(paused.y, base.y)) + " dB")
+    mix_require(mix_db(paused.x, base.x) < -5.0 and mix_db(paused.x, base.x) > -12.0, "the pause snapshot lowers the music about 6 dB")
+    mix_require(paused.y < base.y * 0.05, "the pause snapshot pauses sfx")
+    Engine.resume()
+    resumed: Vec3 = mix_measure(camera, 0.6)
+    mix_require(mix_db(resumed.x, base.x) > -1.0 and resumed.y > base.y * 0.8, "resume restores music and sfx")
+
+    Engine.audio.set_group_volume(KOBIC_AUDIO_MUSIC, 0.5)
+    half: Vec3 = mix_measure(camera, 0.4)
+    Engine.pause()
+    half_paused: Vec3 = mix_measure(camera, 0.6)
+    Engine.resume()
+    half_resumed: Vec3 = mix_measure(camera, 0.6)
+    println("music volume 0.5: " + Convert.f32_to_str(mix_db(half.x, base.x)) + " dB, paused " + Convert.f32_to_str(mix_db(half_paused.x, base.x)) + " dB, resumed " + Convert.f32_to_str(mix_db(half_resumed.x, base.x)) + " dB")
+    mix_require(mix_db(half.x, base.x) < -5.0 and mix_db(half.x, base.x) > -7.0, "the music volume setting applies")
+    mix_require(mix_db(half_paused.x, half.x) < -5.0, "pause composes with the volume setting")
+    mix_require(mix_db(half_resumed.x, half.x) > -1.0 and mix_db(half_resumed.x, half.x) < 1.0, "the volume setting survives pause and resume")
+    Engine.audio.set_group_volume(KOBIC_AUDIO_MUSIC, 1.0)
+    mix_measure(camera, 0.4)
+
+    voice: AudioSource3D = AudioSource3D.create(voice_clip, AudioEmitter(looping=true, group=KOBIC_AUDIO_VOICE, reverb_send=0.0))
+    voice.pos_z = -1.0
+    ducked: Vec3 = mix_measure(camera, 0.6)
+    println("ducking: music " + Convert.f32_to_str(mix_db(ducked.x, base.x)) + " dB while the voice speaks")
+    mix_require(ducked.z > 0.01 and mix_db(ducked.x, base.x) < -6.0, "voice ducks the music")
+    voice.destroy()
+    unducked: Vec3 = mix_measure(camera, 1.2)
+    mix_require(mix_db(unducked.x, base.x) > -1.5, "music returns after the voice")
+
+    Engine.audio.set_master_volume(0.5)
+    master: Vec3 = mix_measure(camera, 0.2)
+    mix_require(mix_db(master.x, unducked.x) < -5.0 and mix_db(master.y, unducked.y) < -5.0, "master volume lowers every group")
+    Engine.audio.set_master_volume(1.0)
+
+    Engine.audio.set_underwater(1)
+    water: Vec3 = mix_measure(camera, 0.6)
+    println("under water: sfx " + Convert.f32_to_str(mix_db(water.y, base.y)) + " dB, music " + Convert.f32_to_str(mix_db(water.x, base.x)) + " dB, rt60 " + Convert.f32_to_str(scene.current_environment().rt60))
+    mix_require(mix_db(water.y, base.y) < -6.0, "under water muffles the world groups")
+    mix_require(mix_db(water.x, base.x) > -1.5, "music is not under water")
+    mix_require(scene.current_environment().rt60 > 1.5, "under water uses the underwater environment")
+    Engine.audio.set_underwater(0)
+
+    sfx.destroy()
+    music_clip.free()
+    sfx_clip.free()
+    voice_clip.free()
+    Engine.audio.shutdown()
+    if g_mix_fails == 0:
+        println("PASS audio mix: pause snapshot, resume, volumes compose with states, voice ducks music, master volume, under water")
+    else:
+        Command.exit(1)
+
+run_audio_mix_checks()

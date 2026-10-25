@@ -779,6 +779,14 @@ attach Engine:
             g_engine_scene.destroy()
             g_engine_has_scene = 0
 
+    # Pause menu: the audio pause snapshot (sfx and vehicles pause in place,
+    # music and ambience drop behind a low-pass). Game logic is the game's.
+    static fun pause():
+        EngineAudio.set_paused(1)
+
+    static fun resume():
+        EngineAudio.set_paused(0)
+
     static fun shutdown():
         EngineAudio.shutdown()
         g_engine_runtime.shutdown()
