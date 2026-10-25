@@ -1,0 +1,60 @@
+# Engine audio without a device or window: Engine.audio owns one mixer and
+# one audio3d scene, plays through it offline, and shuts down cleanly.
+import std
+import audio
+import audio3d
+import kobic
+
+g_audio_fails: i32 = 0
+
+fun engine_audio_require(ok: bool, what: str):
+    if ok == false:
+        println("FAIL engine audio: " + what)
+        g_audio_fails = g_audio_fails + 1
+
+fun engine_audio_test_rms(buf: AudioBuffer, ch: i32) -> f32:
+    acc: f64 = 0.0
+    f: i64 = 0
+    while f < buf.frames:
+        x: f64 = buf.get(f, ch) as f64
+        acc = acc + x * x
+        f = f + 1
+    if buf.frames <= 0:
+        return 0.0
+    return sqrt(acc / (buf.frames as f64)) as f32
+
+fun engine_audio_test_tone(rate: i32, seconds: f32, hz: f32) -> AudioBuffer:
+    clip: AudioBuffer = AudioBuffer.create_seconds(seconds, 1, rate)
+    f: i64 = 0
+    while f < clip.frames:
+        clip.set(f, 0, (sin(6.2831853 * (hz as f64) * (f as f64) / (rate as f64)) * 0.5) as f32)
+        f = f + 1
+    return clip
+
+fun run_audio_engine_checks():
+    engine_audio_require(Engine.audio.ready() == false, "no scene before start")
+    engine_audio_require(Engine.audio.output() == AUDIO3D_OUTPUT_STEREO, "stereo is the default output")
+    engine_audio_require(Engine.audio.start_offline(48000) == 1 and Engine.audio.ready(), "offline scene starts without a device")
+    engine_audio_require(Engine.audio.has_device() == false and Engine.audio.sample_rate() == 48000, "offline means no device")
+    engine_audio_require(Engine.audio.mixer().channels == 2, "stereo mixer has two channels")
+    scene: AudioScene = Engine.audio.scene()
+    tone: AudioBuffer = engine_audio_test_tone(48000, 1.0, 440.0)
+    scene.set_listener(0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0)
+    handle: i64 = scene.add(tone, AudioEmitter(x=0.0, y=0.0, z=-2.0, looping=true, group=KOBIC_AUDIO_SFX))
+    engine_audio_require(handle != AUDIO3D_NONE, "an emitter starts in the engine scene")
+    scene.update(0.0)
+    mix: AudioBuffer = scene.render_buffer(9600)
+    left: f32 = engine_audio_test_rms(mix, 0)
+    right: f32 = engine_audio_test_rms(mix, 1)
+    engine_audio_require(left > 0.01 and right > 0.01, "a sound in front reaches both channels")
+    mix.free()
+    scene.release(handle)
+    Engine.audio.shutdown()
+    engine_audio_require(Engine.audio.ready() == false, "shutdown releases the scene and mixer")
+    tone.free()
+    if g_audio_fails == 0:
+        println("PASS engine audio: offline engine scene, stereo default, plays and shuts down without a device")
+    else:
+        Command.exit(1)
+
+run_audio_engine_checks()

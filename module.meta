@@ -13,6 +13,11 @@ dpk = "*"
 vulkan = "1.3"
 window = "*"
 input = "*"
+# Sound: buffers, WAV and the mixer; 3D scenes (audio3d, pure); the output
+# device (speaker, os, which adds the `audio` target capability itself).
+audio = "*"
+audio3d = "*"
+speaker = "*"
 
 [target]
 # Capabilities the selected target must provide; compared with the target's

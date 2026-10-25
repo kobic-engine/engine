@@ -1,0 +1,150 @@
+##############################
+# Kobic - Engine audio
+# The engine owns one AudioMixer, one Speaker and one audio3d AudioScene
+# attached to the mixer on bus 1. Kobic only connects geometry and nodes to
+# sound; every DSP stage (panning, HRTF, reverb, mixing) lives in audio3d.
+#
+# Without an output device the scene still runs (handles, voices, timing,
+# offline rendering), so the game goes on silent instead of failing.
+##############################
+
+# Fixed mix groups (audio3d has 16; the engine names the first six).
+imm KOBIC_AUDIO_SFX: i32 = 0
+imm KOBIC_AUDIO_MUSIC: i32 = 1
+imm KOBIC_AUDIO_VOICE: i32 = 2
+imm KOBIC_AUDIO_UI: i32 = 3
+imm KOBIC_AUDIO_AMBIENCE: i32 = 4
+imm KOBIC_AUDIO_VEHICLES: i32 = 5
+
+# The scene plays on this mixer bus.
+imm KOBIC_AUDIO_BUS: i32 = 1
+imm KOBIC_AUDIO_MAX_EMITTERS: i32 = 2048
+imm KOBIC_AUDIO_MAX_VOICES: i32 = 64
+imm KOBIC_AUDIO_MIXER_VOICES: i32 = 64
+
+static g_audio_enabled: i32 = 1
+static g_audio_output: i32 = AUDIO3D_OUTPUT_STEREO
+static g_audio_mixer_ptr: i64 = 0
+static g_audio_scene_ptr: i64 = 0
+static g_audio_speaker_ptr: i64 = 0
+static g_audio_has_device: i32 = 0
+static g_audio_sample_rate: i32 = 0
+
+struct EngineAudio:
+    _placeholder: i32 = 0
+
+# Mixer channels for an audio3d output mode.
+fun kobic_audio_channels(output: i32) -> i32:
+    if output == AUDIO3D_OUTPUT_MONO:
+        return 1
+    if output == AUDIO3D_OUTPUT_QUAD:
+        return 4
+    if output == AUDIO3D_OUTPUT_51:
+        return 6
+    if output == AUDIO3D_OUTPUT_71:
+        return 8
+    return 2
+
+attach EngineAudio:
+    # Output mode before start: AUDIO3D_OUTPUT_STEREO (default), _BINAURAL for
+    # headphones, _51 or _71 for speakers. The mixer gets matching channels.
+    static fun set_output(output: i32):
+        if output < AUDIO3D_OUTPUT_MONO or output > AUDIO3D_OUTPUT_71:
+            return
+        g_audio_output = output
+
+    static fun output() -> i32:
+        return g_audio_output
+
+    # Before Engine.start: 0 starts no audio at all (no thread, no device).
+    static fun set_enabled(on: i32):
+        if on == 0:
+            g_audio_enabled = 0
+        else:
+            g_audio_enabled = 1
+
+    static fun enabled() -> i32:
+        return g_audio_enabled
+
+    # Engine.start calls this. Opens the default output device; when that
+    # fails, prints why once and keeps the scene running silently.
+    static fun start() -> i32:
+        if g_audio_enabled == 0:
+            return 0
+        if g_audio_scene_ptr != 0:
+            return 1
+        if EngineAudio.create_scene(Speaker.preferred_sample_rate()) == 0:
+            return 0
+        mixer: AudioMixer = g_audio_mixer_ptr as AudioMixer
+        speaker: Speaker = Speaker.open(mixer)
+        g_audio_speaker_ptr = speaker as i64
+        if speaker.is_running():
+            g_audio_has_device = 1
+            kobic_log("[kobic.audio] " + Speaker.backend_name() + " " + Convert.i32_to_str(g_audio_sample_rate) + " Hz, " + Convert.i32_to_str(mixer.channels) + " ch, latency " + Convert.i32_to_str(speaker.latency_ms()) + " ms")
+        else:
+            g_audio_has_device = 0
+            println("[kobic.audio] no audio output, continuing silent: " + speaker.error_message())
+            speaker.close()
+            g_audio_speaker_ptr = 0
+        return 1
+
+    # A scene without any device, for tests, tools and servers. Render it
+    # with Engine.audio.scene().render_buffer(frames).
+    static fun start_offline(sample_rate: i32) -> i32:
+        if g_audio_scene_ptr != 0:
+            return 1
+        return EngineAudio.create_scene(sample_rate)
+
+    static fun create_scene(sample_rate: i32) -> i32:
+        rate: i32 = sample_rate
+        if rate <= 0:
+            rate = 48000
+        mixer: AudioMixer = AudioMixer.create(rate, kobic_audio_channels(g_audio_output), KOBIC_AUDIO_MIXER_VOICES)
+        if mixer.is_valid() == 0:
+            println("[kobic.audio] could not create the mixer, continuing silent")
+            return 0
+        scene: AudioScene = AudioScene.create(AudioSceneConfig(sample_rate=rate, output=g_audio_output, max_emitters=KOBIC_AUDIO_MAX_EMITTERS, max_voices=KOBIC_AUDIO_MAX_VOICES))
+        if scene.is_valid() == false:
+            println("[kobic.audio] could not create the 3D audio scene, continuing silent")
+            mixer.destroy()
+            return 0
+        scene.attach(mixer, KOBIC_AUDIO_BUS)
+        scene.set_environment(AudioEnvironment.outdoor())
+        g_audio_mixer_ptr = mixer as i64
+        g_audio_scene_ptr = scene as i64
+        g_audio_sample_rate = rate
+        return 1
+
+    # True once the scene exists (with or without a device).
+    static fun ready() -> bool:
+        return g_audio_scene_ptr != 0
+
+    # True when sound actually reaches a device.
+    static fun has_device() -> bool:
+        return g_audio_has_device != 0
+
+    static fun sample_rate() -> i32:
+        return g_audio_sample_rate
+
+    static fun scene() -> AudioScene:
+        return g_audio_scene_ptr as AudioScene
+
+    static fun mixer() -> AudioMixer:
+        return g_audio_mixer_ptr as AudioMixer
+
+    # Speaker first (it stops the audio thread), then the scene, then the
+    # mixer. Engine.shutdown calls this.
+    static fun shutdown():
+        if g_audio_speaker_ptr != 0:
+            speaker: Speaker = g_audio_speaker_ptr as Speaker
+            speaker.close()
+            g_audio_speaker_ptr = 0
+        if g_audio_scene_ptr != 0:
+            scene: AudioScene = g_audio_scene_ptr as AudioScene
+            scene.destroy()
+            g_audio_scene_ptr = 0
+        if g_audio_mixer_ptr != 0:
+            mixer: AudioMixer = g_audio_mixer_ptr as AudioMixer
+            mixer.destroy()
+            g_audio_mixer_ptr = 0
+        g_audio_has_device = 0

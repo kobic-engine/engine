@@ -31,6 +31,9 @@ struct Engine:
     static debug: Debug = Debug()
     static mouse: EngineMouse = EngineMouse()
     static scene: EngineScene = EngineScene()
+    # One mixer, speaker and 3D sound scene owned by the engine
+    # (audio/engine_audio.dlt). Silent, never fatal, without a device.
+    static audio: EngineAudio = EngineAudio()
 
 static g_engine_title: str = "Kobic Engine"
 static g_engine_width: i32 = 1280
@@ -597,6 +600,7 @@ attach Engine:
             if g_engine_has_window_mode == 1:
                 mode: WindowMode = WindowMode(kind=g_engine_window_mode_kind, width=g_engine_window_mode_width, height=g_engine_window_mode_height)
                 g_engine_runtime.set_window_mode(mode)
+            EngineAudio.start()
         return g_engine_runtime.ready()
 
     static fun running() -> i32:
@@ -773,6 +777,7 @@ attach Engine:
             g_engine_has_scene = 0
 
     static fun shutdown():
+        EngineAudio.shutdown()
         g_engine_runtime.shutdown()
         kobic_log_flush(500)
 
